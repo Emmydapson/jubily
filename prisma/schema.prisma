@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Topic {
+  id        String   @id @default(uuid())
+  title     String
+  source    String
+  score     Int
+  status    TopicStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scripts   Script[]
+  videos    Video[]
+}
+
+enum TopicStatus {
+  PENDING
+  USED
+  REJECTED
+}
+
+model Script {
+  id         String   @id @default(uuid())
+  topicId    String
+  promptVer  String
+  content    String
+  outputHash String
+  createdAt  DateTime @default(now())
+
+  topic Topic @relation(fields: [topicId], references: [id])
+  videos Video[]
+}
+
+model Video {
+  id        String   @id @default(uuid())
+  topicId   String
+  scriptId  String
+
+  videoUrl  String
+  format    String
+  duration  Int
+  status    VideoStatus @default(READY)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  topic   Topic  @relation(fields: [topicId], references: [id])
+  script  Script @relation(fields: [scriptId], references: [id])
+  publishResults PublishResult[]
+}
+
+enum VideoStatus {
+  READY
+  PUBLISHED
+  FAILED
+}
+
+model PublishResult {
+  id             String   @id @default(uuid())
+  videoId        String
+  platform       String
+  platformPostId String
+  status         String
+  errorMessage   String?
+  publishedAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  video Video @relation(fields: [videoId], references: [id])
+}
