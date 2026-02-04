@@ -143,6 +143,7 @@ model Conversion {
   videoJob   VideoJob? @relation(fields: [videoJobId], references: [id], onDelete: SetNull)
 
   event      String?
+  
   amount     Float?
   currency   String?
   raw        Json?

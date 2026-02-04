@@ -35,14 +35,19 @@ export class TrackingService {
   }
 
   async buildOfferUrl(offerId: string, clickId: string) {
-    const offer = await this.prisma.offer.findUnique({ where: { id: offerId } });
-    if (!offer) throw new Error('Offer not found');
+  const offer = await this.prisma.offer.findUnique({ where: { id: offerId } });
+  if (!offer) throw new Error('Offer not found');
 
-    const clickParam = process.env.DIGISTORE_CLICK_PARAM || 'clickId';
+  const url = new URL(offer.hoplink);
 
-    // Append clickId safely
-    const url = new URL(offer.hoplink);
-    url.searchParams.set(clickParam, clickId);
-    return url.toString();
-  }
+  // ✅ Digistore24: pass our click id in "custom"
+  url.searchParams.set('custom', clickId);
+
+  // Optional: if you want to also keep a generic param for other networks later
+  const extraParam = process.env.DIGISTORE_CLICK_PARAM; // e.g. "click_id"
+  if (extraParam) url.searchParams.set(extraParam, clickId);
+
+  return url.toString();
+}
+
 }
