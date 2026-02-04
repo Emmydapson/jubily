@@ -69,5 +69,10 @@ async markTopicUsed(topicId: string) {
   });
 }
 
-  
+  async getAllScripts() {
+  return this.prisma.script.findMany({
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
 }

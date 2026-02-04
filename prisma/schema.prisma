@@ -35,9 +35,11 @@ model Script {
   outputHash String
   createdAt  DateTime @default(now())
 
-  topic Topic @relation(fields: [topicId], references: [id])
-  videos Video[]
+  topic     Topic     @relation(fields: [topicId], references: [id])
+  videos    Video[]
+  videoJobs VideoJob[]   // 👈 ADD THIS
 }
+
 
 model Video {
   id        String   @id @default(uuid())
@@ -74,4 +76,79 @@ model PublishResult {
   createdAt      DateTime @default(now())
 
   video Video @relation(fields: [videoId], references: [id])
+}
+
+model VideoJob {
+  id         String   @id @default(uuid())
+  scriptId   String
+  status     String   @default("PENDING")
+  provider   String   @default("shotstack")
+  videoUrl   String?
+  renderId   String?
+  error      String?
+  youtubeUrl String?
+  published  Boolean  @default(false)
+  attempts   Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  script      Script       @relation(fields: [scriptId], references: [id])
+  clicks      Click[]
+  conversions Conversion[]
+
+  @@index([status, published])
+  @@index([renderId])
+  @@index([scriptId])
+}
+
+
+model Offer {
+  id            String   @id @default(uuid())
+  network       String   @default("digistore24") // future-proof
+  name          String
+  nicheTag      String?  // "sleep", "fat-loss", "gut", etc
+  hoplink       String   // your affiliate link or promo link base
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  clicks        Click[]
+  conversions   Conversion[]
+}
+
+model Click {
+  id         String   @id @default(uuid())
+  offerId    String
+  offer      Offer    @relation(fields: [offerId], references: [id])
+
+  videoJobId String?
+  videoJob   VideoJob? @relation(fields: [videoJobId], references: [id], onDelete: SetNull)
+
+  youtubeId  String?
+  source     String?
+  createdAt  DateTime @default(now())
+  userAgent  String?
+  ip         String?
+
+  @@index([offerId, createdAt])
+  @@index([videoJobId])
+}
+
+
+model Conversion {
+  id         String   @id @default(uuid())
+  offerId    String
+  offer      Offer    @relation(fields: [offerId], references: [id])
+
+  clickId    String?
+  videoJobId String?
+  videoJob   VideoJob? @relation(fields: [videoJobId], references: [id], onDelete: SetNull)
+
+  event      String?
+  amount     Float?
+  currency   String?
+  raw        Json?
+  createdAt  DateTime @default(now())
+
+  @@index([offerId, createdAt])
+  @@index([clickId])
+  @@index([videoJobId])
 }

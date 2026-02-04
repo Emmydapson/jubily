@@ -39,5 +39,9 @@ markUsed(@Param('id') id: string) {
   return this.automationService.markTopicUsed(id);
 }
 
+@Get('scripts')
+getAllScripts() {
+  return this.automationService.getAllScripts();
+}
 
 }

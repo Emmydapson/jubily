@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import { Body, Controller, Post, Patch, Param } from '@nestjs/common';
 import { VideosService } from './videos.service';
 import { RegisterVideoDto } from './dto/register-video.dto';
@@ -19,5 +20,11 @@ export class VideosController {
   @Patch(':id/failed')
   async markFailed(@Param('id') id: string) {
     return this.videosService.markAsFailed(id);
+  }
+
+  // 🚀 Trigger new video render job
+  @Post(':scriptId')
+  createVideo(@Param('scriptId') scriptId: string) {
+    return this.videosService.createVideoJob(scriptId);
   }
 }
