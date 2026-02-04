@@ -5,7 +5,7 @@ import { TrackingController } from './tracking.controller';
 import { DigistoreController } from '../webhooks/digistore24/digistore24.controller';
 
 @Module({
-  controllers: [TrackingController, DigistoreController],
+  controllers: [TrackingController, Digistore24Controller],
   providers: [TrackingService, PrismaService],
   exports: [TrackingService],
 })
