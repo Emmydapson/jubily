@@ -22,6 +22,6 @@ async function bootstrap() {
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
 
-  await app.listen(Number(process.env.PORT) || 9000);
+  await app.listen(Number(process.env.PORT) || 3000);
 }
 bootstrap();
