@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { ScriptService } from './script.service';
@@ -74,5 +74,21 @@ async markTopicUsed(topicId: string) {
     orderBy: { createdAt: 'desc' },
   });
 }
+
+async getScriptById(id: string) {
+    const script = await this.prisma.script.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        topicId: true,
+        promptVer: true,
+        content: true,
+        createdAt: true,
+      },
+    });
+
+    if (!script) throw new NotFoundException('Script not found');
+    return script;
+  }
 
 }

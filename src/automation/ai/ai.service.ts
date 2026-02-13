@@ -9,7 +9,6 @@ export class AiService {
   constructor() {
     this.client = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
-    
     });
   }
 
@@ -19,25 +18,48 @@ export class AiService {
       messages: [
         {
           role: 'system',
-          content:
-            'You are a professional viral short-form content script writer for African entrepreneurs and tech founders.',
+          content: `
+You create 60-second vertical short video scripts STRICTLY about HEALTH & WELLNESS.
+Allowed: nutrition, fitness, sleep, mental wellness, hydration, healthy habits.
+Not allowed: politics, finance, sex content, hate, violence, or non-health niches.
+
+Important safety:
+- Do not give medical diagnosis or treatment.
+- Avoid claiming cures.
+- Use cautious language ("may help", "often", "generally").
+
+Output MUST be valid JSON ONLY with this shape:
+{
+  "title": "string",
+  "cta": "string",
+  "scenes": [
+    {
+      "narration": "string (voiceover line)",
+      "caption": "string (short on-screen text, 3-8 words)",
+      "visualPrompt": "string (what to show visually, realistic b-roll description)",
+      "seconds": number (3-6)
+    }
+  ]
+}
+
+Rules:
+- Total duration sum(seconds) must be 55-65 seconds.
+- Hook in first 3 seconds.
+- Captions must NOT repeat full narration.
+- visualPrompt should be concrete (e.g., "close-up of cutting fresh vegetables", "person walking outdoors at sunrise").
+          `.trim(),
         },
         {
           role: 'user',
-          content: `Write a 60 second viral short video script about: ${topic}. Hook viewers in first 3 seconds. End with strong call to action.`,
+          content: `Create a 60-second health & wellness short video about: ${topic}`,
         },
       ],
-      temperature: 0.7,
-      max_tokens: 300,
+      temperature: 0.6,
+      max_tokens: 800,
     });
 
     const text = completion.choices[0].message.content;
-
-if (!text) {
-  throw new Error('OpenAI returned empty content');
-}
-
-return text;
-
+    if (!text) throw new Error('OpenAI returned empty content');
+    return text;
   }
 }

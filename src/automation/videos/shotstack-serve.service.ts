@@ -18,40 +18,39 @@ export class ShotstackServeService {
    * Returns { url, status } for the render asset.
    * status is typically "ready" when the CDN URL is usable.
    */
-  async getRenderAsset(renderId: string): Promise<{ url: string; status: string }> {
-    if (!renderId) throw new Error('Missing renderId');
+  async getRenderAsset(renderId: string): Promise<{ url: string | null; status: string }> {
+  if (!renderId) throw new Error('Missing renderId');
 
-    const res = await axios.get(`${this.baseUrl}/assets/render/${renderId}`, {
-      headers: {
-        'x-api-key': this.apiKey(),
-        'Content-Type': 'application/json',
-      },
-      timeout: 20000,
-      maxRedirects: 5,
-      validateStatus: (s) => s >= 200 && s < 300,
-    });
+  const res = await axios.get(`${this.baseUrl}/assets/render/${renderId}`, {
+    headers: {
+      'x-api-key': this.apiKey(),
+      'Content-Type': 'application/json',
+    },
+    timeout: 20000,
+    maxRedirects: 5,
+    // ✅ allow 404 so we can treat it as "not ready"
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+  });
 
-    const items = res.data?.data || [];
-    const first = items[0];
-    const url = first?.attributes?.url;
-    const status = String(first?.attributes?.status || 'unknown');
-
-    if (!url) {
-      throw new Error(`Serve API returned no url for renderId=${renderId}`);
-    }
-
-    return { url, status };
+  if (res.status === 404) {
+    return { url: null, status: 'missing' };
   }
 
-  /**
-   * Convenience: only returns URL when Serve status is ready.
-   * If not ready, throws an error you can treat as "keep waiting".
-   */
-  async getReadyUrl(renderId: string): Promise<string> {
-    const { url, status } = await this.getRenderAsset(renderId);
-    if (status.toLowerCase() !== 'ready') {
-      throw new Error(`Serve asset not ready (status=${status})`);
-    }
-    return url;
-  }
+  const items = res.data?.data || [];
+  const first = items[0];
+  const url = first?.attributes?.url || null;
+  const status = String(first?.attributes?.status || 'unknown');
+
+  return { url, status };
+}
+
+async getReadyUrl(renderId: string): Promise<string> {
+  const { url, status } = await this.getRenderAsset(renderId);
+
+  if (!url) throw new Error(`Serve asset missing (status=${status})`);
+  if (status.toLowerCase() !== 'ready') throw new Error(`Serve asset not ready (status=${status})`);
+
+  return url;
+}
+
 }

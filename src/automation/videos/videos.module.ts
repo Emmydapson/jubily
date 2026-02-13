@@ -8,6 +8,7 @@ import { PublishWorker } from './publish.worker';
 import { GoogleSheetsService } from '../../common/google-sheets.service';
 import { YoutubeService } from '../../common/youtube.service';
 import { ShotstackServeService } from './shotstack-serve.service';
+import { GoogleTtsService } from '../tts/google-tts.service';
 
 @Module({
   providers: [
@@ -18,6 +19,7 @@ import { ShotstackServeService } from './shotstack-serve.service';
     PublishWorker,     // ✅ add
     GoogleSheetsService,
     YoutubeService,    // ✅ add
+    GoogleTtsService
   ],
   controllers: [VideosController],
   exports: [VideosService],

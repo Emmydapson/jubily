@@ -2,13 +2,14 @@
 import { Controller, Post, Req, Res, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Digistore24Service } from './digistore24.service';
+import { Public } from 'src/auth/public.decorator';
 
 @Controller('webhooks/digistore24')
 export class Digistore24Controller {
   private readonly logger = new Logger(Digistore24Controller.name);
 
   constructor(private readonly ds: Digistore24Service) {}
-
+@Public()
   @Post()
   async handle(@Req() req: Request, @Res() res: Response) {
     // Digistore sends x-www-form-urlencoded, so req.body is key/value

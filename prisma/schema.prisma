@@ -8,17 +8,17 @@ datasource db {
 }
 
 model Topic {
-  id        String   @id @default(uuid())
-  title     String
-  source    String
-  score     Int
-  status    TopicStatus @default(PENDING)
+  id     String      @id @default(uuid())
+  title  String
+  source String
+  score  Int
+  status TopicStatus @default(PENDING)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  scripts   Script[]
-  videos    Video[]
+  scripts Script[]
+  videos  Video[]
 }
 
 enum TopicStatus {
@@ -35,27 +35,26 @@ model Script {
   outputHash String
   createdAt  DateTime @default(now())
 
-  topic     Topic     @relation(fields: [topicId], references: [id])
+  topic     Topic      @relation(fields: [topicId], references: [id])
   videos    Video[]
-  videoJobs VideoJob[]   // 👈 ADD THIS
+  videoJobs VideoJob[] // 👈 ADD THIS
 }
 
-
 model Video {
-  id        String   @id @default(uuid())
-  topicId   String
-  scriptId  String
+  id       String @id @default(uuid())
+  topicId  String
+  scriptId String
 
-  videoUrl  String
-  format    String
-  duration  Int
-  status    VideoStatus @default(READY)
+  videoUrl String
+  format   String
+  duration Int
+  status   VideoStatus @default(READY)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  topic   Topic  @relation(fields: [topicId], references: [id])
-  script  Script @relation(fields: [scriptId], references: [id])
+  topic          Topic           @relation(fields: [topicId], references: [id])
+  script         Script          @relation(fields: [scriptId], references: [id])
   publishResults PublishResult[]
 }
 
@@ -66,90 +65,157 @@ enum VideoStatus {
 }
 
 model PublishResult {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   videoId        String
   platform       String
   platformPostId String
   status         String
   errorMessage   String?
   publishedAt    DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   video Video @relation(fields: [videoId], references: [id])
 }
 
-model VideoJob {
-  id         String   @id @default(uuid())
-  scriptId   String
-  status     String   @default("PENDING")
-  provider   String   @default("shotstack")
-  videoUrl   String?
-  renderId   String?
-  error      String?
-  youtubeUrl String?
-  published  Boolean  @default(false)
-  attempts   Int      @default(0)
-  createdAt  DateTime @default(now())
+enum RunSlot {
+  MORNING
+  AFTERNOON
+  EVENING
+}
 
-  script      Script       @relation(fields: [scriptId], references: [id])
+model VideoJob {
+  id           String   @id @default(uuid())
+  scriptId     String
+  offerId      String? // ✅ NEW (store product used for the video)
+  status       String   @default("PENDING")
+  provider     String   @default("shotstack")
+  videoUrl     String?
+  renderId     String?
+  error        String?
+  youtubeUrl   String?
+  slot         RunSlot
+  scheduledFor DateTime
+  published    Boolean  @default(false)
+  attempts     Int      @default(0)
+  createdAt    DateTime @default(now())
+  videoSrt     String?
+
+  script Script @relation(fields: [scriptId], references: [id])
+  offer  Offer? @relation(fields: [offerId], references: [id]) // ✅ NEW relation
+
   clicks      Click[]
   conversions Conversion[]
 
+  // ✅ NEW: enforce “one job per slot per day”
+  @@unique([slot, scheduledFor])
   @@index([status, published])
   @@index([renderId])
   @@index([scriptId])
+  @@index([offerId])
 }
 
-
 model Offer {
-  id            String   @id @default(uuid())
-  network       String   @default("digistore24") // future-proof
-  name          String
-  nicheTag      String?  // "sleep", "fat-loss", "gut", etc
-  hoplink       String   // your affiliate link or promo link base
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  clicks        Click[]
-  conversions   Conversion[]
+  id          String       @id @default(uuid())
+  network     String       @default("digistore24") // future-proof
+  name        String
+  nicheTag    String? // "sleep", "fat-loss", "gut", etc
+  hoplink     String // your affiliate link or promo link base
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  clicks      Click[]
+  conversions Conversion[]
+  videoJobs   VideoJob[]
 }
 
 model Click {
-  id         String   @id @default(uuid())
-  offerId    String
-  offer      Offer    @relation(fields: [offerId], references: [id])
+  id      String @id @default(uuid())
+  offerId String
+  offer   Offer  @relation(fields: [offerId], references: [id])
 
   videoJobId String?
   videoJob   VideoJob? @relation(fields: [videoJobId], references: [id], onDelete: SetNull)
 
-  youtubeId  String?
-  source     String?
-  createdAt  DateTime @default(now())
-  userAgent  String?
-  ip         String?
+  youtubeId String?
+  source    String?
+  createdAt DateTime @default(now())
+  userAgent String?
+  ip        String?
 
   @@index([offerId, createdAt])
   @@index([videoJobId])
 }
 
-
 model Conversion {
-  id         String   @id @default(uuid())
-  offerId    String
-  offer      Offer    @relation(fields: [offerId], references: [id])
+  id      String @id @default(uuid())
+  offerId String
+  offer   Offer  @relation(fields: [offerId], references: [id])
 
   clickId    String?
   videoJobId String?
   videoJob   VideoJob? @relation(fields: [videoJobId], references: [id], onDelete: SetNull)
 
-  event      String?
-  
-  amount     Float?
-  currency   String?
-  raw        Json?
-  createdAt  DateTime @default(now())
+  event String?
+
+  amount    Float?
+  currency  String?
+  raw       Json?
+  createdAt DateTime @default(now())
 
   @@index([offerId, createdAt])
   @@index([clickId])
   @@index([videoJobId])
 }
+
+enum IntegrationProvider {
+  GOOGLE
+  OPENAI
+  DIGISTORE
+  CLICKBANK
+  YOUTUBE
+  SHOTSTACK
+}
+
+model AppSettings {
+  id               String   @id @default("app") // singleton row
+  automationEnabled Boolean @default(true)
+  verticalEnabled   Boolean @default(true)
+  autoPublish       Boolean @default(true)
+
+  timezone          String   @default("America/New_York")
+  videosPerDay      Int      @default(3)
+
+  // store 3 daily run hours (0-23) in the chosen timezone
+  runHours          Int[]    @default([9, 13, 18])
+
+  updatedAt         DateTime @updatedAt
+}
+
+model IntegrationKey {
+  id          String              @id @default(uuid())
+  provider    IntegrationProvider @unique
+
+  // encrypted blob (AES-256-GCM)
+  encrypted   String
+
+  // for UI masking: "....ABCD"
+  last4       String
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AdminUser {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("ADMIN") // future-proof
+  active       Boolean  @default(true)
+  lastLoginAt  DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+ 
+ 
+

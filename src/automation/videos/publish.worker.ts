@@ -60,34 +60,40 @@ export class PublishWorker implements OnModuleInit {
   }
 
   private async ensureStableUrl(job: any): Promise<string> {
-    // If already cloudinary, reuse it
-    const current = String(job.videoUrl || '');
-    if (current && this.isCloudinaryUrl(current)) return current;
+  const current = String(job.videoUrl || '');
+  if (current && this.isCloudinaryUrl(current)) return current;
 
-    const renderId = String(job.renderId || '');
-    if (!renderId) throw new Error('Missing renderId');
+  // ✅ if we already have a URL (cdn or stage output), try uploading it
+  if (current) {
+    this.logger.warn(`☁️ Uploading existing videoUrl job=${job.id} host=${this.shortHost(current)}`);
+    const cloudUrl = await this.uploadToCloudinaryFromRemoteUrl(current, job.id);
 
-    // 1) Resolve PUBLIC CDN url from Serve API
-    const { url: serveUrl, status } = await this.serve.getRenderAsset(renderId);
-    this.logger.warn(`🎞️  Serve asset job=${job.id} status=${status} host=${this.shortHost(serveUrl)}`);
-
-    if (String(status).toLowerCase() !== 'ready') {
-      throw new Error(`Serve asset not ready (status=${status})`);
-    }
-
-    // 2) Upload to Cloudinary from CDN url
-    this.logger.warn(`☁️  Uploading to Cloudinary job=${job.id} srcHost=${this.shortHost(serveUrl)}`);
-    const cloudUrl = await this.uploadToCloudinaryFromRemoteUrl(serveUrl, job.id);
-
-    // 3) Persist Cloudinary url so retries never touch Shotstack again
     await this.prisma.videoJob.update({
       where: { id: job.id },
       data: { videoUrl: cloudUrl },
     });
 
-    this.logger.log(`✅ Cloudinary OK job=${job.id} host=${this.shortHost(cloudUrl)}`);
     return cloudUrl;
   }
+
+  // fallback: resolve via Serve
+  const renderId = String(job.renderId || '');
+  if (!renderId) throw new Error('Missing renderId');
+
+  const { url: serveUrl, status } = await this.serve.getRenderAsset(renderId);
+
+  if (!serveUrl) throw new Error(`Serve asset missing (status=${status})`);
+  if (String(status).toLowerCase() !== 'ready') throw new Error(`Serve asset not ready (status=${status})`);
+
+  const cloudUrl = await this.uploadToCloudinaryFromRemoteUrl(serveUrl, job.id);
+
+  await this.prisma.videoJob.update({
+    where: { id: job.id },
+    data: { videoUrl: cloudUrl },
+  });
+
+  return cloudUrl;
+}
 
   async loop() {
     if (this.running) return;
@@ -115,65 +121,80 @@ export class PublishWorker implements OnModuleInit {
   }
 
   async publish(job: any) {
-    try {
-      // 1) get script
-      const script = await this.prisma.script.findUnique({
-        where: { id: job.scriptId },
-      });
-      if (!script) throw new Error('Script not found');
+  // declare outside try so catch can use them
+  let topicTitle = '';
+  let offerName = '';
 
-      // 2) ensure stable public url (Cloudinary) - via Serve API
-      const stableUrl = await this.ensureStableUrl(job);
+  try {
+    const fullJob = await this.prisma.videoJob.findUnique({
+      where: { id: job.id },
+      include: {
+        offer: { select: { name: true } },
+        script: { include: { topic: { select: { title: true } } } },
+      },
+    });
 
-      // 3) publish to youtube
-      const title = String(script.content || 'Untitled').slice(0, 90);
-      const description = String(script.content || '');
+    if (!fullJob?.script) throw new Error('Script not found');
 
-      this.logger.log(`📤 Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
+    topicTitle = fullJob.script.topic?.title ?? '';
+    offerName = fullJob.offer?.name ?? '';
 
-      const youtubeUrl = await this.youtube.upload(title, description, stableUrl);
+    const videoTitle = String(fullJob.script.content || 'Untitled').slice(0, 90);
+    const videoDescription = String(fullJob.script.content || '');
 
-      await this.prisma.videoJob.update({
-        where: { id: job.id },
-        data: {
-          published: true,
-          youtubeUrl,
-          error: null,
-        },
-      });
+    // ensure stable public url (Cloudinary) - via Serve API
+    const stableUrl = await this.ensureStableUrl(job);
 
-      await this.sheets.append([
-        job.id,
-        job.scriptId,
-        'youtube',
-        'PUBLISHED',
+    this.logger.log(`📤 Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
+
+    const youtubeUrl = await this.youtube.upload(videoTitle, videoDescription, stableUrl);
+
+    await this.prisma.videoJob.update({
+      where: { id: job.id },
+      data: {
+        published: true,
         youtubeUrl,
-        '',
-        job.createdAt,
-        new Date(),
-      ]);
+        error: null,
+      },
+    });
 
-      this.logger.log(`✅ YouTube published job=${job.id} youtubeId=${youtubeUrl}`);
-    } catch (e: any) {
-      const msg = e?.message || String(e);
+    await this.sheets.append([
+      job.id,
+      job.scriptId,
+      topicTitle,
+      offerName,
+      'youtube',
+      'PUBLISHED',
+      youtubeUrl,
+      '',
+      job.createdAt,
+      new Date(),
+    ]);
 
-      await this.prisma.videoJob.update({
-        where: { id: job.id },
-        data: { error: msg },
-      });
+    this.logger.log(`✅ YouTube published job=${job.id} youtubeId=${youtubeUrl}`);
+  } catch (e: any) {
+    const msg = e?.message || String(e);
 
-      await this.sheets.append([
-        job.id,
-        job.scriptId,
-        'youtube',
-        'FAILED',
-        '',
-        msg,
-        job.createdAt,
-        new Date(),
-      ]);
+    await this.prisma.videoJob.update({
+      where: { id: job.id },
+      data: { error: msg },
+    });
 
-      this.logger.warn(`❌ Publish failed job=${job.id} msg=${this.short(msg, 300)}`);
-    }
+    await this.sheets.append([
+      job.id,
+      job.scriptId,
+      topicTitle, // now always defined
+      offerName,  // now always defined
+      'youtube',
+      'FAILED',
+      '',
+      msg,
+      job.createdAt,
+      new Date(),
+    ]);
+
+    this.logger.warn(`❌ Publish failed job=${job.id} msg=${this.short(msg, 300)}`);
   }
+}
+
 }
