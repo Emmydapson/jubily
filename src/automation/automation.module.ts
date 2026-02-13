@@ -14,10 +14,11 @@ import { AnalyticsController } from './analytics/analytics.controller';
 import { AnalyticsService } from './analytics/analytics.service';
 import { SettingsModule } from 'src/settings/settings.module';
 import { GoogleSheetsService } from 'src/common/google-sheets.service';
+import { OrchestratorController } from './orchestrator.controller';
 
 
 @Module({
-  controllers: [AutomationController, WorkflowController, AnalyticsController],
+  controllers: [AutomationController, WorkflowController, AnalyticsController,  OrchestratorController,],
   providers: [AutomationService, PrismaService, ScriptService, AiService, OrchestratorService,
     AutomationCron, WorkflowService, AnalyticsService, GoogleSheetsService,],
   imports: [VideosModule, SettingsModule]

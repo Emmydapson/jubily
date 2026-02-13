@@ -20,6 +20,7 @@ export class OrchestratorService {
 
   private normalizeScheduledFor(d: Date) {
   const x = new Date(d);
+  if (Number.isNaN(x.getTime())) return this.normalizeScheduledFor(new Date());
   x.setMinutes(0, 0, 0);
   return x;
 }
@@ -42,11 +43,19 @@ export class OrchestratorService {
   }).catch(() => null);
 
     if (existing) {
-      this.logger.warn(
-        `⏭️ Already ran slot=${slot} scheduledFor=${scheduledFor.toISOString()} job=${existing.id}`,
-      );
-      return { ok: true, skipped: true, reason: 'already-exists', jobId: existing.id };
-    }
+  this.logger.warn(
+    `⏭️ Already ran slot=${slot} scheduledFor=${normalized.toISOString()} job=${existing.id}`,
+  );
+  return {
+    ok: true,
+    skipped: true,
+    reason: 'already-exists',
+    slot,
+    scheduledFor: normalized, // ✅ normalize in response too
+    jobId: existing.id,
+  };
+}
+
 
     // 1) Pick best pending topic
     const topic = await this.prisma.topic.findFirst({
@@ -72,19 +81,20 @@ export class OrchestratorService {
     // 4) Create render job with offer + slot metadata
      const job = await this.videos.createVideoJob(script.id, offer?.id, slot, normalized);
     this.logger.log(
-      `✅ slot=${slot} job=${job.jobId} topic="${topic.title}" offer="${offer?.name ?? 'n/a'}" scheduledFor=${scheduledFor.toISOString()}`,
-    );
+  `✅ slot=${slot} job=${job.jobId} topic="${topic.title}" offer="${offer?.name ?? 'n/a'}" scheduledFor=${normalized.toISOString()}`,
+);
 
-    return {
-      ok: true,
-      slot,
-      scheduledFor,
-      topicId: topic.id,
-      topicTitle: topic.title,
-      offerId: offer?.id ?? null,
-      offerName: offer?.name ?? null,
-      scriptId: script.id,
-      ...job,
-    };
+return {
+  ok: true,
+  slot,
+  scheduledFor: normalized, // ✅ normalized
+  topicId: topic.id,
+  topicTitle: topic.title,
+  offerId: offer?.id ?? null,
+  offerName: offer?.name ?? null,
+  scriptId: script.id,
+  ...job,
+};
+
   }
 }
