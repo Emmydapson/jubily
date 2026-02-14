@@ -16,11 +16,29 @@ import { SettingsModule } from 'src/settings/settings.module';
 import { GoogleSheetsService } from 'src/common/google-sheets.service';
 import { OrchestratorController } from './orchestrator.controller';
 
+import { JobsController } from './jobs/jobs.controller';
+import { JobsService } from './jobs/jobs.service';
 
 @Module({
-  controllers: [AutomationController, WorkflowController, AnalyticsController,  OrchestratorController,],
-  providers: [AutomationService, PrismaService, ScriptService, AiService, OrchestratorService,
-    AutomationCron, WorkflowService, AnalyticsService, GoogleSheetsService,],
-  imports: [VideosModule, SettingsModule]
+  controllers: [
+    AutomationController,
+    WorkflowController,
+    AnalyticsController,
+    OrchestratorController,
+    JobsController,
+  ],
+  providers: [
+    AutomationService,
+    PrismaService,
+    ScriptService,
+    AiService,
+    OrchestratorService,
+    AutomationCron,
+    WorkflowService,
+    AnalyticsService,
+    GoogleSheetsService,
+    JobsService,
+  ],
+  imports: [VideosModule, SettingsModule],
 })
 export class AutomationModule {}
