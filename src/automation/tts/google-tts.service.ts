@@ -1,12 +1,10 @@
-/* eslint-disable prettier/prettier */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from '@nestjs/common';
-import textToSpeech from '@google-cloud/text-to-speech';
+import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import { v2 as cloudinary } from 'cloudinary';
 
 @Injectable()
 export class GoogleTtsService {
-  private client?: textToSpeech.TextToSpeechClient;
+  private client?: TextToSpeechClient;
   private readonly ttsMode = (process.env.TTS_MODE || 'live').toLowerCase(); // live | mock
 
   constructor() {
@@ -17,9 +15,8 @@ export class GoogleTtsService {
       secure: true,
     });
 
-    // Only init Google client if we're not mocking
     if (this.ttsMode !== 'mock') {
-      this.client = new textToSpeech.TextToSpeechClient({
+      this.client = new TextToSpeechClient({
         keyFilename: process.env.GOOGLE_TTS_KEY_FILE,
       });
     }
@@ -28,16 +25,9 @@ export class GoogleTtsService {
   async synthesizeToCloudinaryMp3(text: string, publicId: string): Promise<string> {
     if (!text?.trim()) throw new Error('TTS text is empty');
 
-    // ✅ MOCK MODE: return a known-good audio URL (no Google calls)
     if (this.ttsMode === 'mock' || !this.client) {
       const fallback = process.env.MOCK_VOICEOVER_URL;
-      if (!fallback) {
-        // Provide a default that exists in your pipeline already:
-        // You can set MOCK_VOICEOVER_URL to any small mp3 file you host.
-        throw new Error(
-          'TTS_MODE=mock but MOCK_VOICEOVER_URL is missing. Set MOCK_VOICEOVER_URL to a public mp3 URL.',
-        );
-      }
+      if (!fallback) throw new Error('TTS_MODE=mock but MOCK_VOICEOVER_URL is missing.');
       return fallback;
     }
 
