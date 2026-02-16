@@ -17,21 +17,20 @@ export class AutomationService {
 }
 
   async createTopic(dto: CreateTopicDto) {
-    // Deduplication
-    const existing = await this.prisma.topic.findFirst({
-      where: { title: dto.title },
-    });
+  const title = dto.title.trim();
+  const source = (dto.source ?? "manual").trim();
+  const score = dto.score ?? 50;
 
-    if (existing) return existing;
+  const existing = await this.prisma.topic.findFirst({
+    where: { title },
+  });
+  if (existing) return existing;
 
-    return this.prisma.topic.create({
-      data: {
-        title: dto.title,
-        source: dto.source,
-        score: dto.score,
-      },
-    });
-  }
+  return this.prisma.topic.create({
+    data: { title, source, score },
+  });
+}
+
 
  async generateScriptWithAi(topicId: string, topicTitle: string) {
   const content = await this.aiService.generateScript(topicTitle);
