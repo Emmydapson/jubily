@@ -54,6 +54,36 @@ export class RenderWorker implements OnModuleInit {
   async handle(job: any) {
     const renderId = String(job.renderId || '');
 
+    // ✅ MOCK: mark as completed immediately (no Shotstack polling)
+if (renderId.startsWith('mock-')) {
+  const serveUrl = process.env.MOCK_VIDEO_URL;
+  if (!serveUrl) throw new Error('MOCK_VIDEO_URL is missing for mock renders');
+
+  await this.prisma.videoJob.update({
+    where: { id: job.id },
+    data: {
+      status: 'COMPLETED',
+      videoUrl: serveUrl,
+      error: null,
+    },
+  });
+
+  await this.sheets.append([
+    job.id,
+    job.scriptId,
+    'shotstack',
+    'COMPLETED',
+    serveUrl,
+    '',
+    job.createdAt,
+    new Date(),
+  ]);
+
+  this.logger.log(`✅ Mock render complete job=${job.id} urlHost=${this.shortHost(serveUrl)}`);
+  return;
+}
+
+
     try {
       // 1) Poll render status (stage render API)
       const res = await axios.get(`https://api.shotstack.io/stage/render/${renderId}`, {
