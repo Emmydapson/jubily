@@ -4,7 +4,7 @@ import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GoogleSheetsService } from '../../common/google-sheets.service';
-import { ShotstackServeService } from './shotstack-serve.service'; // adjust path
+import { ShotstackServeService } from './shotstack-serve.service';
 
 @Injectable()
 export class RenderWorker implements OnModuleInit {
@@ -48,41 +48,16 @@ export class RenderWorker implements OnModuleInit {
   }
 
   private shortHost(url: string) {
-    try { return new URL(url).host; } catch { return 'invalid-url'; }
+    try {
+      return new URL(url).host;
+    } catch {
+      return 'invalid-url';
+    }
   }
 
   async handle(job: any) {
     const renderId = String(job.renderId || '');
-
-    // ✅ MOCK: mark as completed immediately (no Shotstack polling)
-if (renderId.startsWith('mock-')) {
-  const serveUrl = process.env.MOCK_VIDEO_URL;
-  if (!serveUrl) throw new Error('MOCK_VIDEO_URL is missing for mock renders');
-
-  await this.prisma.videoJob.update({
-    where: { id: job.id },
-    data: {
-      status: 'COMPLETED',
-      videoUrl: serveUrl,
-      error: null,
-    },
-  });
-
-  await this.sheets.append([
-    job.id,
-    job.scriptId,
-    'shotstack',
-    'COMPLETED',
-    serveUrl,
-    '',
-    job.createdAt,
-    new Date(),
-  ]);
-
-  this.logger.log(`✅ Mock render complete job=${job.id} urlHost=${this.shortHost(serveUrl)}`);
-  return;
-}
-
+    if (!renderId) return;
 
     try {
       // 1) Poll render status (stage render API)
@@ -95,23 +70,10 @@ if (renderId.startsWith('mock-')) {
       if (!data) throw new Error('Empty Shotstack response');
 
       const status: string = String(data.status || 'unknown').toLowerCase();
-
       this.logger.log(`[Render] job=${job.id} renderId=${renderId} status=${status}`);
-
-      await this.sheets.append([
-        job.id,
-        job.scriptId,
-        'shotstack',
-        status.toUpperCase(),
-        '',
-        '',
-        job.createdAt,
-        new Date(),
-      ]);
 
       // 2) If render is done, resolve CDN URL from Serve API
       if (status === 'done') {
-        // Serve might not be ready immediately; if not ready, just keep waiting.
         try {
           const serveUrl = await this.serve.getReadyUrl(renderId);
 
@@ -119,18 +81,21 @@ if (renderId.startsWith('mock-')) {
             where: { id: job.id },
             data: {
               status: 'COMPLETED',
-              videoUrl: serveUrl,     // ✅ store CDN url
+              videoUrl: serveUrl,
               error: null,
             },
           });
 
+          // ✅ Sheets: only log COMPLETED / FAILED, unified schema (10 cols)
           await this.sheets.append([
             job.id,
             job.scriptId,
-            'shotstack',
-            'COMPLETED',
-            serveUrl,
-            '',
+            '',          // topic
+            '',          // offer
+            'shotstack',  // provider
+            'COMPLETED',  // status
+            serveUrl,     // url
+            '',           // error
             job.createdAt,
             new Date(),
           ]);
@@ -138,7 +103,7 @@ if (renderId.startsWith('mock-')) {
           this.logger.log(`✅ Render complete job=${job.id} cdnHost=${this.shortHost(serveUrl)}`);
           return;
         } catch (e: any) {
-          // Not ready yet → do NOT increment attempts; just wait for next poll.
+          // Serve not ready yet → wait for next poll, don't increment attempts
           this.logger.warn(
             `⏳ Serve not ready job=${job.id} renderId=${renderId} msg=${e?.message || e}`,
           );
@@ -157,6 +122,8 @@ if (renderId.startsWith('mock-')) {
         await this.sheets.append([
           job.id,
           job.scriptId,
+          '',
+          '',
           'shotstack',
           'FAILED',
           '',
@@ -170,6 +137,7 @@ if (renderId.startsWith('mock-')) {
       }
 
       // still rendering → do nothing
+      return;
     } catch (e: any) {
       const message =
         e?.response?.data?.response?.error ||
@@ -182,17 +150,7 @@ if (renderId.startsWith('mock-')) {
         data: { attempts: { increment: 1 }, error: message },
       });
 
-      await this.sheets.append([
-        job.id,
-        job.scriptId,
-        'shotstack',
-        'RETRYING',
-        '',
-        message,
-        job.createdAt,
-        new Date(),
-      ]);
-
+      // ✅ No Sheets logging for retries
       this.logger.error(`🔁 Retry job=${job.id} renderId=${renderId}: ${message}`);
     }
   }
