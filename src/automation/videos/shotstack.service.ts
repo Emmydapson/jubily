@@ -17,9 +17,14 @@ export class ShotstackService {
     return k;
   }
 
-  private unsplashImage(visualPrompt: string) {
-    const q = encodeURIComponent((visualPrompt || 'healthy lifestyle').slice(0, 120));
-    return `https://source.unsplash.com/1080x1920/?${q}`;
+  /**
+   * IMPORTANT:
+   * source.unsplash.com often fails for renderers (redirects / bot blocks).
+   * Use a stable direct image URL first to confirm Shotstack works.
+   */
+  private safeBgImageUrl(_visualPrompt: string) {
+    // 1080x1920, direct CDN, no redirects
+    return 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1080&h=1920&fit=crop&auto=format&q=80';
   }
 
   async renderVideo(scenes: Scene[]): Promise<string> {
@@ -30,7 +35,9 @@ export class ShotstackService {
     let currentTime = 0;
 
     // One voiceover mp3 for the whole script (TTS may be mock inside GoogleTtsService)
-    const fullNarration = scenes.map((s) => s.narration).join(' ');
+    const fullNarration = scenes.map((s) => String(s.narration || '')).join(' ').trim();
+    if (!fullNarration) throw new Error('renderVideo: narration is empty');
+
     const voiceoverUrl = await this.tts.synthesizeToCloudinaryMp3(
       fullNarration,
       `job-${Date.now()}`,
@@ -39,12 +46,12 @@ export class ShotstackService {
     const bgClips: any[] = [];
     const captionClips: any[] = [];
 
-    for (const scene of scenes) {
+    scenes.forEach((scene: any, idx: number) => {
       const start = currentTime;
       const length = Number(scene.duration || 0);
 
       if (!Number.isFinite(length) || length <= 0) {
-        throw new Error(`Invalid scene.duration for scene index=${scene.index}`);
+        throw new Error(`Invalid scene.duration at index=${idx}`);
       }
 
       currentTime += length;
@@ -52,7 +59,7 @@ export class ShotstackService {
       bgClips.push({
         asset: {
           type: 'image',
-          src: this.unsplashImage(scene.visualPrompt),
+          src: this.safeBgImageUrl(scene.visualPrompt),
         },
         start,
         length,
@@ -71,7 +78,7 @@ export class ShotstackService {
               color:white; text-shadow: 0 2px 14px rgba(0,0,0,.9);
               text-align:center;">
               <div style="background: rgba(0,0,0,.45); padding:24px 30px; border-radius:18px;">
-                ${scene.caption}
+                ${String(scene.caption || '')}
               </div>
             </div>
           `,
@@ -79,7 +86,7 @@ export class ShotstackService {
         start,
         length,
       });
-    }
+    });
 
     const payload: any = {
       timeline: {
@@ -108,17 +115,19 @@ export class ShotstackService {
       },
     };
 
-    // hard guard so you never send bad config again
-    if (!payload.output || typeof payload.output !== 'object') {
-      throw new Error(`Shotstack payload.output invalid: ${typeof payload.output}`);
-    }
+    // ✅ debug the exact URLs Shotstack must fetch
+    console.log('[SHOTSTACK PAYLOAD CHECK]', {
+      voiceoverUrl,
+      soundtrack: payload.timeline?.soundtrack?.src,
+      firstBg: bgClips?.[0]?.asset?.src,
+      lastBg: bgClips?.[bgClips.length - 1]?.asset?.src,
+      totalSeconds: Math.ceil(currentTime),
+    });
 
     const res = await axios.post(`${this.baseUrl}/render`, payload, {
       headers: {
         'x-api-key': this.apiKey(),
         'Content-Type': 'application/json',
-        // ⚠️ remove this if Shotstack told you not to send it
-        // 'x-shotstack-stage': 'true',
       },
       timeout: 20000,
     });

@@ -34,12 +34,11 @@ export class ShotstackServeService {
       validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
     });
 
-    if (res.status === 404) {
-      return { url: null, status: 'missing' };
-    }
+    if (res.status === 404) return { url: null, status: 'missing' };
 
     const items = res.data?.data || [];
     const first = items[0];
+
     const url = first?.attributes?.url || null;
     const status = String(first?.attributes?.status || 'unknown');
 
@@ -50,7 +49,7 @@ export class ShotstackServeService {
     const { url, status } = await this.getRenderAsset(renderId);
 
     if (!url) throw new Error(`Serve asset missing (status=${status})`);
-    if (status.toLowerCase() !== 'ready') {
+    if (String(status).toLowerCase() !== 'ready') {
       throw new Error(`Serve asset not ready (status=${status})`);
     }
 
