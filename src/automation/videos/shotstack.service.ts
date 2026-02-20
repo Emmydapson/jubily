@@ -25,27 +25,44 @@ export class ShotstackService {
     return k;
   }
 
-  private unsplashUrl(query: string) {
-    const q = encodeURIComponent((query || 'healthy lifestyle').slice(0, 120));
-    return `https://source.unsplash.com/1080x1920/?${q}`;
-  }
+  private readonly fallbackImages = [
+  // Direct images.unsplash.com (no redirects)
+  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1080&h=1920&fit=crop&auto=format&q=80',
+  'https://images.unsplash.com/photo-1526401485004-2aa7d1f0f1f5?w=1080&h=1920&fit=crop&auto=format&q=80',
+  'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1080&h=1920&fit=crop&auto=format&q=80',
+  'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1080&h=1920&fit=crop&auto=format&q=80',
+];
+
+private pickBg(i: number) {
+  return this.fallbackImages[i % this.fallbackImages.length];
+}
+
 
   /**
    * Upload any external image to Cloudinary first
    */
   private async uploadImageToCloudinary(url: string, publicId: string) {
-    const folder = process.env.CLOUDINARY_FOLDER || 'automation';
+  const folder = process.env.CLOUDINARY_FOLDER || 'automation';
 
-    const res = await cloudinary.uploader.upload(url, {
-      folder,
-      public_id: publicId,
-      overwrite: true,
-    });
+  let lastErr: any;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await cloudinary.uploader.upload(url, {
+        folder,
+        public_id: publicId,
+        overwrite: true,
+      });
 
-    if (!res?.secure_url) throw new Error('Cloudinary image upload failed');
-
-    return res.secure_url;
+      if (!res?.secure_url) throw new Error('Cloudinary image upload missing secure_url');
+      return res.secure_url;
+    } catch (e: any) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 600 * attempt));
+    }
   }
+
+  throw lastErr;
+}
 
   async renderVideo(scenes: Scene[]): Promise<string> {
     if (!Array.isArray(scenes) || scenes.length === 0) {
@@ -78,7 +95,8 @@ export class ShotstackService {
       currentTime += length;
 
       // 🔥 Upload image to Cloudinary FIRST
-      const rawImageUrl = this.unsplashUrl(scene.visualPrompt);
+      const rawImageUrl = this.pickBg(i);
+
       const cloudImageUrl = await this.uploadImageToCloudinary(
         rawImageUrl,
         `job-${Date.now()}-scene-${i}`
