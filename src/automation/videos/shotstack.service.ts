@@ -125,12 +125,14 @@ export class ShotstackService {
     });
 
     const res = await axios.post(`${this.baseUrl}/render`, payload, {
-      headers: {
-        'x-api-key': this.apiKey(),
-        'Content-Type': 'application/json',
-      },
-      timeout: 20000,
-    });
+  headers: {
+    'x-api-key': this.apiKey(),
+    'x-shotstack-stage': 'true',   // 🔥 REQUIRED FOR STAGE
+    'Content-Type': 'application/json',
+  },
+  timeout: 20000,
+});
+
 
     const renderId = res.data?.response?.id;
     if (!renderId) throw new Error('Shotstack did not return render id');
