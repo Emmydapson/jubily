@@ -36,10 +36,10 @@ export class ShotstackService {
     if (!fullNarration) throw new Error('renderVideo: narration empty');
 
     // ✅ voiceover URL comes from GoogleTtsService (you can keep mock there)
-    const voiceoverUrl = await this.tts.synthesizeToCloudinaryMp3(
-      fullNarration,
-      `job-${Date.now()}`,
-    );
+    const ttsPublicId = `job-${Date.now()}`;
+const voiceoverUrl = await this.tts.synthesizeToCloudinaryMp3(fullNarration, ttsPublicId);
+
+console.log('[TTS publicId used]', ttsPublicId);
 
     const bgClips: any[] = [];
     const captionClips: any[] = [];
