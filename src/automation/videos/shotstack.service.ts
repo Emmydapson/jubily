@@ -2,7 +2,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import axios from 'axios';
 import { Injectable } from '@nestjs/common';
-import { v2 as cloudinary } from 'cloudinary';
 import { Scene } from './interfaces/scene.interface';
 import { GoogleTtsService } from '../tts/google-tts.service';
 
@@ -10,59 +9,17 @@ import { GoogleTtsService } from '../tts/google-tts.service';
 export class ShotstackService {
   private readonly baseUrl = 'https://api.shotstack.io/stage';
 
-  constructor(private readonly tts: GoogleTtsService) {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-      secure: true,
-    });
-  }
+  // ✅ ONE stable Cloudinary image for all scenes (temporary placeholder / logo bg)
+  private readonly bgImage =
+    'https://res.cloudinary.com/dspv4emds/image/upload/v1771599485/jubily/job-1771599485454-scene-0.jpg';
+
+  constructor(private readonly tts: GoogleTtsService) {}
 
   private apiKey(): string {
     const k = process.env.SHOTSTACK_API_KEY;
     if (!k) throw new Error('Missing SHOTSTACK_API_KEY');
     return k;
   }
-
-  private readonly fallbackImages = [
-  // Direct images.unsplash.com (no redirects)
-  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1080&h=1920&fit=crop&auto=format&q=80',
-  'https://images.unsplash.com/photo-1526401485004-2aa7d1f0f1f5?w=1080&h=1920&fit=crop&auto=format&q=80',
-  'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1080&h=1920&fit=crop&auto=format&q=80',
-  'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1080&h=1920&fit=crop&auto=format&q=80',
-];
-
-private pickBg(i: number) {
-  return this.fallbackImages[i % this.fallbackImages.length];
-}
-
-
-  /**
-   * Upload any external image to Cloudinary first
-   */
-  private async uploadImageToCloudinary(url: string, publicId: string) {
-  const folder = process.env.CLOUDINARY_FOLDER || 'automation';
-
-  let lastErr: any;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const res = await cloudinary.uploader.upload(url, {
-        folder,
-        public_id: publicId,
-        overwrite: true,
-      });
-
-      if (!res?.secure_url) throw new Error('Cloudinary image upload missing secure_url');
-      return res.secure_url;
-    } catch (e: any) {
-      lastErr = e;
-      await new Promise((r) => setTimeout(r, 600 * attempt));
-    }
-  }
-
-  throw lastErr;
-}
 
   async renderVideo(scenes: Scene[]): Promise<string> {
     if (!Array.isArray(scenes) || scenes.length === 0) {
@@ -71,20 +28,24 @@ private pickBg(i: number) {
 
     let currentTime = 0;
 
-    const fullNarration = scenes.map(s => String(s.narration || '')).join(' ').trim();
+    const fullNarration = scenes
+      .map((s) => String((s as any).narration || ''))
+      .join(' ')
+      .trim();
+
     if (!fullNarration) throw new Error('renderVideo: narration empty');
 
-    // ✅ voiceover already uploaded to Cloudinary
+    // ✅ voiceover URL comes from GoogleTtsService (you can keep mock there)
     const voiceoverUrl = await this.tts.synthesizeToCloudinaryMp3(
       fullNarration,
-      `job-${Date.now()}`
+      `job-${Date.now()}`,
     );
 
     const bgClips: any[] = [];
     const captionClips: any[] = [];
 
     for (let i = 0; i < scenes.length; i++) {
-      const scene = scenes[i];
+      const scene: any = scenes[i];
       const start = currentTime;
       const length = Number(scene.duration || 0);
 
@@ -94,16 +55,9 @@ private pickBg(i: number) {
 
       currentTime += length;
 
-      // 🔥 Upload image to Cloudinary FIRST
-      const rawImageUrl = this.pickBg(i);
-
-      const cloudImageUrl = await this.uploadImageToCloudinary(
-        rawImageUrl,
-        `job-${Date.now()}-scene-${i}`
-      );
-
+      // ✅ Same bg image for all scenes (stable)
       bgClips.push({
-        asset: { type: 'image', src: cloudImageUrl },
+        asset: { type: 'image', src: this.bgImage },
         start,
         length,
         effect: 'zoomIn',
@@ -131,7 +85,7 @@ private pickBg(i: number) {
       });
     }
 
-    const payload = {
+    const payload: any = {
       timeline: {
         soundtrack: {
           src: 'https://s3-ap-southeast-2.amazonaws.com/shotstack-assets/music/freepd/drive.mp3',
@@ -160,7 +114,7 @@ private pickBg(i: number) {
 
     console.log('[SHOTSTACK FINAL PAYLOAD]', {
       voiceoverUrl,
-      firstBg: bgClips?.[0]?.asset?.src,
+      bgImage: this.bgImage,
       totalSeconds: Math.ceil(currentTime),
     });
 
