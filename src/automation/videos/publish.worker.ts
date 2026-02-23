@@ -160,13 +160,13 @@ const videoDescription = String(
     : rawContent
 ).slice(0, 4500);
 
-    // ensure stable public url (Cloudinary) - via Serve API
+        // ensure stable public url (Cloudinary) - via Serve API
     const stableUrl = await this.ensureStableUrl(job);
 
-    this.logger.log(`✅ YouTube published job=${job.id} youtubeUrl=${youtubeUrl}`);
+    this.logger.log(`📤 Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
 
     const youtubeId = await this.youtube.upload(videoTitle, videoDescription, stableUrl);
-const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
+    const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
 
     await this.prisma.videoJob.update({
       where: { id: job.id },
@@ -190,7 +190,7 @@ const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
       new Date(),
     ]);
 
-    this.logger.log(`✅ YouTube published job=${job.id} youtubeId=${youtubeUrl}`);
+    this.logger.log(`✅ YouTube published job=${job.id} youtubeUrl=${youtubeUrl}`);
   } catch (e: any) {
     const msg = e?.message || String(e);
 

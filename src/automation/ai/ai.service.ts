@@ -135,4 +135,81 @@ Rules:
       scenes,
     };
   }
+
+    /**
+   * Generate a list of short, punchy health & wellness topics.
+   * Used as a fallback when RSS doesn't provide enough fresh topics.
+   */
+  async generateTopics(count = 25): Promise<string[]> {
+    // Mock mode: cheap deterministic topics
+    if (this.aiMode === 'mock' || !this.client) {
+      const base = [
+        '5 morning habits for better energy',
+        '3 ways to improve sleep tonight',
+        'High-protein breakfast ideas on a budget',
+        'Simple walking routine for beginners',
+        'Hydration tips that actually work',
+        'Foods that support gut health',
+        'How to reduce stress in 60 seconds',
+        'Daily stretching routine for back pain relief',
+        'Easy meal prep for healthy weight goals',
+        'Breathing technique to calm anxiety fast',
+      ];
+
+      // expand to count
+      const out: string[] = [];
+      for (let i = 0; i < count; i++) out.push(base[i % base.length]);
+      return out.slice(0, count);
+    }
+
+    const n = Math.max(5, Math.min(50, Number(count || 25)));
+
+    const completion = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: `
+You generate HEALTH & WELLNESS short-video TOPICS only.
+Allowed: nutrition, fitness, sleep, mental wellness, hydration, healthy habits.
+Not allowed: politics, finance, sex content, hate, violence, non-health niches.
+
+Output MUST be valid JSON ONLY:
+{ "topics": ["topic 1", "topic 2", ...] }
+
+Rules:
+- Topics must be short, catchy, and safe (no diagnosis, no cures).
+- Avoid explicit medical imagery wording (no gore).
+- Prefer "tips", "habits", "daily", "simple", "quick" styles.
+- Produce exactly ${n} topics.
+          `.trim(),
+        },
+        { role: 'user', content: `Generate ${n} health & wellness short-video topics.` },
+      ],
+      temperature: 0.7,
+      max_tokens: 600,
+    });
+
+    const text = completion.choices?.[0]?.message?.content;
+    if (!text) throw new Error('OpenAI returned empty topics');
+
+    const cleaned = text
+      .replace(/^\s*```json\s*/i, '')
+      .replace(/^\s*```\s*/i, '')
+      .replace(/\s*```\s*$/i, '')
+      .trim();
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      throw new Error(`AI returned non-JSON topics. First 200 chars: ${cleaned.slice(0, 200)}`);
+    }
+
+    const topics = Array.isArray(parsed?.topics) ? parsed.topics : [];
+    return topics
+      .map((t: any) => String(t || '').trim())
+      .filter(Boolean)
+      .slice(0, n);
+  }
 }
