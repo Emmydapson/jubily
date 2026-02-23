@@ -139,15 +139,34 @@ export class PublishWorker implements OnModuleInit {
     topicTitle = fullJob.script.topic?.title ?? '';
     offerName = fullJob.offer?.name ?? '';
 
-    const videoTitle = String(fullJob.script.content || 'Untitled').slice(0, 90);
-    const videoDescription = String(fullJob.script.content || '');
+    let contentObj: any = null;
+const rawContent = String(fullJob.script.content || '');
+
+try {
+  contentObj = JSON.parse(rawContent);
+} catch {
+  contentObj = null;
+}
+
+// Prefer generated title/cta if present, otherwise fallback to topic title
+const videoTitle = String(
+  contentObj?.title || topicTitle || 'Untitled'
+).slice(0, 90);
+
+// Build a nicer description
+const videoDescription = String(
+  contentObj?.cta
+    ? `${contentObj.cta}\n\n#shorts`
+    : rawContent
+).slice(0, 4500);
 
     // ensure stable public url (Cloudinary) - via Serve API
     const stableUrl = await this.ensureStableUrl(job);
 
-    this.logger.log(`📤 Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
+    this.logger.log(`✅ YouTube published job=${job.id} youtubeUrl=${youtubeUrl}`);
 
-    const youtubeUrl = await this.youtube.upload(videoTitle, videoDescription, stableUrl);
+    const youtubeId = await this.youtube.upload(videoTitle, videoDescription, stableUrl);
+const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
 
     await this.prisma.videoJob.update({
       where: { id: job.id },

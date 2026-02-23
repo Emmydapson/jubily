@@ -4,17 +4,17 @@ import axios from 'axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { Scene } from './interfaces/scene.interface';
 import { GoogleTtsService } from '../tts/google-tts.service';
+import { AiImageService } from '../ai/ai-image.service'; // ✅ adjust path to where you create it
 
 @Injectable()
 export class ShotstackService {
   private readonly logger = new Logger(ShotstackService.name);
   private readonly baseUrl = 'https://api.shotstack.io/stage';
 
-  // ✅ ONE stable Cloudinary image for all scenes (temporary placeholder / logo bg)
-  private readonly bgImage =
-    'https://res.cloudinary.com/dspv4emds/image/upload/v1771599485/jubily/job-1771599485454-scene-0.jpg';
-
-  constructor(private readonly tts: GoogleTtsService) {}
+  constructor(
+    private readonly tts: GoogleTtsService,
+    private readonly aiImages: AiImageService, // ✅ inject image generator
+  ) {}
 
   private apiKey(): string {
     const k = process.env.SHOTSTACK_API_KEY;
@@ -78,25 +78,25 @@ export class ShotstackService {
 
     if (!fullNarration) throw new Error('renderVideo: narration empty');
 
-    // ✅ Voiceover URL comes from GoogleTtsService
-    const ttsPublicId = `job-${Date.now()}`;
-    const voiceoverUrl = await this.tts.synthesizeToCloudinaryMp3(fullNarration, ttsPublicId);
+    // ✅ One job key per render run (used for voiceover + scene image public ids)
+    const jobKey = `job-${Date.now()}`;
+
+    // ✅ Voiceover URL comes from GoogleTtsService (Cloudinary url)
+    const voiceoverUrl = await this.tts.synthesizeToCloudinaryMp3(fullNarration, jobKey);
 
     this.logger.log(
-      `[TTS] publicId=${ttsPublicId} voiceoverHost=${this.shortHost(
-        voiceoverUrl,
-      )} voiceoverUrl=${voiceoverUrl}`,
+      `[TTS] publicId=${jobKey} voiceHost=${this.shortHost(voiceoverUrl)} voiceoverUrl=${voiceoverUrl}`,
     );
 
-    // ✅ Preflight ONLY the assets Shotstack must fetch now (bg + voiceover)
+    // Shotstack will fetch this
     await this.preflight(voiceoverUrl, 'voiceover');
-    await this.preflight(this.bgImage, 'bgImage');
 
     const bgClips: any[] = [];
     const captionClips: any[] = [];
 
     for (let i = 0; i < scenes.length; i++) {
       const scene: any = scenes[i];
+
       const start = currentTime;
       const length = Number(scene.duration || 0);
 
@@ -106,13 +106,30 @@ export class ShotstackService {
 
       currentTime += length;
 
+      // ✅ AI image per scene using visualPrompt
+      const visualPrompt = String(scene.visualPrompt || '').trim();
+      if (!visualPrompt) {
+        throw new Error(`Missing visualPrompt at scene index=${i}`);
+      }
+
+      const imgPublicId = `${jobKey}-scene-${i}`;
+      const sceneImageUrl = await this.aiImages.generateSceneImageUrl(visualPrompt, imgPublicId);
+
+      this.logger.log(
+        `[SceneImage] i=${i} publicId=${imgPublicId} host=${this.shortHost(sceneImageUrl)} prompt="${visualPrompt.slice(0, 120)}"`,
+      );
+
+      await this.preflight(sceneImageUrl, `sceneImage-${i}`);
+
+      // background
       bgClips.push({
-        asset: { type: 'image', src: this.bgImage },
+        asset: { type: 'image', src: sceneImageUrl },
         start,
         length,
         effect: 'zoomIn',
       });
 
+      // captions
       captionClips.push({
         asset: {
           type: 'html',
@@ -159,9 +176,9 @@ export class ShotstackService {
     };
 
     this.logger.log(
-      `[ShotstackPayload] bgHost=${this.shortHost(this.bgImage)} voiceHost=${this.shortHost(
+      `[ShotstackPayload] scenes=${scenes.length} totalSeconds=${Math.ceil(currentTime)} voiceHost=${this.shortHost(
         voiceoverUrl,
-      )} totalSeconds=${Math.ceil(currentTime)}`,
+      )}`,
     );
 
     try {

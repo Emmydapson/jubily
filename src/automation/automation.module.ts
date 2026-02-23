@@ -18,6 +18,8 @@ import { OrchestratorController } from './orchestrator.controller';
 
 import { JobsController } from './jobs/jobs.controller';
 import { JobsService } from './jobs/jobs.service';
+import { AiImageService } from './ai/ai-image.service';
+import { TopicIngestionService } from './topic-ingest.service';
 
 @Module({
   controllers: [
@@ -38,6 +40,8 @@ import { JobsService } from './jobs/jobs.service';
     AnalyticsService,
     GoogleSheetsService,
     JobsService,
+    AiImageService,
+    TopicIngestionService
   ],
   imports: [VideosModule, SettingsModule],
 })
