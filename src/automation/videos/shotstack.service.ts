@@ -14,10 +14,6 @@ export class ShotstackService {
   private readonly bgImage =
     'https://res.cloudinary.com/dspv4emds/image/upload/v1771599485/jubily/job-1771599485454-scene-0.jpg';
 
-  // music file used by Shotstack to fetch
-  private readonly soundtrackUrl =
-    'https://s3-ap-southeast-2.amazonaws.com/shotstack-assets/music/freepd/drive.mp3';
-
   constructor(private readonly tts: GoogleTtsService) {}
 
   private apiKey(): string {
@@ -44,10 +40,7 @@ export class ShotstackService {
         timeout: 15000,
         maxRedirects: 5,
         validateStatus: () => true,
-        headers: {
-          // some hosts behave differently by UA; keep it simple
-          'User-Agent': 'jubily-preflight/1.0',
-        },
+        headers: { 'User-Agent': 'jubily-preflight/1.0' },
       });
 
       const status = res.status;
@@ -61,15 +54,12 @@ export class ShotstackService {
         } url=${url}`,
       );
 
-      // Warn on anything that isn't OK
       if (status < 200 || status >= 300) {
         this.logger.warn(`[AssetPreflight] ❗ ${label} not-200 status=${status} url=${url}`);
       }
     } catch (e: any) {
       this.logger.error(
-        `[AssetPreflight] ❌ ${label} FAILED host=${this.shortHost(url)} url=${url} msg=${
-          e?.message || e
-        }`,
+        `[AssetPreflight] ❌ ${label} FAILED host=${this.shortHost(url)} url=${url} msg=${e?.message || e}`,
       );
     }
   }
@@ -98,11 +88,9 @@ export class ShotstackService {
       )} voiceoverUrl=${voiceoverUrl}`,
     );
 
-    // ✅ Preflight the assets Shotstack must fetch
-    // (This helps you immediately identify which one is blocked/unreachable.)
+    // ✅ Preflight ONLY the assets Shotstack must fetch now (bg + voiceover)
     await this.preflight(voiceoverUrl, 'voiceover');
     await this.preflight(this.bgImage, 'bgImage');
-    await this.preflight(this.soundtrackUrl, 'soundtrack');
 
     const bgClips: any[] = [];
     const captionClips: any[] = [];
@@ -147,13 +135,9 @@ export class ShotstackService {
       });
     }
 
+    // ✅ NO BACKGROUND MUSIC: only image + captions + voiceover audio track
     const payload: any = {
       timeline: {
-        soundtrack: {
-          src: this.soundtrackUrl,
-          effect: 'fadeInFadeOut',
-          volume: 0.12,
-        },
         tracks: [
           { clips: bgClips },
           { clips: captionClips },
@@ -177,7 +161,7 @@ export class ShotstackService {
     this.logger.log(
       `[ShotstackPayload] bgHost=${this.shortHost(this.bgImage)} voiceHost=${this.shortHost(
         voiceoverUrl,
-      )} musicHost=${this.shortHost(this.soundtrackUrl)} totalSeconds=${Math.ceil(currentTime)}`,
+      )} totalSeconds=${Math.ceil(currentTime)}`,
     );
 
     try {
@@ -196,7 +180,6 @@ export class ShotstackService {
       this.logger.log(`[ShotstackRenderCreated] renderId=${renderId}`);
       return renderId;
     } catch (e: any) {
-      // ✅ This is the most important log: Shotstack often tells which file was denied here.
       const status = e?.response?.status;
       const data = e?.response?.data;
       const msg = e?.message || String(e);
