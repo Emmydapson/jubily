@@ -9,6 +9,7 @@ import { GoogleSheetsService } from '../../common/google-sheets.service';
 import { YoutubeService } from '../../common/youtube.service';
 import { ShotstackServeService } from './shotstack-serve.service';
 import { GoogleTtsService } from '../tts/google-tts.service';
+import { AiImageService } from '../ai/ai-image.service';
 
 @Module({
   providers: [
@@ -19,7 +20,8 @@ import { GoogleTtsService } from '../tts/google-tts.service';
     PublishWorker,     // ✅ add
     GoogleSheetsService,
     YoutubeService,    // ✅ add
-    GoogleTtsService
+    GoogleTtsService,
+     AiImageService,
   ],
   controllers: [VideosController],
   exports: [VideosService],
