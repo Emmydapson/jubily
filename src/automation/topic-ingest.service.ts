@@ -23,15 +23,25 @@ type RssFeed = {
 @Injectable()
 export class TopicIngestionService {
   private readonly logger = new Logger(TopicIngestionService.name);
+
+  // rss-parser supports custom fetch, but default is fine for now
   private readonly parser = new Parser();
 
-  // Tune with env
-  private readonly enabled = (process.env.TOPIC_INGEST_ENABLED || 'true').toLowerCase() === 'true';
-  private readonly tab = 'rss';
+  // Env tuning
+  private readonly enabled =
+    (process.env.TOPIC_INGEST_ENABLED || 'true').toLowerCase() === 'true';
+
+  // store in Topic.source
+  private readonly rssSource = 'rss';
+
   private readonly maxPerRun = Number(process.env.TOPIC_INGEST_MAX_PER_RUN || 30);
-  private readonly minNewPending = Number(process.env.TOPIC_INGEST_MIN_PENDING || 20);
+  private readonly minPending = Number(process.env.TOPIC_INGEST_MIN_PENDING || 20);
   private readonly freshHours = Number(process.env.TOPIC_INGEST_FRESH_HOURS || 72);
   private readonly fallbackAiCount = Number(process.env.TOPIC_INGEST_AI_FALLBACK_COUNT || 25);
+
+  // If true, you’ll see per-item date parsing logs (first 3 items per feed)
+  private readonly debugDates =
+    (process.env.TOPIC_INGEST_DEBUG_DATES || 'false').toLowerCase() === 'true';
 
   // Comma-separated RSS URLs
   private readonly feedUrls: string[] = String(process.env.TOPIC_RSS_URLS || '')
@@ -39,14 +49,11 @@ export class TopicIngestionService {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  constructor(
-    private prisma: PrismaService,
-    private ai: AiService,
-  ) {}
+  constructor(private prisma: PrismaService, private ai: AiService) {}
 
   /**
-   * Runs every 3 hours by default (change as you like).
-   * This only *fills the Topic table*. Your existing orchestrator cron will pick topics.
+   * Runs every 3 hours by default.
+   * This ONLY fills Topic table. Orchestrator cron picks from DB later.
    */
   @Cron(process.env.TOPIC_INGEST_CRON || '0 */3 * * *', {
     timeZone: process.env.TOPIC_INGEST_TZ || 'America/New_York',
@@ -61,42 +68,58 @@ export class TopicIngestionService {
     }
   }
 
-  /**
-   * You can also call this manually from a controller if you want a button later.
-   */
   async ensurePendingPool() {
     if (!this.enabled) {
       this.logger.warn(`[Ingest] disabled via TOPIC_INGEST_ENABLED=false`);
       return { ok: true, skipped: true, reason: 'disabled' };
     }
 
-    // 1) Check how many pending topics we already have
-    const pendingCount = await this.prisma.topic.count({ where: { status: 'PENDING' } });
-    this.logger.log(`[Ingest] pendingCount=${pendingCount} minNewPending=${this.minNewPending}`);
+    const pendingCount = await this.prisma.topic.count({
+      where: { status: 'PENDING' },
+    });
 
-    if (pendingCount >= this.minNewPending) {
+    this.logger.log(`[Ingest] pendingCount=${pendingCount} minPending=${this.minPending}`);
+
+    if (pendingCount >= this.minPending) {
       return { ok: true, skipped: true, reason: 'enough-pending', pendingCount };
     }
 
-    // 2) Ingest from RSS
     const rssCreated = await this.ingestFromRss();
 
-    // 3) Re-check pending pool, then fallback to AI if still low
-    const pendingAfterRss = await this.prisma.topic.count({ where: { status: 'PENDING' } });
-    this.logger.log(`[Ingest] pendingAfterRss=${pendingAfterRss} rssCreated=${rssCreated}`);
+    const pendingAfterRss = await this.prisma.topic.count({
+      where: { status: 'PENDING' },
+    });
+
+    this.logger.log(
+      `[Ingest] pendingAfterRss=${pendingAfterRss} rssCreated=${rssCreated}`,
+    );
 
     let aiCreated = 0;
-    if (pendingAfterRss < this.minNewPending) {
+    if (pendingAfterRss < this.minPending) {
       aiCreated = await this.ingestFromAiFallback();
     }
 
-    const pendingFinal = await this.prisma.topic.count({ where: { status: 'PENDING' } });
+    const pendingFinal = await this.prisma.topic.count({
+      where: { status: 'PENDING' },
+    });
 
     this.logger.log(
       `[Ingest] ✅ done rssCreated=${rssCreated} aiCreated=${aiCreated} pendingFinal=${pendingFinal}`,
     );
 
     return { ok: true, rssCreated, aiCreated, pendingFinal };
+  }
+
+  // -----------------------------
+  // Helpers
+  // -----------------------------
+
+  private safeHost(url: string) {
+    try {
+      return new URL(url).host;
+    } catch {
+      return 'invalid-url';
+    }
   }
 
   private normalizeTitle(s: string) {
@@ -107,16 +130,19 @@ export class TopicIngestionService {
       .trim();
   }
 
-  private isHealthTopic(s: string) {
-    const t = s.toLowerCase();
+  // For in-memory dedupe (avoid duplicates inside same run even before DB)
+  private normalizeKey(s: string) {
+    return this.normalizeTitle(s).toLowerCase();
+  }
 
-    // allowlist-ish (health/wellness only)
+  private isHealthTopic(s: string) {
+    const t = String(s || '').toLowerCase();
+
     const good =
       /health|wellness|sleep|fitness|workout|nutrition|diet|hydration|stress|anxiety|depression|mindfulness|gut|metabolism|protein|fiber|vitamin|hormone|oxytocin|testosterone|blood sugar|cholesterol|heart|liver|kidney|brain|immune|weight|fat loss|walking|steps|meditation|routine/i.test(
         t,
       );
 
-    // blocklist (avoid junk)
     const bad =
       /politic|election|bitcoin|crypto|forex|stock|war|weapon|porn|sex|casino|gambl|celebrity|giveaway|promo code|discount/i.test(
         t,
@@ -125,58 +151,88 @@ export class TopicIngestionService {
     return good && !bad;
   }
 
-  private computeScore(title: string, source = 'rss') {
+  private computeScore(title: string, source: 'rss' | 'ai') {
     let score = 50;
 
-    // punchy / “shorts” style
     const len = title.length;
     if (len <= 60) score += 10;
     else if (len <= 85) score += 5;
 
-    // high-performing words
-    if (/\b(tips?|habits?|daily|simple|quick|easy|science|mistakes?|avoid|boost|improve)\b/i.test(title)) score += 10;
+    if (/\b(tips?|habits?|daily|simple|quick|easy|science|mistakes?|avoid|boost|improve)\b/i.test(title)) {
+      score += 10;
+    }
 
-    // source bias
     if (source === 'rss') score += 5;
-    if (source === 'ai') score += 0;
 
-    // clamp
     if (score > 95) score = 95;
     if (score < 10) score = 10;
     return score;
   }
 
-  private pickFresh(items: FeedItem[]) {
+  private parseItemTime(it: FeedItem): { raw: string; ms: number | null; why?: string } {
+    const raw = String(it.isoDate || it.pubDate || '').trim();
+    if (!raw) return { raw: '', ms: null, why: 'missing-date' };
+
+    const ms = new Date(raw).getTime();
+    if (!Number.isFinite(ms)) return { raw, ms: null, why: 'invalid-date' };
+
+    return { raw, ms };
+  }
+
+  private pickFresh(feedTitle: string, items: FeedItem[]) {
     const now = Date.now();
     const cutoff = now - this.freshHours * 60 * 60 * 1000;
 
-    const toTime = (it: FeedItem) => {
-      const raw = it.isoDate || it.pubDate;
-      const t = raw ? new Date(raw).getTime() : NaN;
-      return Number.isFinite(t) ? t : 0;
-    };
+    // optional debug: log first 3 items with raw+parsed date
+    if (this.debugDates) {
+      const sample = items.slice(0, 3);
+      for (const it of sample) {
+        const dt = this.parseItemTime(it);
+        const parsed = dt.ms ? new Date(dt.ms).toISOString() : 'INVALID';
+        this.logger.log(
+          `[RSS-Date] feed="${feedTitle}" title="${this.normalizeTitle(it.title || '')}" pubRaw="${dt.raw}" parsed="${parsed}" why="${dt.why ?? ''}"`,
+        );
+      }
+    }
 
-    return items
-      .map((it) => ({ it, t: toTime(it) }))
-      .filter((x) => x.t >= cutoff) // fresh window
-      .sort((a, b) => b.t - a.t)
-      .map((x) => x.it);
+    const withTime = items
+      .map((it) => {
+        const dt = this.parseItemTime(it);
+        return { it, ms: dt.ms ?? 0, raw: dt.raw, invalid: dt.ms === null };
+      })
+      .sort((a, b) => b.ms - a.ms);
+
+    const fresh = withTime.filter((x) => x.ms >= cutoff);
+
+    // if a feed returns 0 fresh, it might be date parsing or just old items
+    if (!fresh.length && items.length) {
+      const invalidCount = withTime.filter((x) => x.invalid).length;
+      this.logger.log(
+        `[RSS-Fresh] feed="${feedTitle}" cutoffHours=${this.freshHours} items=${items.length} fresh=0 invalidDates=${invalidCount}`,
+      );
+    }
+
+    return fresh.map((x) => x.it);
   }
 
-  private async topicExists(title: string) {
+  private async topicExistsInsensitive(title: string) {
+    // Postgres supports case-insensitive matching with Prisma "mode: 'insensitive'"
     const found = await this.prisma.topic.findFirst({
-      where: { title },
+      where: { title: { equals: title, mode: 'insensitive' } },
       select: { id: true },
     });
     return !!found;
   }
 
   private async createPendingTopic(title: string, source: string, score: number) {
-    // your schema already defaults status=PENDING
     return this.prisma.topic.create({
       data: { title, source, score },
     });
   }
+
+  // -----------------------------
+  // RSS ingestion
+  // -----------------------------
 
   private async ingestFromRss(): Promise<number> {
     if (!this.feedUrls.length) {
@@ -185,20 +241,21 @@ export class TopicIngestionService {
     }
 
     let created = 0;
+    const seen = new Set<string>(); // in-run dedupe
 
-    // Fetch feeds sequentially for stability (your droplet is small).
     for (const url of this.feedUrls) {
       if (created >= this.maxPerRun) break;
 
+      const host = this.safeHost(url);
       try {
         const feed = (await this.parser.parseURL(url)) as unknown as RssFeed;
 
         const feedTitle = feed?.title || url;
         const items = Array.isArray(feed?.items) ? feed.items : [];
-        const fresh = this.pickFresh(items);
+        const fresh = this.pickFresh(feedTitle, items);
 
         this.logger.log(
-          `[RSS] feed="${feedTitle}" items=${items.length} fresh=${fresh.length} urlHost=${this.safeHost(url)}`,
+          `[RSS] feed="${feedTitle}" items=${items.length} fresh=${fresh.length} urlHost=${host}`,
         );
 
         for (const it of fresh) {
@@ -206,90 +263,87 @@ export class TopicIngestionService {
 
           const rawTitle = this.normalizeTitle(it.title || '');
           if (!rawTitle) continue;
-
-          // Filter to health/wellness only
           if (!this.isHealthTopic(rawTitle)) continue;
 
-          // Convert RSS headline into a good “Shorts topic”
-          // (Optional but recommended: makes topics punchy + consistent)
+          // Convert RSS headline into a topic title
           const topicTitle = await this.rewriteRssTitleToTopic(rawTitle);
+          const cleaned = this.normalizeTitle(topicTitle);
 
-          if (!topicTitle || topicTitle.length < 8) continue;
-          if (!this.isHealthTopic(topicTitle)) continue;
+          if (!cleaned || cleaned.length < 8) continue;
+          if (!this.isHealthTopic(cleaned)) continue;
 
-          const exists = await this.topicExists(topicTitle);
+          const key = this.normalizeKey(cleaned);
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          const exists = await this.topicExistsInsensitive(cleaned);
           if (exists) continue;
 
-          const score = this.computeScore(topicTitle, 'rss');
-          await this.createPendingTopic(topicTitle, this.tab, score);
+          const score = this.computeScore(cleaned, 'rss');
+          await this.createPendingTopic(cleaned, this.rssSource, score);
           created++;
 
-          this.logger.log(`[RSS] ✅ created score=${score} title="${topicTitle}"`);
+          this.logger.log(`[RSS] ✅ created score=${score} title="${cleaned}"`);
         }
       } catch (e: any) {
-        this.logger.warn(`[RSS] ❌ feed failed host=${this.safeHost(url)} msg=${e?.message || e}`);
+        const msg = e?.message || String(e);
+
+        // CDC links often 404; make it obvious
+        if (/status code 404/i.test(msg)) {
+          this.logger.warn(`[RSS] ❌ feed 404 host=${host} url=${url}`);
+        } else {
+          this.logger.warn(`[RSS] ❌ feed failed host=${host} msg=${msg}`);
+        }
       }
     }
 
     return created;
   }
 
-  private safeHost(url: string) {
-    try {
-      return new URL(url).host;
-    } catch {
-      return 'invalid-url';
-    }
-  }
-
   /**
-   * Uses AI to rewrite a generic RSS headline into a “shorts-ready” topic.
-   * If AI is mock/unavailable, we just return the RSS title as-is.
+   * Cheap/zero-token rewrite (keeps you moving).
+   * If later you want AI rewrite, you can add a small method to AiService and swap it in here.
    */
   private async rewriteRssTitleToTopic(rssTitle: string): Promise<string> {
-    // If you want “no extra cost”, set TOPIC_RSS_REWRITE=false
     const rewriteEnabled = (process.env.TOPIC_RSS_REWRITE || 'true').toLowerCase() === 'true';
     if (!rewriteEnabled) return rssTitle;
 
-    // If AI is in mock mode, AiService will return mock scripts;
-    // so here we just do a basic transformation to avoid weirdness.
-    const aiMode = (process.env.AI_MODE || 'live').toLowerCase();
-    if (aiMode === 'mock') return rssTitle;
-
-    try {
-      // Reuse your AiService client; lightweight prompt to rewrite headline into topic
-      // We use chat.completions indirectly by calling a tiny helper method:
-      // simplest approach: just call generateScript and extract title? Too expensive.
-      // So we do a small, cheap completion here by adding a method on AiService later.
-      // For now: simple heuristic rewrite (safe + cheap).
-      return this.heuristicRewrite(rssTitle);
-    } catch {
-      return this.heuristicRewrite(rssTitle);
-    }
+    return this.heuristicRewrite(rssTitle);
   }
 
-  // Cheap heuristic rewrite (no tokens) — keeps you moving.
   private heuristicRewrite(title: string) {
     const t = this.normalizeTitle(title);
 
-    // Make it sound like a short topic if it’s a newsy headline
     if (/report|study|research|guideline|experts|finds|according to/i.test(t)) {
-      return `What this means for your health: ${t}`.slice(0, 120);
+      // keep it short-ish
+      const out = `What this means for your health: ${t}`;
+      return out.slice(0, 120);
     }
 
-    // If it already looks like a topic, keep it
     return t.slice(0, 120);
   }
 
-  /**
-   * AI fallback: if RSS didn’t provide enough, generate N health topics and store them.
-   * Requires you to add AiService.generateTopics() (I shared earlier).
-   */
+  // -----------------------------
+  // AI fallback (safe compile even if generateTopics isn't implemented)
+  // -----------------------------
+
   private async ingestFromAiFallback(): Promise<number> {
     try {
-      const topics = await this.ai.generateTopics(this.fallbackAiCount);
+      // ✅ Avoid TS error if AiService doesn't have generateTopics yet
+      const gen = (this.ai as any)?.generateTopics as undefined | ((n: number) => Promise<string[]>);
+
+      if (!gen) {
+        this.logger.warn(
+          `[AI-Fallback] skipped because AiService.generateTopics() is missing. Add it or set TOPIC_INGEST_AI_FALLBACK_COUNT=0`,
+        );
+        return 0;
+      }
+
+      const topics = await gen(this.fallbackAiCount);
 
       let created = 0;
+      const seen = new Set<string>(); // in-run dedupe
+
       for (const raw of topics) {
         if (created >= this.maxPerRun) break;
 
@@ -297,7 +351,11 @@ export class TopicIngestionService {
         if (!title) continue;
         if (!this.isHealthTopic(title)) continue;
 
-        const exists = await this.topicExists(title);
+        const key = this.normalizeKey(title);
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const exists = await this.topicExistsInsensitive(title);
         if (exists) continue;
 
         const score = this.computeScore(title, 'ai');
