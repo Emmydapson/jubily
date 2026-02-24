@@ -27,10 +27,12 @@ export class JobsController {
   }
 
   // optional: manual run slot
-  @Post('run-slot')
-  runSlot(@Body() body: { slot: 'MORNING' | 'AFTERNOON' | 'EVENING' }) {
-    return this.jobs.runSlot(body.slot);
-  }
+  // jobs.controller.ts
+@Post('run-slot')
+runSlot(@Body() body: { slot: 'MORNING' | 'AFTERNOON' | 'EVENING' }) {
+  // should return fast (under 1s)
+  return this.jobs.runSlot(body.slot);
+}
 
   // optional: retry
   @Post(':id/retry')
