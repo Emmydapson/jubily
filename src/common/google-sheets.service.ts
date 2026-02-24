@@ -103,12 +103,12 @@ export class GoogleSheetsService {
       await this.trimIfNeeded();
 
       await this.sheets.spreadsheets.values.append({
-        spreadsheetId: this.spreadsheetId,
-        range: `'${this.TAB_NAME}'`, // tab name only is fine for append
-        valueInputOption: 'RAW',
-        insertDataOption: 'INSERT_ROWS',
-        requestBody: { values: [row] },
-      });
+  spreadsheetId: this.spreadsheetId,
+  range: this.tabRange('A:Z'),
+  valueInputOption: 'RAW',
+  insertDataOption: 'INSERT_ROWS',
+  requestBody: { values: [row] },
+});
     } catch (err: any) {
       const message = err?.message || '';
 
@@ -137,14 +137,15 @@ export class GoogleSheetsService {
   }
 
   async getAutomationLogs(limit = 20) {
-    const rows = await this.read(`'${this.TAB_NAME}'`);
-    if (!rows.length) return [];
+  // ✅ Always use a valid A1 range
+  const rows = await this.read(this.tabRange('A:Z'));
+  if (!rows.length) return [];
 
-    const hasHeader =
-      String(rows[0]?.[0] ?? '').toLowerCase() === 'jobid' ||
-      String(rows[0]?.[0] ?? '').toLowerCase() === 'id';
+  const hasHeader =
+    String(rows[0]?.[0] ?? '').toLowerCase() === 'jobid' ||
+    String(rows[0]?.[0] ?? '').toLowerCase() === 'id';
 
-    const dataRows = hasHeader ? rows.slice(1) : rows;
-    return dataRows.slice(-limit).reverse();
-  }
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  return dataRows.slice(-limit).reverse();
+}
 }
