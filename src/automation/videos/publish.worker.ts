@@ -52,6 +52,26 @@ export class PublishWorker implements OnModuleInit {
     }
   }
 
+  private isQuotaExceeded(err: any): boolean {
+  const reason =
+    err?.response?.data?.error?.errors?.[0]?.reason ||
+    err?.errors?.[0]?.reason ||
+    '';
+  const msg = String(err?.message || '');
+  return reason === 'quotaExceeded' || msg.includes('quota');
+}
+
+private async markQuotaExceeded(jobId: string, msg: string) {
+  await this.prisma.videoJob.update({
+    where: { id: jobId },
+    data: {
+      status: 'FAILED_QUOTA', // ✅ stops the worker from picking it again
+      attempts: { increment: 1 },
+      error: `YouTube quotaExceeded: ${msg}`,
+    },
+  });
+}
+
   private cleanWords(s: string) {
     return String(s || '')
       .toLowerCase()
@@ -317,7 +337,16 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       let youtubeUrl = fullJob.youtubeUrl || null;
 
       if (!youtubeId) {
-        youtubeId = await this.youtube.upload(videoTitle, baseDesc, stableUrl, tags);
+        try {
+  youtubeId = await this.youtube.upload(videoTitle, baseDesc, stableUrl, tags);
+} catch (e: any) {
+  if (this.isQuotaExceeded(e)) {
+    await this.markQuotaExceeded(job.id, e?.message || String(e));
+    this.logger.warn(`⏸️ YouTube quota exceeded. Pausing job=${job.id}`);
+    return; // ✅ stop here, no sheets FAILED spam
+  }
+  throw e;
+}
         youtubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
 
         // ✅ Mark published immediately after upload so retries never re-upload
