@@ -22,6 +22,12 @@ export class ShotstackService {
     return k;
   }
 
+  private estimateSeconds(narration: string) {
+  const words = narration.trim().split(/\s+/).filter(Boolean).length;
+  const sec = words / 2.2; // ~132 wpm
+  return Math.max(3, Math.min(9, sec));
+}
+
   private shortHost(url: string) {
     try {
       return new URL(url).host;
@@ -98,7 +104,7 @@ export class ShotstackService {
       const scene: any = scenes[i];
 
       const start = currentTime;
-      const length = Number(scene.duration || 0);
+      const length = this.estimateSeconds(String(scene.narration || ''));
 
       if (!Number.isFinite(length) || length <= 0) {
         throw new Error(`Invalid scene.duration at index=${i}`);

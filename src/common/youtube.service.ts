@@ -170,13 +170,30 @@ async uploadCaptions(videoId: string, srtText: string) {
       },
     },
     media: {
-      mimeType: 'application/octet-stream',
-      body: fs.createReadStream(tmpPath),
-    },
+  mimeType: 'application/x-subrip',
+  body: fs.createReadStream(tmpPath),
+},
   });
 
   // cleanup
   try { fs.unlinkSync(tmpPath); } catch { /* empty */ }
+}
+
+async updateMetadata(videoId: string, title: string, description: string, tags: string[] = []) {
+  const youtube = google.youtube({ version: 'v3', auth: this.oauth });
+
+  await youtube.videos.update({
+    part: ['snippet'],
+    requestBody: {
+      id: videoId,
+      snippet: {
+        title: title.slice(0, 95),
+        description: description.slice(0, 4500),
+        tags: tags.slice(0, 25),
+        categoryId: '22',
+      },
+    },
+  });
 }
   
 }

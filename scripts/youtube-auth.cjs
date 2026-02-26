@@ -22,7 +22,9 @@ async function main() {
   const oauth2 = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 
   // ✅ The permission we need for uploads
-  const scopes = ["https://www.googleapis.com/auth/youtube.upload"];
+  const scopes = ["https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.force-ssl"
+  ];
 
   const authUrl = oauth2.generateAuthUrl({
     access_type: "offline",

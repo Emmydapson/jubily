@@ -90,6 +90,8 @@ model VideoJob {
   status       String   @default("PENDING")
   provider     String   @default("shotstack")
   videoUrl     String?
+  youtubeVideoId String? 
+  publishStage String?   // optional: UPLOADED | METADATA_DONE | CAPTIONS_DONE
   renderId     String?
   error        String?
   youtubeUrl   String?
@@ -112,6 +114,7 @@ model VideoJob {
   @@index([renderId])
   @@index([scriptId])
   @@index([offerId])
+  @@index([youtubeVideoId])
 }
 
 model Offer {
