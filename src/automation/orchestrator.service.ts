@@ -69,14 +69,34 @@ export class OrchestratorService {
     }
 
     // 2) Pick an active offer (optional but recommended)
-    const offer = await this.prisma.offer.findFirst({
-      where: { active: true },
-      orderBy: { createdAt: 'desc' },
-    });
+   const offer = await this.prisma.offer.findFirst({
+  where: { active: true },
+  orderBy: { createdAt: 'desc' },
+  select: {
+    id: true,
+    name: true,
+    hoplink: true,
+    nicheTag: true,
+    network: true,
+  },
+});
 
-    // 3) Generate script (AI) and mark topic used
-    const script = await this.automation.generateScriptWithAi(topic.id, topic.title);
-    await this.automation.markTopicUsed(topic.id);
+if (!offer) {
+  this.logger.warn(`No active offer (slot=${slot})`);
+  return { ok: true, skipped: true, reason: 'no-offer' };
+}
+
+// ✅ generate script WITH offer
+const script = await this.automation.generateScriptWithAiOffer(
+  topic.id,
+  topic.title,
+  offer,
+);
+
+await this.automation.markTopicUsed(topic.id);
+
+// ✅ create job already stores offerId (you already have offerId in VideoJob)
+const job = await this.videos.createVideoJob(script.id, offer.id, slot, normalized);
 
     // 4) Create render job with offer + slot metadata
      const job = await this.videos.createVideoJob(script.id, offer?.id, slot, normalized);

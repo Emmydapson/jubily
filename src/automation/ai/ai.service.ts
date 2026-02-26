@@ -12,9 +12,9 @@ type Scene = {
 type ScriptJson = {
   title: string;
   cta: string;
+  hashtags?: string[];
   scenes: Scene[];
 };
-
 @Injectable()
 export class AiService {
   private client?: OpenAI;
@@ -212,4 +212,71 @@ Rules:
       .filter(Boolean)
       .slice(0, n);
   }
+
+  async generateScriptWithOffer(topic: string, offer: {
+  name: string;
+  url: string;
+  bullets?: string[];
+}): Promise<string> {
+  // mock mode
+  if (this.aiMode === 'mock' || !this.client) {
+    const mock = this.buildMockScript(topic);
+    mock.cta = `If you want help with this, check out ${offer.name}. Link: ${offer.url}`;
+    return JSON.stringify(mock);
+  }
+
+  const completion = await this.client.chat.completions.create({
+    model: this.model,
+    messages: [
+      {
+        role: 'system',
+        content: `
+You create 60-second vertical HEALTH & WELLNESS short video scripts.
+You MUST naturally recommend the provided product offer.
+No medical diagnosis, no cure claims.
+
+Output MUST be valid JSON ONLY with this shape:
+{
+  "title": "string",
+  "cta": "string (must include offer name + soft CTA)",
+  "hashtags": ["shorts", "..."], 
+  "scenes": [
+    {"narration":"", "caption":"", "visualPrompt":"", "seconds": number}
+  ]
+}
+
+Rules:
+- Hook in first 3 seconds.
+- Include product recommendation in last 10-15 seconds.
+- Total seconds sum should be about 55-65 (roughly; we will auto-sync durations later).
+- Captions are 3-8 words, NOT full narration.
+- Use cautious language ("may help", "often", "generally").
+        `.trim(),
+      },
+      {
+        role: 'user',
+        content: `
+Topic: ${topic}
+
+Offer to recommend:
+- Name: ${offer.name}
+- Link: ${offer.url}
+- Benefits (optional): ${(offer.bullets || []).join('; ')}
+
+Write the script and make the recommendation feel natural (not spammy).
+        `.trim(),
+      },
+    ],
+    temperature: 0.6,
+    max_tokens: 900,
+  });
+
+  const text = completion.choices?.[0]?.message?.content;
+  if (!text) throw new Error('OpenAI returned empty content');
+
+  const json = this.safeParseJson(text);
+  if (!json) throw new Error(`AI returned non-JSON. First 200 chars: ${text.slice(0, 200)}`);
+
+  return JSON.stringify(json);
+}
 }

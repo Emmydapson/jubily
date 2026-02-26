@@ -5,6 +5,14 @@ import { CreateTopicDto } from './dto/create-topic.dto';
 import { ScriptService } from './script.service';
 import { AiService } from './ai/ai.service';
 
+type OfferInput = {
+  id: string;
+  name: string;
+  hoplink: string;
+  nicheTag?: string | null;
+  network?: string | null;
+};
+
 @Injectable()
 export class AutomationService {
   constructor(private prisma: PrismaService,
@@ -90,4 +98,20 @@ async getScriptById(id: string) {
     return script;
   }
 
+  async generateScriptWithAiOffer(topicId: string, topicTitle: string, offer: OfferInput) {
+  const content = await this.aiService.generateScriptWithOffer(topicTitle, {
+    name: offer.name,
+    url: offer.hoplink, // ✅ map hoplink -> url for your AiService method
+    bullets: offer.nicheTag ? [`Best for: ${offer.nicheTag}`] : [],
+  });
+
+  return this.prisma.script.create({
+    data: {
+      content,
+      promptVer: `v2-ai-offer-${offer.network ?? 'offer'}`,
+      outputHash: `hash_${Date.now()}`,
+      topic: { connect: { id: topicId } },
+    },
+  });
+}
 }
