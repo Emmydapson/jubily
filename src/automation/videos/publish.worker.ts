@@ -6,6 +6,7 @@ import { GoogleSheetsService } from '../../common/google-sheets.service';
 import { YoutubeService } from '../../common/youtube.service';
 import { ShotstackServeService } from './shotstack-serve.service'; // adjust path
 import { v2 as cloudinary } from 'cloudinary';
+import { extractScenes } from '../scene.parser';
 
 @Injectable()
 export class PublishWorker implements OnModuleInit {
@@ -39,6 +40,57 @@ export class PublishWorker implements OnModuleInit {
     if (!str) return '';
     return str.length > max ? str.slice(0, max) + '...' : str;
   }
+
+  private cleanWords(s: string) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+private buildHashtags(topicTitle: string, rawScript: string) {
+  const base = [
+    'shorts', 'health', 'wellness', 'fitness', 'nutrition',
+    'healthytips', 'selfcare', 'workout', 'mindset'
+  ];
+
+  const words = [...this.cleanWords(topicTitle), ...this.cleanWords(rawScript)];
+  const stop = new Set(['the','and','for','with','your','you','how','to','a','an','of','in','on','is','are']);
+
+  const picked: string[] = [];
+  for (const w of words) {
+    if (w.length < 4) continue;
+    if (stop.has(w)) continue;
+    if (!picked.includes(w)) picked.push(w);
+    if (picked.length >= 10) break;
+  }
+
+  const tags = [...base, ...picked].slice(0, 18);
+  // return both hashtag format + tag list format
+  return {
+    hashtags: tags.map(t => `#${t}`),
+    tags: tags.filter(t => t !== 'shorts'), // YouTube tags (no #)
+  };
+}
+
+private buildDescription(topicTitle: string, contentObj: any, rawScript: string) {
+  const hook = String(contentObj?.hook || '').trim();
+  const cta = String(contentObj?.cta || '').trim();
+
+  const captionLine1 = hook || topicTitle || 'Quick health tip';
+  const captionLine2 = cta || 'Save this and try it today ✅';
+
+  const { hashtags, tags } = this.buildHashtags(topicTitle, rawScript);
+
+  const desc =
+`${captionLine1}
+${captionLine2}
+
+${hashtags.join(' ')}`.slice(0, 4500);
+
+  return { desc, tags };
+}
 
   private shortHost(url: string) {
     try { return new URL(url).host; } catch { return 'invalid-url'; }
@@ -154,18 +206,58 @@ const videoTitle = String(
 ).slice(0, 90);
 
 // Build a nicer description
-const videoDescription = String(
-  contentObj?.cta
-    ? `${contentObj.cta}\n\n#shorts`
-    : rawContent
-).slice(0, 4500);
+const { desc: videoDescription, tags } = this.buildDescription(topicTitle, contentObj, rawContent);
 
         // ensure stable public url (Cloudinary) - via Serve API
     const stableUrl = await this.ensureStableUrl(job);
 
     this.logger.log(`📤 Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
 
-    const youtubeId = await this.youtube.upload(videoTitle, videoDescription, stableUrl);
+    function toSrtTime(seconds: number) {
+  const ms = Math.max(0, Math.floor(seconds * 1000));
+  const h = String(Math.floor(ms / 3600000)).padStart(2, '0');
+  const m = String(Math.floor((ms % 3600000) / 60000)).padStart(2, '0');
+  const s = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+  const milli = String(ms % 1000).padStart(3, '0');
+  return `${h}:${m}:${s},${milli}`;
+}
+
+function buildSrtFromScenes(scenes: any[]) {
+  let t = 0;
+  const lines: string[] = [];
+  let idx = 1;
+
+  for (const sc of scenes) {
+    const len = Number(sc.duration || 0);
+    const cap = String(sc.caption || sc.narration || '').trim();
+    if (!len || !cap) { t += len || 0; continue; }
+
+    const start = t;
+    const end = t + len;
+    t = end;
+
+    lines.push(
+      String(idx++),
+      `${toSrtTime(start)} --> ${toSrtTime(end)}`,
+      cap.replace(/\n+/g, ' '),
+      '',
+    );
+  }
+
+  return lines.join('\n').trim();
+}
+
+const scenes = extractScenes(fullJob.script.content);
+const srt = buildSrtFromScenes(scenes);
+
+// store it so frontend can show "videoSrt: true"
+await this.prisma.videoJob.update({
+  where: { id: job.id },
+  data: { videoSrt: srt },
+});
+
+    const youtubeId = await this.youtube.upload(videoTitle, videoDescription, stableUrl, tags);
+    await this.youtube.uploadCaptions(youtubeId, srt);
     const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
 
     await this.prisma.videoJob.update({

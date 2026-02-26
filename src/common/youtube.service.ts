@@ -71,7 +71,12 @@ export class YoutubeService {
     });
   }
 
-  async upload(title: string, description: string, videoUrl: string) {
+  async upload(
+  title: string,
+  description: string,
+  videoUrl: string,
+  tags: string[] = [],
+): Promise<string>  {
     if (!videoUrl) throw new Error('Missing videoUrl for upload');
 
     const youtube = google.youtube({ version: 'v3', auth: this.oauth });
@@ -116,6 +121,7 @@ try {
         snippet: {
           title: safeTitle,
           description: safeDesc,
+           tags: tags.slice(0, 25),
           // optional
           categoryId: '22', // People & Blogs
         },
@@ -140,4 +146,34 @@ try {
 }
 
   }
+async uploadCaptions(videoId: string, srtText: string) {
+  if (!videoId) throw new Error('Missing videoId for captions');
+  if (!srtText?.trim()) return;
+
+  const youtube = google.youtube({ version: 'v3', auth: this.oauth });
+
+  const tmpPath = path.resolve(process.cwd(), 'tmp', `${videoId}.srt`);
+  fs.mkdirSync(path.dirname(tmpPath), { recursive: true });
+  fs.writeFileSync(tmpPath, srtText, 'utf8');
+
+  await youtube.captions.insert({
+    part: ['snippet'],
+    requestBody: {
+      snippet: {
+        videoId,
+        language: process.env.YOUTUBE_CAPTION_LANG || 'en',
+        name: 'English',
+        isDraft: false,
+      },
+    },
+    media: {
+      mimeType: 'application/octet-stream',
+      body: fs.createReadStream(tmpPath),
+    },
+  });
+
+  // cleanup
+  try { fs.unlinkSync(tmpPath); } catch { /* empty */ }
+}
+  
 }
