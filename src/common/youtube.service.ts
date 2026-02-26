@@ -136,7 +136,10 @@ try {
     });
     console.log(">>> UPLOAD OK", res.data.id);
 
-    return res.data.id;
+const videoId = res.data?.id;
+if (!videoId) throw new Error('YouTube insert succeeded but returned empty video id');
+
+return videoId;
 } catch (e: any) {
   console.log(">>> UPLOAD FAILED (CATCH HIT)");
   console.log("YOUTUBE ERROR STATUS:", e?.code);

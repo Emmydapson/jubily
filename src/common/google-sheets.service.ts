@@ -28,6 +28,26 @@ export class GoogleSheetsService {
     return id;
   }
 
+  private normalizeRow(row: any[]) {
+  const safe = Array.isArray(row) ? row : [];
+
+  // pad to expected length so indexes always exist
+  while (safe.length < 10) safe.push('');
+
+  return {
+    jobId: String(safe[0] ?? ''),
+    scriptId: String(safe[1] ?? ''),
+    topicTitle: String(safe[2] ?? ''),
+    product: String(safe[3] ?? ''),      // offerName
+    platform: String(safe[4] ?? ''),
+    status: String(safe[5] ?? ''),
+    url: String(safe[6] ?? ''),
+    note: String(safe[7] ?? ''),
+    createdAt: String(safe[8] ?? ''),
+    updatedAt: String(safe[9] ?? ''),
+  };
+}
+
   private tabRange(a1: string) {
     // e.g. "'Automation Log'!A1:A1"
     return `'${this.TAB_NAME}'!${a1}`;
@@ -99,34 +119,31 @@ export class GoogleSheetsService {
    * Appends a row to the 'Automation Log' sheet (bounded size)
    */
   async append(row: any[]) {
-    try {
-      await this.trimIfNeeded();
+  try {
+    await this.trimIfNeeded();
 
-      await this.sheets.spreadsheets.values.append({
-  spreadsheetId: this.spreadsheetId,
-  range: this.tabRange('A:Z'),
-  valueInputOption: 'RAW',
-  insertDataOption: 'INSERT_ROWS',
-  requestBody: { values: [row] },
-});
-    } catch (err: any) {
-      const message = err?.message || '';
+    const r = Array.isArray(row) ? [...row] : [];
+    while (r.length < 10) r.push('');
 
-      // ✅ if sheet is already huge, don't spam logs / crash workers
-      if (message.includes('above the limit of 10000000 cells')) {
-        console.warn('⚠️ Google Sheet cell limit reached. Skipping append.');
-        return;
-      }
+    // stringify dates (Sheets RAW + Date objects can behave weird)
+    r[8] = r[8] instanceof Date ? r[8].toISOString() : String(r[8] ?? '');
+    r[9] = r[9] instanceof Date ? r[9].toISOString() : String(r[9] ?? '');
 
-      if (message.includes('Quota exceeded')) {
-        console.warn('⚠️ Google Sheets quota exceeded. Skipping append.');
-        return;
-      }
-
-      console.error('Failed to append to Google Sheet:', message);
-    }
+    await this.sheets.spreadsheets.values.append({
+      spreadsheetId: this.spreadsheetId,
+      range: this.tabRange('A:Z'),
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [r] },
+    });
+  } catch (err: any) {
+    // keep your existing error handling
+    const message = err?.message || '';
+    if (message.includes('above the limit of 10000000 cells')) return;
+    if (message.includes('Quota exceeded')) return;
+    console.error('Failed to append to Google Sheet:', message);
   }
-
+}
   async read(range: string) {
     const res = await this.sheets.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
@@ -137,7 +154,6 @@ export class GoogleSheetsService {
   }
 
   async getAutomationLogs(limit = 20) {
-  // ✅ Always use a valid A1 range
   const rows = await this.read(this.tabRange('A:Z'));
   if (!rows.length) return [];
 
@@ -146,6 +162,8 @@ export class GoogleSheetsService {
     String(rows[0]?.[0] ?? '').toLowerCase() === 'id';
 
   const dataRows = hasHeader ? rows.slice(1) : rows;
-  return dataRows.slice(-limit).reverse();
+  const last = dataRows.slice(-limit).reverse();
+
+  return last.map((r: any[]) => this.normalizeRow(r));
 }
 }

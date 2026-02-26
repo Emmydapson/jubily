@@ -98,8 +98,7 @@ await this.automation.markTopicUsed(topic.id);
 // ✅ create job already stores offerId (you already have offerId in VideoJob)
 const job = await this.videos.createVideoJob(script.id, offer.id, slot, normalized);
 
-    // 4) Create render job with offer + slot metadata
-     const job = await this.videos.createVideoJob(script.id, offer?.id, slot, normalized);
+    
     this.logger.log(
   `✅ slot=${slot} job=${job.jobId} topic="${topic.title}" offer="${offer?.name ?? 'n/a'}" scheduledFor=${normalized.toISOString()}`,
 );
