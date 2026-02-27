@@ -52,22 +52,31 @@ export class PublishWorker implements OnModuleInit {
     }
   }
 
-  private isQuotaExceeded(err: any): boolean {
+  private isPublishRateLimited(err: any): { hit: boolean; reason: string } {
   const reason =
     err?.response?.data?.error?.errors?.[0]?.reason ||
     err?.errors?.[0]?.reason ||
     '';
+
+  // sometimes message contains it too
   const msg = String(err?.message || '');
-  return reason === 'quotaExceeded' || msg.includes('quota');
+
+  const hit =
+    reason === 'quotaExceeded' ||
+    reason === 'uploadLimitExceeded' ||
+    msg.includes('quota') ||
+    msg.includes('exceeded the number of videos');
+
+  return { hit, reason: reason || 'unknown' };
 }
 
-private async markQuotaExceeded(jobId: string, msg: string) {
+private async markPublishPaused(jobId: string, reason: string, msg: string) {
   await this.prisma.videoJob.update({
     where: { id: jobId },
     data: {
-      status: 'FAILED_QUOTA', // ✅ stops the worker from picking it again
+      status: 'FAILED_QUOTA', // or rename to 'PUBLISH_PAUSED' if you want
       attempts: { increment: 1 },
-      error: `YouTube quotaExceeded: ${msg}`,
+      error: `YouTube publish blocked (${reason}): ${msg}`,
     },
   });
 }
@@ -340,10 +349,11 @@ ${hashtags.join(' ')}`.slice(0, 4500);
         try {
   youtubeId = await this.youtube.upload(videoTitle, baseDesc, stableUrl, tags);
 } catch (e: any) {
-  if (this.isQuotaExceeded(e)) {
-    await this.markQuotaExceeded(job.id, e?.message || String(e));
-    this.logger.warn(`⏸️ YouTube quota exceeded. Pausing job=${job.id}`);
-    return; // ✅ stop here, no sheets FAILED spam
+  const gate = this.isPublishRateLimited(e);
+  if (gate.hit) {
+    await this.markPublishPaused(job.id, gate.reason, e?.message || String(e));
+    this.logger.warn(`⏸️ YouTube publish blocked (${gate.reason}). Pausing job=${job.id}`);
+    return; // ✅ stop retry loop
   }
   throw e;
 }
