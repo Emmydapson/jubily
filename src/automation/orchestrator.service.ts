@@ -18,6 +18,94 @@ export class OrchestratorService {
     private settingsService: SettingsService,
   ) {}
 
+  private topicToNicheCandidates(topicTitle: string): string[] {
+  const t = String(topicTitle || '').toLowerCase();
+
+  // super simple mapping you can expand
+  const map: Array<[string, string[]]> = [
+    ['sleep', ['sleep', 'insomnia', 'dream']],
+    ['weight-loss', ['weight', 'fat', 'burn', 'diet', 'slim']],
+    ['fitness', ['fitness', 'workout', 'exercise', 'gym']],
+    ['dental', ['dental', 'teeth', 'gum', 'tooth']],
+    ['mens-health', ['prostate', 'testosterone', 'men']],
+    ['memory', ['brain', 'memory', 'focus']],
+    ['gut', ['gut', 'digestion', 'bloat']],
+    ['stress', ['stress', 'anxiety', 'calm']],
+  ];
+
+  const hits: string[] = [];
+  for (const [niche, keywords] of map) {
+    if (keywords.some((k) => t.includes(k))) hits.push(niche);
+  }
+
+  // always return at least empty list
+  return [...new Set(hits)];
+}
+
+private async pickOfferForTopic(topicTitle: string) {
+  const nicheCandidates = this.topicToNicheCandidates(topicTitle);
+
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  // Offers used in last 24h
+  const recentOfferIds = await this.prisma.videoJob.findMany({
+    where: {
+      createdAt: { gte: since },
+      offerId: { not: null },
+    },
+    select: { offerId: true },
+  });
+
+  const usedIds = Array.from(
+    new Set(recentOfferIds.map((x) => x.offerId).filter(Boolean) as string[]),
+  );
+
+  // helper: find offer with optional niche filter, excluding usedIds
+  const findOffer = async (useNiche: boolean) => {
+    return this.prisma.offer.findFirst({
+      where: {
+        active: true,
+        ...(useNiche && nicheCandidates.length
+          ? { nicheTag: { in: nicheCandidates } }
+          : {}),
+        ...(usedIds.length ? { id: { notIn: usedIds } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        hoplink: true,
+        nicheTag: true,
+        network: true,
+      },
+    });
+  };
+
+  // 1) Niche match + not used in last 24h
+  let offer = await findOffer(true);
+  if (offer) return offer;
+
+  // 2) Any offer + not used in last 24h
+  offer = await findOffer(false);
+  if (offer) return offer;
+
+  // 3) If everything was used, fallback to niche match even if used
+  if (nicheCandidates.length) {
+    offer = await this.prisma.offer.findFirst({
+      where: { active: true, nicheTag: { in: nicheCandidates } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, hoplink: true, nicheTag: true, network: true },
+    });
+    if (offer) return offer;
+  }
+
+  // 4) Final fallback: any active offer
+  return this.prisma.offer.findFirst({
+    where: { active: true },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, name: true, hoplink: true, nicheTag: true, network: true },
+  });
+}
   private normalizeScheduledFor(d: Date) {
   const x = new Date(d);
   if (Number.isNaN(x.getTime())) return this.normalizeScheduledFor(new Date());
@@ -69,23 +157,12 @@ export class OrchestratorService {
     }
 
     // 2) Pick an active offer (optional but recommended)
-   const offer = await this.prisma.offer.findFirst({
-  where: { active: true },
-  orderBy: { createdAt: 'desc' },
-  select: {
-    id: true,
-    name: true,
-    hoplink: true,
-    nicheTag: true,
-    network: true,
-  },
-});
+   const offer = await this.pickOfferForTopic(topic.title);
 
 if (!offer) {
   this.logger.warn(`No active offer (slot=${slot})`);
   return { ok: true, skipped: true, reason: 'no-offer' };
 }
-
 // ✅ generate script WITH offer
 const script = await this.automation.generateScriptWithAiOffer(
   topic.id,

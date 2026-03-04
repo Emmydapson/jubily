@@ -75,7 +75,7 @@ export class ShotstackService {
       throw new Error('renderVideo: scenes empty');
     }
 
-    let currentTime = 0;
+    
 
     const fullNarration = scenes
       .map((s) => String((s as any).narration || ''))
@@ -87,8 +87,22 @@ export class ShotstackService {
     // ✅ One job key per render run (used for voiceover + scene image public ids)
     const jobKey = `job-${Date.now()}`;
 
-    // ✅ Voiceover URL comes from GoogleTtsService (Cloudinary url)
-    const voiceoverUrl = await this.tts.synthesizeToCloudinaryMp3(fullNarration, jobKey);
+    // ✅ Get voice URL + timepoints
+const narrations = scenes.map((s: any) => String(s.narration || '').trim());
+const { url: voiceoverUrl, timepoints } =
+  await this.tts.synthesizeWithMarksToCloudinaryMp3(narrations, jobKey);
+
+  const byName = new Map<string, number>();
+for (const tp of timepoints || []) {
+  if (tp?.markName && typeof tp.timeSeconds === 'number') {
+    byName.set(tp.markName, tp.timeSeconds);
+  }
+}
+
+const end = byName.get('end');
+if (typeof end !== 'number' || !Number.isFinite(end) || end <= 0) {
+  throw new Error(`Missing/invalid TTS timepoint "end". Got: ${JSON.stringify(timepoints?.slice?.(0, 5))}`);
+}
 
     this.logger.log(
       `[TTS] publicId=${jobKey} voiceHost=${this.shortHost(voiceoverUrl)} voiceoverUrl=${voiceoverUrl}`,
@@ -98,65 +112,66 @@ export class ShotstackService {
     await this.preflight(voiceoverUrl, 'voiceover');
 
     const bgClips: any[] = [];
-    const captionClips: any[] = [];
+const captionClips: any[] = [];
 
-    for (let i = 0; i < scenes.length; i++) {
-      const scene: any = scenes[i];
+for (let i = 0; i < scenes.length; i++) {
+  const scene: any = scenes[i];
 
-      const start = currentTime;
-      const length = this.estimateSeconds(String(scene.narration || ''));
+  const start = byName.get(`s${i + 1}`);
+  const nextStart = byName.get(`s${i + 2}`);
 
-      if (!Number.isFinite(length) || length <= 0) {
-        throw new Error(`Invalid scene.duration at index=${i}`);
-      }
+  if (typeof start !== 'number') {
+    throw new Error(`Missing TTS mark s${i + 1}. timepointsCount=${timepoints?.length || 0}`);
+  }
 
-      currentTime += length;
+  const sceneEnd = typeof nextStart === 'number' ? nextStart : end;
 
-      // ✅ AI image per scene using visualPrompt
-      const visualPrompt = String(scene.visualPrompt || '').trim();
-      if (!visualPrompt) {
-        throw new Error(`Missing visualPrompt at scene index=${i}`);
-      }
+  // ✅ real duration based on audio marks
+ const length = Math.max(1.2, Number((sceneEnd - start).toFixed(2)));
 
-      const imgPublicId = `${jobKey}-scene-${i}`;
-      const sceneImageUrl = await this.aiImages.generateSceneImageUrl(visualPrompt, imgPublicId);
+  // ✅ AI image per scene using visualPrompt
+  const visualPrompt = String(scene.visualPrompt || '').trim();
+  if (!visualPrompt) throw new Error(`Missing visualPrompt at scene index=${i}`);
 
-      this.logger.log(
-        `[SceneImage] i=${i} publicId=${imgPublicId} host=${this.shortHost(sceneImageUrl)} prompt="${visualPrompt.slice(0, 120)}"`,
-      );
+  const imgPublicId = `${jobKey}-scene-${i}`;
+  const sceneImageUrl = await this.aiImages.generateSceneImageUrl(visualPrompt, imgPublicId);
 
-      await this.preflight(sceneImageUrl, `sceneImage-${i}`);
+  await this.preflight(sceneImageUrl, `sceneImage-${i}`);
 
-      // background
-      bgClips.push({
-        asset: { type: 'image', src: sceneImageUrl },
-        start,
-        length,
-        effect: 'zoomIn',
-      });
 
-      // captions
-      captionClips.push({
-        asset: {
-          type: 'html',
-          html: `
-            <div style="
-              width:100%; height:100%;
-              display:flex; align-items:flex-end; justify-content:center;
-              padding:90px;
-              font-family:Arial; font-size:56px; font-weight:800;
-              color:white; text-shadow: 0 2px 14px rgba(0,0,0,.9);
-              text-align:center;">
-              <div style="background: rgba(0,0,0,.45); padding:24px 30px; border-radius:18px;">
-                ${String(scene.caption || '')}
-              </div>
-            </div>
-          `,
-        },
-        start,
-        length,
-      });
-    }
+  bgClips.push({
+    asset: { type: 'image', src: sceneImageUrl },
+    start,
+    length,
+    effect: 'zoomIn',
+  });
+
+  
+
+  captionClips.push({
+    asset: {
+      type: 'html',
+      html: `
+        <div style="
+          width:100%; height:100%;
+          display:flex; align-items:flex-end; justify-content:center;
+          padding:90px;
+          font-family:Arial; font-size:56px; font-weight:800;
+          color:white; text-shadow: 0 2px 14px rgba(0,0,0,.9);
+          text-align:center;">
+          <div style="background: rgba(0,0,0,.45); padding:24px 30px; border-radius:18px;">
+            ${String(scene.caption || '')}
+          </div>
+        </div>
+      `,
+    },
+    start,
+    length,
+  });
+}
+
+bgClips.sort((a, b) => a.start - b.start);
+captionClips.sort((a, b) => a.start - b.start);
 
     // ✅ NO BACKGROUND MUSIC: only image + captions + voiceover audio track
     const payload: any = {
@@ -169,7 +184,7 @@ export class ShotstackService {
               {
                 asset: { type: 'audio', src: voiceoverUrl },
                 start: 0,
-                length: Math.max(1, Math.ceil(currentTime)),
+                length: Math.max(1, Math.ceil(end)),
               },
             ],
           },
@@ -181,11 +196,7 @@ export class ShotstackService {
       },
     };
 
-    this.logger.log(
-      `[ShotstackPayload] scenes=${scenes.length} totalSeconds=${Math.ceil(currentTime)} voiceHost=${this.shortHost(
-        voiceoverUrl,
-      )}`,
-    );
+    this.logger.log(`[ShotstackPayload] scenes=${scenes.length} totalSeconds=${Math.ceil(end)} voiceHost=${this.shortHost(voiceoverUrl)}`);
 
     try {
       const res = await axios.post(`${this.baseUrl}/render`, payload, {

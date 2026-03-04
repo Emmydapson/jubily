@@ -3,10 +3,12 @@ import { Injectable } from '@nestjs/common';
 import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import { v2 as cloudinary } from 'cloudinary';
 
+type Timepoint = { markName?: string; timeSeconds?: number };
+
 @Injectable()
 export class GoogleTtsService {
   private client?: TextToSpeechClient;
-  private readonly ttsMode = (process.env.TTS_MODE || 'live').toLowerCase(); // live | mock
+  private readonly ttsMode = (process.env.TTS_MODE || 'live').toLowerCase();
 
   constructor() {
     cloudinary.config({
@@ -23,17 +25,34 @@ export class GoogleTtsService {
     }
   }
 
-  async synthesizeToCloudinaryMp3(text: string, publicId: string): Promise<string> {
-    if (!text?.trim()) throw new Error('TTS text is empty');
+  private toSsmlWithMarks(lines: string[]) {
+    const body = lines
+      .map((t, i) => {
+        const safe = String(t || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        return `<mark name="s${i + 1}"/>${safe}<break time="250ms"/>`;
+      })
+      .join('\n');
+
+    return `<speak>${body}<mark name="end"/></speak>`;
+  }
+
+  async synthesizeWithMarksToCloudinaryMp3(narrations: string[], publicId: string) {
+    if (!narrations?.length) throw new Error('No narrations provided');
 
     if (this.ttsMode === 'mock' || !this.client) {
       const fallback = process.env.MOCK_VOICEOVER_URL;
       if (!fallback) throw new Error('TTS_MODE=mock but MOCK_VOICEOVER_URL is missing.');
-      return fallback;
+      return { url: fallback, timepoints: [] as Timepoint[] };
     }
 
-    const [response] = await this.client.synthesizeSpeech({
-      input: { text },
+    const ssml = this.toSsmlWithMarks(narrations);
+
+    // ✅ IMPORTANT: no tuple destructuring
+    const response: any = await this.client.synthesizeSpeech({
+      input: { ssml },
       voice: {
         languageCode: process.env.GOOGLE_TTS_LANG || 'en-US',
         name: process.env.GOOGLE_TTS_VOICE || 'en-US-Studio-O',
@@ -43,9 +62,10 @@ export class GoogleTtsService {
         speakingRate: Number(process.env.GOOGLE_TTS_RATE || 1.0),
         pitch: Number(process.env.GOOGLE_TTS_PITCH || 0),
       },
+      enableTimePointing: ['SSML_MARK'],
     });
 
-    const audioContent = response.audioContent as Buffer | string | undefined;
+    const audioContent = response?.audioContent as Buffer | string | undefined;
     if (!audioContent) throw new Error('Google TTS returned empty audio');
 
     const base64 =
@@ -63,6 +83,12 @@ export class GoogleTtsService {
     });
 
     if (!upload?.secure_url) throw new Error('Cloudinary upload missing secure_url');
-    return upload.secure_url as string;
+
+    const timepoints: Timepoint[] = (response?.timepoints || []).map((tp: any) => ({
+      markName: tp?.markName,
+      timeSeconds: Number(tp?.timeSeconds || 0),
+    }));
+
+    return { url: upload.secure_url as string, timepoints };
   }
 }

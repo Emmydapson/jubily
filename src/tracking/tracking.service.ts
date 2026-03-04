@@ -35,19 +35,34 @@ export class TrackingService {
   }
 
   async buildOfferUrl(offerId: string, clickId: string) {
-  const offer = await this.prisma.offer.findUnique({ where: { id: offerId } });
+  const offer = await this.prisma.offer.findUnique({
+    where: { id: offerId },
+    select: { id: true, hoplink: true, network: true },
+  });
   if (!offer) throw new Error('Offer not found');
 
   const url = new URL(offer.hoplink);
 
-  // ✅ Digistore24: pass our click id in "custom"
-  url.searchParams.set('custom', clickId);
+  const net = String(offer.network || '').toLowerCase();
 
-  // Optional: if you want to also keep a generic param for other networks later
-  const extraParam = process.env.DIGISTORE_CLICK_PARAM; // e.g. "click_id"
+  // ✅ ClickBank uses "tid"
+  if (net === 'clickbank') {
+    url.searchParams.set('tid', clickId);
+  }
+  // ✅ Digistore24 uses "custom"
+  else if (net === 'digistore24' || net === 'digistore') {
+    url.searchParams.set('custom', clickId);
+  }
+  // ✅ default fallback
+  else {
+    url.searchParams.set('tid', clickId);
+  }
+
+  // Optional override: allow forcing an extra param via env
+  // Example: "click_id" or "subid"
+  const extraParam = process.env.AFFILIATE_CLICK_PARAM;
   if (extraParam) url.searchParams.set(extraParam, clickId);
 
   return url.toString();
 }
-
 }
