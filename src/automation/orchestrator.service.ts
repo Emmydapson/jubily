@@ -49,12 +49,12 @@ private async pickOfferForTopic(topicTitle: string) {
 
   // Offers used in last 24h
   const recentOfferIds = await this.prisma.videoJob.findMany({
-    where: {
-      createdAt: { gte: since },
-      offerId: { not: null },
-    },
-    select: { offerId: true },
-  });
+  where: {
+    scheduledFor: { gte: since },
+    offerId: { not: null },
+  },
+  select: { offerId: true },
+});
 
   const usedIds = Array.from(
     new Set(recentOfferIds.map((x) => x.offerId).filter(Boolean) as string[]),
@@ -62,25 +62,26 @@ private async pickOfferForTopic(topicTitle: string) {
 
   // helper: find offer with optional niche filter, excluding usedIds
   const findOffer = async (useNiche: boolean) => {
-    return this.prisma.offer.findFirst({
-      where: {
-        active: true,
-        ...(useNiche && nicheCandidates.length
-          ? { nicheTag: { in: nicheCandidates } }
-          : {}),
-        ...(usedIds.length ? { id: { notIn: usedIds } } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        hoplink: true,
-        nicheTag: true,
-        network: true,
-      },
-    });
-  };
+  const offers = await this.prisma.offer.findMany({
+    where: {
+      active: true,
+      ...(useNiche && nicheCandidates.length
+        ? { nicheTag: { in: nicheCandidates } }
+        : {}),
+      ...(usedIds.length ? { id: { notIn: usedIds } } : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      hoplink: true,
+      nicheTag: true,
+      network: true,
+    },
+  });
 
+  if (!offers.length) return null;
+  return offers[Math.floor(Math.random() * offers.length)];
+};
   // 1) Niche match + not used in last 24h
   let offer = await findOffer(true);
   if (offer) return offer;
@@ -91,20 +92,19 @@ private async pickOfferForTopic(topicTitle: string) {
 
   // 3) If everything was used, fallback to niche match even if used
   if (nicheCandidates.length) {
-    offer = await this.prisma.offer.findFirst({
-      where: { active: true, nicheTag: { in: nicheCandidates } },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, hoplink: true, nicheTag: true, network: true },
-    });
-    if (offer) return offer;
-  }
-
-  // 4) Final fallback: any active offer
-  return this.prisma.offer.findFirst({
-    where: { active: true },
-    orderBy: { createdAt: 'desc' },
+  const offers = await this.prisma.offer.findMany({
+    where: { active: true, nicheTag: { in: nicheCandidates } },
     select: { id: true, name: true, hoplink: true, nicheTag: true, network: true },
   });
+  if (offers.length) return offers[Math.floor(Math.random() * offers.length)];
+}
+  // 4) Final fallback: any active offer
+  const offers = await this.prisma.offer.findMany({
+  where: { active: true },
+  select: { id: true, name: true, hoplink: true, nicheTag: true, network: true },
+});
+if (!offers.length) return null;
+return offers[Math.floor(Math.random() * offers.length)];
 }
   private normalizeScheduledFor(d: Date) {
   const x = new Date(d);
