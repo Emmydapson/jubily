@@ -166,4 +166,70 @@ export class GoogleSheetsService {
 
   return last.map((r: any[]) => this.normalizeRow(r));
 }
+
+async getWeeklyAnalytics(days = 7) {
+  const rows = await this.read(this.tabRange('A:Z'));
+  if (!rows.length) {
+    return {
+      points: [],
+      totals: { clicks: 0, conversions: 0, revenue: 0 },
+    };
+  }
+
+  const hasHeader =
+    String(rows[0]?.[0] ?? '').toLowerCase() === 'jobid' ||
+    String(rows[0]?.[0] ?? '').toLowerCase() === 'id';
+
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+
+  const since = new Date();
+  since.setDate(since.getDate() - (days - 1));
+  since.setHours(0, 0, 0, 0);
+
+  const map = new Map<string, { day: string; clicks: number; conversions: number; revenue: number }>();
+
+  for (let i = 0; i < days; i++) {
+    const d = new Date(since);
+    d.setDate(since.getDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    map.set(key, { day: key, clicks: 0, conversions: 0, revenue: 0 });
+  }
+
+  for (const raw of dataRows) {
+    const row = this.normalizeRow(raw);
+    const dt = new Date(row.updatedAt || row.createdAt);
+    if (Number.isNaN(dt.getTime())) continue;
+    if (dt < since) continue;
+
+    const key = dt.toISOString().slice(0, 10);
+    const bucket = map.get(key);
+    if (!bucket) continue;
+
+    const status = String(row.status || '').toUpperCase();
+
+    // temporary sheet-based engagement proxy:
+    // PUBLISHED/SUCCESS => count as click activity
+    // no real conversions/revenue from sheet yet
+    if (status === 'PUBLISHED' || status === 'SUCCESS') {
+      bucket.clicks += 1;
+    } else if (status.includes('FAILED') || status === 'ERROR') {
+      // keep bucket, no increment
+    } else {
+      bucket.clicks += 0;
+    }
+  }
+
+  const points = Array.from(map.values());
+  const totals = points.reduce(
+    (acc, x) => {
+      acc.clicks += x.clicks;
+      acc.conversions += x.conversions;
+      acc.revenue += x.revenue;
+      return acc;
+    },
+    { clicks: 0, conversions: 0, revenue: 0 },
+  );
+
+  return { points, totals };
+}
 }

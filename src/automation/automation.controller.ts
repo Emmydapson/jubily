@@ -53,25 +53,30 @@ getAllScripts() {
   }
 
   @Get('logs')
-  async getLogs(@Query('limit') limit?: string) {
-    const take = Math.min(Math.max(Number(limit ?? 20), 1), 200);
+async getLogs(@Query('limit') limit?: string) {
+  const take = Math.min(Math.max(Number(limit ?? 20), 1), 200);
 
-    const rows = await this.sheets.getAutomationLogs(take);
+  const rows = await this.sheets.getAutomationLogs(take);
 
-    const items = rows.map((r) => ({
-      jobId: String(r[0] ?? ''),
-      scriptId: String(r[1] ?? ''),
-      topicTitle: String(r[2] ?? ''),
-      offerName: String(r[3] ?? ''),
-      platform: String(r[4] ?? ''),
-      status: String(r[5] ?? ''),
-      url: String(r[6] ?? ''),
-      error: String(r[7] ?? ''),
-      createdAt: String(r[8] ?? ''),
-      loggedAt: String(r[9] ?? ''),
-    }));
+  const items = rows.map((r) => ({
+    jobId: r.jobId,
+    scriptId: r.scriptId,
+    topicTitle: r.topicTitle,
+    offerName: r.product,
+    platform: r.platform,
+    status: r.status,
+    url: r.url,
+    error: r.note,
+    createdAt: r.createdAt,
+    loggedAt: r.updatedAt,
+  }));
 
-    return { items };
-  }
+  return { items };
+}
 
+@Get('analytics/weekly')
+async getWeeklyAnalytics(@Query('days') days?: string) {
+  const take = Math.min(Math.max(Number(days ?? 7), 1), 30);
+  return this.sheets.getWeeklyAnalytics(take);
+}
 }
