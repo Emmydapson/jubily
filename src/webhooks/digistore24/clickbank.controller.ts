@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Body, Controller, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { Public } from 'src/auth/public.decorator';
 
 @Controller('/webhooks/clickbank')

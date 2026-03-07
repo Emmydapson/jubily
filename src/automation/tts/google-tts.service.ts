@@ -51,19 +51,22 @@ export class GoogleTtsService {
     const ssml = this.toSsmlWithMarks(narrations);
 
     // ✅ IMPORTANT: no tuple destructuring
-    const response: any = await this.client.synthesizeSpeech({
-      input: { ssml },
-      voice: {
-        languageCode: process.env.GOOGLE_TTS_LANG || 'en-US',
-        name: process.env.GOOGLE_TTS_VOICE || 'en-US-Studio-O',
-      },
-      audioConfig: {
-        audioEncoding: 'MP3',
-        speakingRate: Number(process.env.GOOGLE_TTS_RATE || 1.0),
-        pitch: Number(process.env.GOOGLE_TTS_PITCH || 0),
-      },
-      enableTimePointing: ['SSML_MARK'],
-    });
+    const request: any = {
+  input: { ssml },
+  voice: {
+    languageCode: process.env.GOOGLE_TTS_LANG || 'en-US',
+    name: process.env.GOOGLE_TTS_VOICE || 'en-US-Studio-O',
+  },
+  audioConfig: {
+    audioEncoding: 'MP3',
+    speakingRate: Number(process.env.GOOGLE_TTS_RATE || 1.0),
+    pitch: Number(process.env.GOOGLE_TTS_PITCH || 0),
+  },
+  enableTimePointing: ['SSML_MARK'],
+};
+
+const resp: any = await this.client.synthesizeSpeech(request);
+const response = Array.isArray(resp) ? resp[0] : resp;
 
     const audioContent = response?.audioContent as Buffer | string | undefined;
     if (!audioContent) throw new Error('Google TTS returned empty audio');
