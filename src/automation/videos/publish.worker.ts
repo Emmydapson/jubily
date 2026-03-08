@@ -398,14 +398,12 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       let finalDesc = baseDesc;
 
       if (fullJob.offerId && youtubeId) {
-        const trackUrl = `https://api.joinjubily.com/r/${fullJob.offerId}?jobId=${job.id}&yt=${youtubeId}`;
-        finalDesc = `${baseDesc}
+  const trackUrl = `https://api.joinjubily.com/r/${fullJob.offerId}?jobId=${job.id}&yt=${youtubeId}`;
+  finalDesc = `${baseDesc}
 
-✅ Recommended product link:
-${trackUrl}
-
-(affiliate link)`.slice(0, 4500);
-      }
+Recommended product:
+${trackUrl}`.slice(0, 4500);
+}
 
       // Update metadata (safe retry; never causes re-upload)
       try {
@@ -451,6 +449,7 @@ ${trackUrl}
           topicTitle,
           offerName,
           'youtube',
+          
           'FAILED',
           '',
           msg,

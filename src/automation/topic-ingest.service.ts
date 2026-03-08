@@ -328,47 +328,37 @@ export class TopicIngestionService {
   // -----------------------------
 
   private async ingestFromAiFallback(): Promise<number> {
-    try {
-      // ✅ Avoid TS error if AiService doesn't have generateTopics yet
-      const gen = (this.ai as any)?.generateTopics as undefined | ((n: number) => Promise<string[]>);
+  try {
+    const topics = await this.ai.generateTopics(this.fallbackAiCount);
 
-      if (!gen) {
-        this.logger.warn(
-          `[AI-Fallback] skipped because AiService.generateTopics() is missing. Add it or set TOPIC_INGEST_AI_FALLBACK_COUNT=0`,
-        );
-        return 0;
-      }
+    let created = 0;
+    const seen = new Set<string>();
 
-      const topics = await gen(this.fallbackAiCount);
+    for (const raw of topics) {
+      if (created >= this.maxPerRun) break;
 
-      let created = 0;
-      const seen = new Set<string>(); // in-run dedupe
+      const title = this.normalizeTitle(raw);
+      if (!title) continue;
+      if (!this.isHealthTopic(title)) continue;
 
-      for (const raw of topics) {
-        if (created >= this.maxPerRun) break;
+      const key = this.normalizeKey(title);
+      if (seen.has(key)) continue;
+      seen.add(key);
 
-        const title = this.normalizeTitle(raw);
-        if (!title) continue;
-        if (!this.isHealthTopic(title)) continue;
+      const exists = await this.topicExistsInsensitive(title);
+      if (exists) continue;
 
-        const key = this.normalizeKey(title);
-        if (seen.has(key)) continue;
-        seen.add(key);
+      const score = this.computeScore(title, 'ai');
+      await this.createPendingTopic(title, 'ai', score);
+      created++;
 
-        const exists = await this.topicExistsInsensitive(title);
-        if (exists) continue;
-
-        const score = this.computeScore(title, 'ai');
-        await this.createPendingTopic(title, 'ai', score);
-        created++;
-
-        this.logger.log(`[AI-Fallback] ✅ created score=${score} title="${title}"`);
-      }
-
-      return created;
-    } catch (e: any) {
-      this.logger.warn(`[AI-Fallback] ❌ failed msg=${e?.message || e}`);
-      return 0;
+      this.logger.log(`[AI-Fallback] ✅ created score=${score} title="${title}"`);
     }
+
+    return created;
+  } catch (e: any) {
+    this.logger.warn(`[AI-Fallback] ❌ failed msg=${e?.message || e}`);
+    return 0;
   }
+}
 }

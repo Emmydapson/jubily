@@ -278,5 +278,6 @@ Write the script and make the recommendation feel natural (not spammy).
   if (!json) throw new Error(`AI returned non-JSON. First 200 chars: ${text.slice(0, 200)}`);
 
   return JSON.stringify(json);
+
 }
 }
