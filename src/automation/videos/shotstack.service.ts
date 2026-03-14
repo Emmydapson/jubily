@@ -99,11 +99,17 @@ for (const tp of timepoints || []) {
   }
 }
 
-const end = byName.get('end');
-if (typeof end !== 'number' || !Number.isFinite(end) || end <= 0) {
-  throw new Error(`Missing/invalid TTS timepoint "end". Got: ${JSON.stringify(timepoints?.slice?.(0, 5))}`);
-}
+let end = byName.get('end');
 
+if (typeof end !== 'number' || !Number.isFinite(end) || end <= 0) {
+  this.logger.warn(
+    `[TTS] No valid "end" mark. Falling back to estimated narration duration`,
+  );
+
+  end = narrations.reduce((total, line) => {
+    return total + this.estimateSeconds(line);
+  }, 0);
+}
     this.logger.log(
       `[TTS] publicId=${jobKey} voiceHost=${this.shortHost(voiceoverUrl)} voiceoverUrl=${voiceoverUrl}`,
     );
@@ -120,14 +126,20 @@ for (let i = 0; i < scenes.length; i++) {
   const start = byName.get(`s${i + 1}`);
   const nextStart = byName.get(`s${i + 2}`);
 
-  if (typeof start !== 'number') {
-    throw new Error(`Missing TTS mark s${i + 1}. timepointsCount=${timepoints?.length || 0}`);
-  }
+  let sceneStart = start;
+
+if (typeof sceneStart !== 'number') {
+  this.logger.warn(`[TTS] Missing mark s${i + 1}, estimating start time`);
+
+  sceneStart = scenes
+    .slice(0, i)
+    .reduce((t, s) => t + this.estimateSeconds(s.narration), 0);
+}
 
   const sceneEnd = typeof nextStart === 'number' ? nextStart : end;
 
   // ✅ real duration based on audio marks
- const length = Math.max(1.2, Number((sceneEnd - start).toFixed(2)));
+ const length = Math.max(1.2, Number((sceneEnd - sceneStart).toFixed(2)));
 
   // ✅ AI image per scene using visualPrompt
   const visualPrompt = String(scene.visualPrompt || '').trim();
@@ -140,12 +152,11 @@ for (let i = 0; i < scenes.length; i++) {
 
 
   bgClips.push({
-    asset: { type: 'image', src: sceneImageUrl },
-    start,
-    length,
-    effect: 'zoomIn',
-  });
-
+  asset: { type: 'image', src: sceneImageUrl },
+  start: sceneStart,
+  length,
+  effect: 'zoomIn',
+});
   
 
   captionClips.push({
@@ -165,7 +176,7 @@ for (let i = 0; i < scenes.length; i++) {
         </div>
       `,
     },
-    start,
+    start: sceneStart,
     length,
   });
 }
