@@ -65,9 +65,7 @@ export class GoogleTtsService {
   enableTimePointing: ['SSML_MARK'],
 };
 
-const resp: any = await this.client.synthesizeSpeech(request);
-const response = Array.isArray(resp) ? resp[0] : resp;
-
+const [response]: any = await this.client.synthesizeSpeech(request);
     const audioContent = response?.audioContent as Buffer | string | undefined;
     if (!audioContent) throw new Error('Google TTS returned empty audio');
 
