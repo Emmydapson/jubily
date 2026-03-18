@@ -52,11 +52,8 @@ export class YoutubeService {
         }
       });
 
-      throw new Error(
-        `Missing YouTube token file. Tried:\n${candidates.join("\n")}\n\nCredentials dir listings:\n${listings.join(
-          "\n"
-        )}`
-      );
+      console.warn("[YouTube] ⚠️ No token found. Please authenticate via /youtube-auth");
+  return;
     }
 
     console.log("[YouTube] ✅ Using token file:", tokenPath);
@@ -66,10 +63,53 @@ export class YoutubeService {
 
     // auto-save refreshed tokens
     this.oauth.on("tokens", (newTokens) => {
-      const merged = { ...tokens, ...newTokens };
-      fs.writeFileSync(tokenPath, JSON.stringify(merged, null, 2));
-    });
+  if (newTokens.refresh_token) {
+    tokens.refresh_token = newTokens.refresh_token;
   }
+
+  if (newTokens.access_token) {
+    tokens.access_token = newTokens.access_token;
+  }
+
+  if (newTokens.expiry_date) {
+    tokens.expiry_date = newTokens.expiry_date;
+  }
+
+  fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2));
+});
+  }
+
+  getAuthUrl() {
+  return this.oauth.generateAuthUrl({
+    access_type: 'offline', // ✅ REQUIRED
+    prompt: 'consent',      // ✅ VERY IMPORTANT (forces refresh token)
+    scope: ['https://www.googleapis.com/auth/youtube.upload'],
+    include_granted_scopes: true,
+  });
+}
+
+async handleAuthCallback(code: string) {
+  const { tokens } = await this.oauth.getToken(code);
+
+  if (!tokens.refresh_token) {
+    throw new Error('❌ No refresh token received. Try again.');
+  }
+
+  const tokenPath = path.resolve(process.cwd(), "credentials", "youtube-token.json");
+
+  const merged = {
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    scope: tokens.scope,
+    expiry_date: tokens.expiry_date,
+  };
+
+  fs.writeFileSync(tokenPath, JSON.stringify(merged, null, 2));
+
+  console.log("✅ NEW TOKEN SAVED:", tokenPath);
+
+  return tokens;
+}
 
   async upload(
   title: string,
