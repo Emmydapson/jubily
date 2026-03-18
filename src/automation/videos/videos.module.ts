@@ -24,6 +24,6 @@ import { AiImageService } from '../ai/ai-image.service';
      AiImageService,
   ],
   controllers: [VideosController],
-  exports: [VideosService],
+  exports: [VideosService, YoutubeService,],
 })
 export class VideosModule {}
