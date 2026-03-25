@@ -10,11 +10,17 @@ async function bootstrap() {
 
   // ✅ CORS (dev-friendly)
   app.enableCors({
-    origin: true,        // reflect request origin (allows localhost + any)
-    credentials: true,   // needed because you use withCredentials: true in axios
-    methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  });
+  origin: (origin, callback) => {
+    if (!origin || ['https://joinjubily.com', 'https://www.joinjubily.com'].includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+});
 
   const reflector = app.get(Reflector);
   app.useGlobalGuards(new JwtAuthGuard(reflector));
