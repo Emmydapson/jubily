@@ -194,7 +194,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
   // Cloudinary stability
   // -----------------------------
   private async uploadToCloudinaryFromRemoteUrl(remoteUrl: string, publicId: string) {
-    const folder = process.env.CLOUDINARY_FOLDER || 'automation';
+    const folder = process.env.CLOUDINARY_FOLDER || 'jubily/videos';
 
     const res = await cloudinary.uploader.upload(remoteUrl, {
       resource_type: 'video',
