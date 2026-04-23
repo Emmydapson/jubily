@@ -220,5 +220,12 @@ model AdminUser {
   updatedAt    DateTime @updatedAt
 }
  
+ model GeneratedImage {
+  id          String   @id @default(cuid())
+  promptHash  String   @unique
+  imageUrl    String
+  createdAt   DateTime @default(now())
+   promptText  String
+}
  
 
