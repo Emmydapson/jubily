@@ -104,9 +104,9 @@ Rules:
   }
 
   async generateScriptWithOffer(
-    topic: string,
-    offer: { name: string; url: string },
-  ): Promise<string> {
+  topic: string,
+  offer: { name: string; url: string; bullets?: string[] },
+): Promise<string> {
     if (this.aiMode === 'mock' || !this.apiKey) {
       const mock = this.buildMockScript(topic);
       mock.cta = `Check ${offer.name}: ${offer.url}`;
@@ -120,7 +120,16 @@ Rules:
       },
       {
         role: 'user',
-        content: `Topic: ${topic}, Offer: ${offer.name} ${offer.url}`,
+        content: `
+Topic: ${topic}
+
+Offer:
+- Name: ${offer.name}
+- Link: ${offer.url}
+- Benefits: ${(offer.bullets || []).join(', ')}
+
+Make the recommendation feel natural, not salesy.
+`,
       },
     ]);
 

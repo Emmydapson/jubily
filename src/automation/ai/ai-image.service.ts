@@ -87,7 +87,7 @@ export class AiImageService {
     });
 
     for (const c of candidates) {
-      const storedNorm = this.normalizePrompt(c.promptHash);
+      const storedNorm = this.normalizePrompt(c.promptText);
 
       // simple similarity check
       if (normalized.includes(storedNorm) || storedNorm.includes(normalized)) {
@@ -157,16 +157,18 @@ export class AiImageService {
     // ✅ 5. SAFE SAVE (race-proof)
     try {
       await this.prisma.generatedImage.create({
-        data: {
-          promptText: prompt,
-          imageUrl: cloudUrl,
-        },
+  data: {
+    promptHash: hash,
+    promptText: prompt,
+    imageUrl: cloudUrl,
+  },
+
       });
     } catch (e: any) {
       this.logger.warn(`[CACHE RACE] ${publicId}`);
 
       const existing = await this.prisma.generatedImage.findUnique({
-        where: { promptText: prompt },
+        where: { promptHash: hash },
       });
 
       if (existing) return existing.imageUrl;
