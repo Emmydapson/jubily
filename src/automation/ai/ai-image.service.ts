@@ -2,7 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Replicate from 'replicate';
 import { v2 as cloudinary } from 'cloudinary';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -158,7 +158,7 @@ export class AiImageService {
     try {
       await this.prisma.generatedImage.create({
         data: {
-          promptText: prompt
+          promptText: prompt,
           imageUrl: cloudUrl,
         },
       });

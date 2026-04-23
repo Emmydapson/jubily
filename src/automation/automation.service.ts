@@ -11,6 +11,7 @@ type OfferInput = {
   hoplink: string;
   nicheTag?: string | null;
   network?: string | null;
+  bullets?: string[];
 };
 
 @Injectable()
