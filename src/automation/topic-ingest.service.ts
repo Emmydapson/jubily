@@ -136,21 +136,22 @@ export class TopicIngestionService {
   }
 
   private isHealthTopic(s: string) {
-    const t = String(s || '').toLowerCase();
+  const t = String(s || '').toLowerCase();
 
-    const good =
-      /health|wellness|sleep|fitness|workout|nutrition|diet|hydration|stress|anxiety|depression|mindfulness|gut|metabolism|protein|fiber|vitamin|hormone|oxytocin|testosterone|blood sugar|cholesterol|heart|liver|kidney|brain|immune|weight|fat loss|walking|steps|meditation|routine/i.test(
-        t,
-      );
+  // broader "health intent" detection
+  const good =
+    /health|medical|medicine|disease|virus|infection|vaccine|hospital|patient|care|nutrition|diet|sleep|mental|brain|heart|immune|body|fitness|wellbeing|well-being|epidemic|outbreak|study|research|clinical/i.test(
+      t,
+    );
 
-    const bad =
-      /politic|election|bitcoin|crypto|forex|stock|war|weapon|porn|sex|casino|gambl|celebrity|giveaway|promo code|discount/i.test(
-        t,
-      );
+  // still block irrelevant noise
+  const bad =
+    /crypto|bitcoin|forex|stock|gambl|casino|porn|sex|celebrity|giveaway|promo|discount|politic|election|war|weapon/i.test(
+      t,
+    );
 
-    return good && !bad;
-  }
-
+  return good || (!bad && t.length > 25);
+}
   private computeScore(title: string, source: 'rss' | 'ai') {
     let score = 50;
 

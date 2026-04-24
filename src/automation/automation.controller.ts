@@ -86,4 +86,44 @@ async getWeeklyAnalytics(@Query('days') days?: string) {
 async ingestNow() {
   return this.topicIngestion.ensurePendingPool();
 }
+
+@Post('topics/seed')
+async seedTopics() {
+  const topics = [
+    'Morning habits for more energy',
+    'How sleep improves mental clarity',
+    'Simple hydration mistakes people make',
+    'Quick ways to reduce stress naturally',
+    'Foods that boost brain performance',
+    'Why walking daily changes your health',
+    'Signs your body needs more water',
+    'Best morning routine for productivity',
+    'How to improve focus without caffeine',
+    'Why your energy crashes in the afternoon',
+    'Easy weight loss habits that actually work',
+    'How breathing affects anxiety levels',
+    'The truth about sugar and fatigue',
+    'Why consistent sleep matters more than you think',
+    'Simple exercises for busy people',
+    'How to build discipline with small habits',
+    'Foods that improve gut health',
+    'Why your mood depends on sleep quality',
+    'Small daily habits that change your life',
+    'How to stay healthy while working long hours',
+  ];
+
+  let created = 0;
+
+  for (const title of topics) {
+    const exists = await this.automationService.createTopic({
+      title,
+      source: 'seed',
+      score: 80,
+    });
+
+    if (exists) created++;
+  }
+
+  return { ok: true, created };
+}
 }
