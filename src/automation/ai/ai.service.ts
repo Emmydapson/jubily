@@ -145,21 +145,32 @@ Make the recommendation feel natural, not salesy.
     }
   }
 
-  private buildMockScript(topic: string): ScriptJson {
-    return {
-      title: topic,
-      cta: 'Follow for more',
-      scenes: [
-        {
-          narration: `Quick tip about ${topic}`,
-          caption: 'Quick tip',
-          visualPrompt: 'simple lifestyle scene',
-          seconds: 5,
-        },
-      ],
-    };
-  }
-
+ private buildMockScript(topic: string): ScriptJson {
+  return {
+    title: topic,
+    cta: 'Follow for more daily health tips',
+    scenes: [
+      {
+        narration: `Most people ignore this about ${topic}, but it changes everything.`,
+        caption: 'Did you know?',
+        visualPrompt: 'cinematic lifestyle health visuals, clean modern style',
+        seconds: 6,
+      },
+      {
+        narration: `If you fix this one habit, your energy improves within days.`,
+        caption: 'Quick fix',
+        visualPrompt: 'morning routine, healthy lifestyle, bright lighting',
+        seconds: 6,
+      },
+      {
+        narration: `Start today and your body will thank you later.`,
+        caption: 'Start now',
+        visualPrompt: 'motivational health transformation scene',
+        seconds: 6,
+      },
+    ],
+  };
+}
   async generateScript(topic: string): Promise<string> {
   if (this.aiMode === 'mock' || !this.apiKey) {
     return JSON.stringify(this.buildMockScript(topic));
