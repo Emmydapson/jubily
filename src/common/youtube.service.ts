@@ -84,10 +84,7 @@ export class YoutubeService {
     access_type: 'offline', // ✅ REQUIRED
     prompt: 'consent',      // ✅ VERY IMPORTANT (forces refresh token)
     scope: [
-  'https://www.googleapis.com/auth/youtube.upload',
-  'openid',
-  'email',
-  'profile',
+  'https://www.googleapis.com/auth/youtube.upload'
 ],
     include_granted_scopes: true,
     response_type: 'code',
