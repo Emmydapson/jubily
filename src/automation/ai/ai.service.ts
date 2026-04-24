@@ -43,66 +43,60 @@ export class AiService {
     return res.data?.choices?.[0]?.message?.content;
   }
 
-  async generateScript(topic: string): Promise<string> {
-    if (this.aiMode === 'mock' || !this.apiKey) {
-      return JSON.stringify(this.buildMockScript(topic));
-    }
+  async generateTopics(count = 25): Promise<string[]> {
+  if (this.aiMode === 'mock' || !this.apiKey) {
+    return [
+      'Morning routine for energy',
+      'Better sleep habits',
+      'Hydration tips',
+      'Quick stress relief',
+    ];
+  }
 
-    const text = await this.callDeepseek([
-      {
-        role: 'system',
-        content: `
-Create a 60-second HEALTH & WELLNESS short video script.
+  const text = await this.callDeepseek([
+    {
+      role: 'system',
+      content: `
+You are a content engine.
 
-Output JSON ONLY:
+Return ONLY valid JSON in this format:
 {
-  "title": "",
-  "cta": "",
-  "scenes": [
-    {"narration":"", "caption":"", "visualPrompt":"", "seconds": number}
+  "topics": [
+    "short health video title",
+    "another title"
   ]
 }
 
 Rules:
-- 55-65 seconds total
-- Hook in first 3 seconds
-- Safe language (no diagnosis/cures)
-        `,
-      },
-      { role: 'user', content: topic },
-    ]);
+- Health & wellness only
+- No numbering
+- No explanations
+- Max 12 words per topic
+- Return EXACTLY ${count} items
+`,
+    },
+    {
+      role: 'user',
+      content: `Generate ${count} viral health & wellness short-form video topics`,
+    },
+  ]);
 
-    const json = this.safeParseJson(text);
-    if (!json) throw new Error('Invalid JSON from DeepSeek');
+  if (!text) return [];
 
-    return JSON.stringify(json);
+  const cleaned = text
+    .replace(/```json/g, '')
+    .replace(/```/g, '')
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed?.topics)) return [];
+    return parsed.topics;
+  } catch (e) {
+    this.logger.warn(`[AI] JSON parse failed, raw output: ${cleaned}`);
+    return [];
   }
-
-  async generateTopics(count = 25): Promise<string[]> {
-    if (this.aiMode === 'mock' || !this.apiKey) {
-      return [
-        'Morning routine for energy',
-        'Better sleep habits',
-        'Hydration tips',
-        'Quick stress relief',
-      ];
-    }
-
-    const text = await this.callDeepseek([
-      {
-        role: 'system',
-        content: `Return JSON: { "topics": [] }`,
-      },
-      {
-        role: 'user',
-        content: `Generate ${count} health topics`,
-      },
-    ]);
-
-    const parsed = JSON.parse(text);
-    return parsed.topics || [];
-  }
-
+}
   async generateScriptWithOffer(
   topic: string,
   offer: { name: string; url: string; bullets?: string[] },

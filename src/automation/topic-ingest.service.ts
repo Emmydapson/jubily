@@ -331,6 +331,11 @@ export class TopicIngestionService {
   try {
     const topics = await this.ai.generateTopics(this.fallbackAiCount);
 
+    if (!Array.isArray(topics)) {
+      this.logger.warn(`[AI-Fallback] invalid response type`);
+      return 0;
+    }
+
     let created = 0;
     const seen = new Set<string>();
 
@@ -339,7 +344,17 @@ export class TopicIngestionService {
 
       const title = this.normalizeTitle(raw);
       if (!title) continue;
-      if (!this.isHealthTopic(title)) continue;
+
+      // ✅ Relaxed AI filter (FIXED LOGIC)
+      const aiRelaxed =
+        /health|sleep|fitness|diet|brain|energy|body|wellness|stress|focus|routine/i.test(
+          title,
+        );
+
+      if (!aiRelaxed) {
+        this.logger.warn(`[AI-SKIP] filtered out: "${title}"`);
+        continue;
+      }
 
       const key = this.normalizeKey(title);
       if (seen.has(key)) continue;
@@ -349,10 +364,13 @@ export class TopicIngestionService {
       if (exists) continue;
 
       const score = this.computeScore(title, 'ai');
+
       await this.createPendingTopic(title, 'ai', score);
       created++;
 
-      this.logger.log(`[AI-Fallback] ✅ created score=${score} title="${title}"`);
+      this.logger.log(
+        `[AI-Fallback] ✅ created score=${score} title="${title}"`,
+      );
     }
 
     return created;
