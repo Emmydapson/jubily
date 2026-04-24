@@ -3,7 +3,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { AutomationService } from './automation.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { GoogleSheetsService } from '../common/google-sheets.service';
-import { TopicIngestionService } from './topic-ingestion.service';
+import { TopicIngestionService } from './topic-ingest.service';
 
 @Controller('automation')
 export class AutomationController {
