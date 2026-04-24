@@ -1,6 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
+import { Logger } from '@nestjs/common';
 
 type Scene = {
   narration: string;
@@ -23,6 +24,7 @@ export class AiService {
   private readonly apiKey = process.env.DEEPSEEK_API_KEY;
   private readonly baseUrl = 'https://api.deepseek.com/v1/chat/completions';
   private readonly model = 'deepseek-chat';
+  private readonly logger = new Logger(AiService.name);
 
   private async callDeepseek(messages: any[]) {
     const res = await axios.post(
@@ -157,4 +159,47 @@ Make the recommendation feel natural, not salesy.
       ],
     };
   }
+
+  async generateScript(topic: string): Promise<string> {
+  if (this.aiMode === 'mock' || !this.apiKey) {
+    return JSON.stringify(this.buildMockScript(topic));
+  }
+
+  const text = await this.callDeepseek([
+    {
+      role: 'system',
+      content: `
+Create a 60-second HEALTH & WELLNESS short video script.
+
+Return ONLY JSON:
+{
+  "title": "",
+  "cta": "",
+  "scenes": [
+    {
+      "narration": "",
+      "caption": "",
+      "visualPrompt": "",
+      "seconds": number
+    }
+  ]
+}
+
+Rules:
+- 55–65 seconds total
+- Hook in first 3 seconds
+- No medical claims
+      `,
+    },
+    {
+      role: 'user',
+      content: topic,
+    },
+  ]);
+
+  const json = this.safeParseJson(text);
+  if (!json) throw new Error('Invalid script JSON');
+
+  return JSON.stringify(json);
+}
 }
