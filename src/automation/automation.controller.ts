@@ -3,11 +3,13 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { AutomationService } from './automation.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { GoogleSheetsService } from '../common/google-sheets.service';
+import { TopicIngestionService } from './topic-ingestion.service';
 
 @Controller('automation')
 export class AutomationController {
   constructor(private readonly automationService: AutomationService, 
     private readonly sheets: GoogleSheetsService,
+     private readonly topicIngestion: TopicIngestionService,
   ) {}
 
   @Post('topics')
@@ -78,5 +80,10 @@ async getLogs(@Query('limit') limit?: string) {
 async getWeeklyAnalytics(@Query('days') days?: string) {
   const take = Math.min(Math.max(Number(days ?? 7), 1), 30);
   return this.sheets.getWeeklyAnalytics(take);
+}
+
+@Post('ingest')
+async ingestNow() {
+  return this.topicIngestion.ensurePendingPool();
 }
 }
