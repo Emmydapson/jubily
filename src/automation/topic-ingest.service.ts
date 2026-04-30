@@ -35,7 +35,7 @@ export class TopicIngestionService {
   private readonly rssSource = 'rss';
 
   private readonly maxPerRun = Number(process.env.TOPIC_INGEST_MAX_PER_RUN || 30);
-  private readonly minPending = Number(process.env.TOPIC_INGEST_MIN_PENDING || 20);
+  private readonly minPending = Number(process.env.TOPIC_INGEST_MIN_PENDING || 5);
   private readonly freshHours = Number(process.env.TOPIC_INGEST_FRESH_HOURS || 72);
   private readonly fallbackAiCount = Number(process.env.TOPIC_INGEST_AI_FALLBACK_COUNT || 25);
 
