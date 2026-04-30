@@ -341,14 +341,13 @@ export class TopicIngestionService {
     const seen = new Set<string>();
 
     for (const raw of topics) {
-      if (created >= Math.max(5, this.minPending - pendingCount)) break;
+      if (created >= this.fallbackAiCount) break;
 
       const title = this.normalizeTitle(raw);
       if (!title) continue;
 
       // ✅ Relaxed AI filter (FIXED LOGIC)
       const aiRelaxed =
-        const aiRelaxed =
   /health|sleep|fitness|diet|brain|energy|body|wellness|stress|focus|routine|hydration|water|habits|daily/i.test(title);
 
       if (!aiRelaxed) {
