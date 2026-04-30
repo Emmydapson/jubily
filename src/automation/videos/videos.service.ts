@@ -2,10 +2,19 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable prettier/prettier */
 import { Injectable, NotFoundException,} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RegisterVideoDto } from './dto/register-video.dto';
 import { extractScenes } from '../scene.parser';
 import { ShotstackService } from './shotstack.service';
+
+type ListVideosQuery = {
+  page?: string | number;
+  limit?: string | number;
+  status?: string;
+  published?: string | boolean;
+  q?: string;
+};
 
 @Injectable()
 export class VideosService {
@@ -65,8 +74,8 @@ export class VideosService {
     try {
       const started = await this.startRenderForJob(job.id);
       return started;
-    } catch (error: any) {
-      const message = error?.message || 'Failed to create render job';
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to create render job';
 
       await this.prisma.videoJob.update({
         where: { id: job.id },
@@ -106,7 +115,7 @@ export class VideosService {
       throw new Error('No scenes extracted from script');
     }
 
-    const renderId = await this.shotStackService.renderVideo(scenes);
+    const renderId = await this.shotStackService.renderVideo(scenes, job.id);
 
     await this.prisma.videoJob.update({
       where: { id: job.id },
@@ -129,12 +138,12 @@ export class VideosService {
   }
 
 
-async listVideos(query: any) {
+async listVideos(query: ListVideosQuery) {
   const page = Math.max(Number(query.page ?? 1), 1);
   const limit = Math.min(Math.max(Number(query.limit ?? 20), 1), 100);
   const skip = (page - 1) * limit;
 
-  const where: any = {};
+  const where: Prisma.VideoJobWhereInput = {};
   if (query.status) where.status = String(query.status).toUpperCase();
   if (query.published != null) where.published = String(query.published) === 'true';
 

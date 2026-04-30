@@ -149,7 +149,19 @@ return offers[Math.floor(Math.random() * offers.length)];
     const topic = await this.prisma.topic.findFirst({
       where: {
         status: 'PENDING',
-        scripts: { none: {} },
+        OR: [
+          { scripts: { none: {} } },
+          {
+            scripts: {
+              some: {
+                AND: [
+                  { videoJobs: { some: { status: 'FAILED_PERMANENT' } } },
+                  { videoJobs: { every: { status: 'FAILED_PERMANENT' } } },
+                ],
+              },
+            },
+          },
+        ],
       },
       orderBy: [{ score: 'desc' }, { createdAt: 'desc' }],
     });

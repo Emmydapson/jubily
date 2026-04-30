@@ -63,24 +63,21 @@ export class ShotstackService {
       if (status < 200 || status >= 300) {
         this.logger.warn(`[AssetPreflight] ❗ ${label} not-200 status=${status} url=${url}`);
       }
-    } catch (e: any) {
+    } catch (error: unknown) {
       this.logger.error(
-        `[AssetPreflight] ❌ ${label} FAILED host=${this.shortHost(url)} url=${url} msg=${e?.message || e}`,
+        `[AssetPreflight] ❌ ${label} FAILED host=${this.shortHost(url)} url=${url} msg=${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
 
-  async renderVideo(scenes: Scene[]): Promise<string> {
+  async renderVideo(scenes: Scene[], jobId?: string): Promise<string> {
     if (!Array.isArray(scenes) || scenes.length === 0) {
       throw new Error('renderVideo: scenes empty');
     }
 
     
 
-    const fullNarration = scenes
-      .map((s) => String((s as any).narration || ''))
-      .join(' ')
-      .trim();
+    const fullNarration = scenes.map((s) => s.narration).join(' ').trim();
 
     if (!fullNarration) throw new Error('renderVideo: narration empty');
 
@@ -88,28 +85,28 @@ export class ShotstackService {
     const jobKey = `job-${Date.now()}`;
 
     // ✅ Get voice URL + timepoints
-const narrations = scenes.map((s: any) => String(s.narration || '').trim());
-const { url: voiceoverUrl, timepoints } =
-  await this.tts.synthesizeWithMarksToCloudinaryMp3(narrations, jobKey);
+    const narrations = scenes.map((s) => String(s.narration || '').trim());
+    const { url: voiceoverUrl, timepoints } =
+      await this.tts.synthesizeWithMarksToCloudinaryMp3(narrations, jobKey);
 
-  const byName = new Map<string, number>();
-for (const tp of timepoints || []) {
-  if (tp?.markName && typeof tp.timeSeconds === 'number') {
-    byName.set(tp.markName, tp.timeSeconds);
-  }
-}
+    const byName = new Map<string, number>();
+    for (const tp of timepoints || []) {
+      if (tp?.markName && typeof tp.timeSeconds === 'number') {
+        byName.set(tp.markName, tp.timeSeconds);
+      }
+    }
 
-let end = byName.get('end');
+    let end = byName.get('end');
 
-if (typeof end !== 'number' || !Number.isFinite(end) || end <= 0) {
-  this.logger.warn(
-    `[TTS] No valid "end" mark. Falling back to estimated narration duration`,
-  );
+    if (typeof end !== 'number' || !Number.isFinite(end) || end <= 0) {
+      this.logger.warn(
+        `[TTS] No valid "end" mark. Falling back to estimated narration duration`,
+      );
 
-  end = narrations.reduce((total, line) => {
-    return total + this.estimateSeconds(line);
-  }, 0);
-}
+      end = narrations.reduce((total, line) => {
+        return total + this.estimateSeconds(line);
+      }, 0);
+    }
     this.logger.log(
       `[TTS] publicId=${jobKey} voiceHost=${this.shortHost(voiceoverUrl)} voiceoverUrl=${voiceoverUrl}`,
     );
@@ -117,52 +114,63 @@ if (typeof end !== 'number' || !Number.isFinite(end) || end <= 0) {
     // Shotstack will fetch this
     await this.preflight(voiceoverUrl, 'voiceover');
 
-    const bgClips: any[] = [];
-const captionClips: any[] = [];
+    const bgClips: Array<{
+      asset: { type: 'image'; src: string };
+      start: number;
+      length: number;
+      effect: string;
+    }> = [];
+    const captionClips: Array<{
+      asset: { type: 'html'; html: string };
+      start: number;
+      length: number;
+    }> = [];
 
-for (let i = 0; i < scenes.length; i++) {
-  const scene: any = scenes[i];
+    for (let i = 0; i < scenes.length; i += 1) {
+      const scene = scenes[i];
 
-  const start = byName.get(`s${i + 1}`);
-  const nextStart = byName.get(`s${i + 2}`);
+      const start = byName.get(`s${i + 1}`);
+      const nextStart = byName.get(`s${i + 2}`);
 
-  let sceneStart = start;
+      let sceneStart = start;
 
-if (typeof sceneStart !== 'number') {
-  this.logger.warn(`[TTS] Missing mark s${i + 1}, estimating start time`);
+      if (typeof sceneStart !== 'number') {
+        this.logger.warn(`[TTS] Missing mark s${i + 1}, estimating start time`);
 
-  sceneStart = scenes
-    .slice(0, i)
-    .reduce((t, s) => t + this.estimateSeconds(s.narration), 0);
-}
+        sceneStart = scenes
+          .slice(0, i)
+          .reduce((t, s) => t + this.estimateSeconds(s.narration), 0);
+      }
 
-  const sceneEnd = typeof nextStart === 'number' ? nextStart : end;
+      const sceneEnd = typeof nextStart === 'number' ? nextStart : end;
 
-  // ✅ real duration based on audio marks
- const length = Math.max(1.2, Number((sceneEnd - sceneStart).toFixed(2)));
+      // ✅ real duration based on audio marks
+      const length = Math.max(1.2, Number((sceneEnd - sceneStart).toFixed(2)));
 
-  // ✅ AI image per scene using visualPrompt
-  const visualPrompt = String(scene.visualPrompt || '').trim();
-  if (!visualPrompt) throw new Error(`Missing visualPrompt at scene index=${i}`);
+      // ✅ AI image per scene using visualPrompt
+      const visualPrompt = String(scene.visualPrompt || '').trim();
+      if (!visualPrompt) throw new Error(`Missing visualPrompt at scene index=${i}`);
 
-  const imgPublicId = `${jobKey}-scene-${i}`;
-  const sceneImageUrl = await this.aiImages.generateSceneImageUrl(visualPrompt, imgPublicId);
+      const imgPublicId = `${jobKey}-scene-${i}`;
+      const sceneImageUrl = await this.aiImages.generateSceneImageUrl(
+        visualPrompt,
+        imgPublicId,
+        jobId,
+      );
 
-  await this.preflight(sceneImageUrl, `sceneImage-${i}`);
+      await this.preflight(sceneImageUrl, `sceneImage-${i}`);
 
+      bgClips.push({
+        asset: { type: 'image', src: sceneImageUrl },
+        start: sceneStart,
+        length,
+        effect: 'zoomIn',
+      });
 
-  bgClips.push({
-  asset: { type: 'image', src: sceneImageUrl },
-  start: sceneStart,
-  length,
-  effect: 'zoomIn',
-});
-  
-
-  captionClips.push({
-    asset: {
-      type: 'html',
-      html: `
+      captionClips.push({
+        asset: {
+          type: 'html',
+          html: `
         <div style="
           width:100%; height:100%;
           display:flex; align-items:flex-end; justify-content:center;
@@ -175,17 +183,17 @@ if (typeof sceneStart !== 'number') {
           </div>
         </div>
       `,
-    },
-    start: sceneStart,
-    length,
-  });
-}
+        },
+        start: sceneStart,
+        length,
+      });
+    }
 
 bgClips.sort((a, b) => a.start - b.start);
 captionClips.sort((a, b) => a.start - b.start);
 
     // ✅ NO BACKGROUND MUSIC: only image + captions + voiceover audio track
-    const payload: any = {
+    const payload = {
       timeline: {
         tracks: [
           { clips: bgClips },
@@ -224,16 +232,16 @@ captionClips.sort((a, b) => a.start - b.start);
 
       this.logger.log(`[ShotstackRenderCreated] renderId=${renderId}`);
       return renderId;
-    } catch (e: any) {
-      const status = e?.response?.status;
-      const data = e?.response?.data;
-      const msg = e?.message || String(e);
+    } catch (error: unknown) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const data = axios.isAxiosError(error) ? error.response?.data : undefined;
+      const msg = error instanceof Error ? error.message : String(error);
 
       this.logger.error(
         `[ShotstackRenderError] status=${status} msg=${msg} response=${JSON.stringify(data)}`,
       );
 
-      throw e;
+      throw error;
     }
   }
 }

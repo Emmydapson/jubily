@@ -19,6 +19,7 @@ import { JobsController } from './jobs/jobs.controller';
 import { JobsService } from './jobs/jobs.service';
 import { AiImageService } from './ai/ai-image.service';
 import { TopicIngestionService } from './topic-ingest.service';
+import { MonitoringModule } from 'src/monitoring/monitoring.module';
 
 @Module({
   controllers: [
@@ -41,6 +42,6 @@ import { TopicIngestionService } from './topic-ingest.service';
     AiImageService,
     TopicIngestionService
   ],
-  imports: [VideosModule, SettingsModule],
+  imports: [VideosModule, SettingsModule, MonitoringModule],
 })
 export class AutomationModule {}

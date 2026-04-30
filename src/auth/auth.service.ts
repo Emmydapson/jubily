@@ -11,6 +11,28 @@ export class AuthService implements OnModuleInit {
     private jwt: JwtService,
   ) {}
 
+  private normalizeEmail(email: string) {
+    return String(email || '').trim().toLowerCase();
+  }
+
+  private allowedAdminEmails() {
+    return String(process.env.ADMIN_EMAILS || '')
+      .split(',')
+      .map((x) => this.normalizeEmail(x))
+      .filter(Boolean);
+  }
+
+  ensureAdminEmailAllowed(email: string) {
+    const normalizedEmail = this.normalizeEmail(email);
+    const allowedEmails = this.allowedAdminEmails();
+
+    if (!normalizedEmail || !allowedEmails.includes(normalizedEmail)) {
+      throw new UnauthorizedException('Admin access denied');
+    }
+
+    return normalizedEmail;
+  }
+
   async onModuleInit() {
     await this.seedAdminFromEnv();
   }
@@ -21,19 +43,37 @@ export class AuthService implements OnModuleInit {
 
     if (!email || !password) return;
 
-    const exists = await this.prisma.adminUser.findUnique({ where: { email } });
+    const normalizedEmail = this.ensureAdminEmailAllowed(email);
+
+    const exists = await this.prisma.adminUser.findUnique({ where: { email: normalizedEmail } });
     if (exists) return;
 
     const passwordHash = await bcrypt.hash(password, 12);
 
     await this.prisma.adminUser.create({
-      data: { email, passwordHash, role: 'ADMIN', active: true },
+      data: { email: normalizedEmail, passwordHash, role: 'ADMIN', active: true },
     });
   }
 
   async login(email: string, password: string) {
-    const admin = await this.prisma.adminUser.findUnique({ where: { email } });
-    if (!admin || !admin.active) throw new UnauthorizedException('Invalid credentials');
+    const normalizedEmail = this.ensureAdminEmailAllowed(email);
+
+    let admin = await this.prisma.adminUser.findUnique({ where: { email: normalizedEmail } });
+
+    if (!admin) {
+      const passwordHash = await bcrypt.hash(password, 12);
+      admin = await this.prisma.adminUser.create({
+        data: {
+          email: normalizedEmail,
+          passwordHash,
+          role: 'ADMIN',
+          active: true,
+          lastLoginAt: new Date(),
+        },
+      });
+    }
+
+    if (!admin.active) throw new UnauthorizedException('Invalid credentials');
 
     const ok = await bcrypt.compare(password, admin.passwordHash);
     if (!ok) throw new UnauthorizedException('Invalid credentials');

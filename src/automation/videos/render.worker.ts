@@ -8,6 +8,23 @@ import { ShotstackServeService } from './shotstack-serve.service';
 import { VideosService } from './videos.service';
 import { MonitoringService } from 'src/monitoring/monitoring.service';
 
+type RenderWorkerScript = {
+  topicId: string | null;
+};
+
+type RenderWorkerJob = {
+  id: string;
+  scriptId: string;
+  offerId: string | null;
+  renderId: string | null;
+  status: string;
+  attempts: number;
+  published: boolean;
+  createdAt: Date;
+  error: string | null;
+  script?: RenderWorkerScript | null;
+};
+
 @Injectable()
 export class RenderWorker implements OnModuleInit {
   private readonly logger = new Logger(RenderWorker.name);
@@ -40,6 +57,29 @@ export class RenderWorker implements OnModuleInit {
 
     while (true) {
       try {
+        const exhaustedJobs = await this.prisma.videoJob.findMany({
+          where: {
+            renderId: null,
+            published: false,
+            attempts: { gte: 6 },
+            status: { in: ['PENDING', 'FAILED'] },
+          },
+          include: {
+            script: {
+              select: {
+                id: true,
+                topicId: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+          take: 25,
+        });
+
+        for (const job of exhaustedJobs) {
+          await this.finalizePermanentFailure(job);
+        }
+
         const pendingJobs = await this.prisma.videoJob.findMany({
           where: {
             renderId: null,
@@ -66,15 +106,18 @@ export class RenderWorker implements OnModuleInit {
         for (const job of jobs) {
           await this.handle(job);
         }
-      } catch (err: any) {
-        this.logger.error('Worker crashed', err?.message || err);
+      } catch (error: unknown) {
+        this.logger.error(
+          'Worker crashed',
+          error instanceof Error ? error.message : String(error),
+        );
       }
 
       await new Promise((r) => setTimeout(r, 60000));
     }
   }
 
-  async startPendingRender(job: any) {
+  async startPendingRender(job: RenderWorkerJob) {
     try {
       const started = await this.videos.startRenderForJob(job.id);
       this.logger.log(`[Render] started job=${started.jobId} renderId=${started.renderId}`);
@@ -86,8 +129,8 @@ export class RenderWorker implements OnModuleInit {
         provider: 'shotstack',
         meta: { renderId: started.renderId, resumed: !!started.resumed },
       });
-    } catch (e: any) {
-      const message = e?.message || 'Failed to create render job';
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to create render job';
 
       await this.prisma.videoJob.update({
         where: { id: job.id },
@@ -111,6 +154,38 @@ export class RenderWorker implements OnModuleInit {
     }
   }
 
+  async finalizePermanentFailure(job: RenderWorkerJob) {
+    const message = String(job.error || 'Render start failed too many times');
+
+    await this.prisma.videoJob.update({
+      where: { id: job.id },
+      data: {
+        status: 'FAILED_PERMANENT',
+        error: message,
+      },
+    });
+
+    if (job.script?.topicId) {
+      await this.prisma.topic.updateMany({
+        where: { id: job.script.topicId },
+        data: { status: 'PENDING' },
+      });
+    }
+
+    this.logger.error(`[Render] permanent failure job=${job.id}: ${message}`);
+    await this.monitoring.error({
+      stage: 'RENDER',
+      status: 'FAILED_PERMANENT',
+      message,
+      jobId: job.id,
+      scriptId: job.scriptId ?? null,
+      topicId: job.script?.topicId ?? null,
+      offerId: job.offerId ?? null,
+      provider: 'shotstack',
+      meta: { attempts: job.attempts ?? 0, recoveredTopic: !!job.script?.topicId },
+    });
+  }
+
   private shortHost(url: string) {
     try {
       return new URL(url).host;
@@ -119,7 +194,7 @@ export class RenderWorker implements OnModuleInit {
     }
   }
 
-  async handle(job: any) {
+  async handle(job: RenderWorkerJob) {
     const renderId = String(job.renderId || '');
     if (!renderId) return;
 
@@ -176,15 +251,15 @@ export class RenderWorker implements OnModuleInit {
             meta: { renderId, videoUrl: serveUrl },
           });
           return;
-        } catch (e: any) {
+        } catch (error: unknown) {
           // Serve not ready yet → wait for next poll, don't increment attempts
           this.logger.warn(
-            `⏳ Serve not ready job=${job.id} renderId=${renderId} msg=${e?.message || e}`,
+            `⏳ Serve not ready job=${job.id} renderId=${renderId} msg=${error instanceof Error ? error.message : String(error)}`,
           );
           await this.monitoring.warn({
             stage: 'RENDER',
             status: 'ASSET_PENDING',
-            message: e?.message || String(e),
+            message: error instanceof Error ? error.message : String(error),
             jobId: job.id,
             offerId: job.offerId ?? null,
             scriptId: job.scriptId ?? null,
@@ -232,11 +307,13 @@ export class RenderWorker implements OnModuleInit {
 
       // still rendering → do nothing
       return;
-    } catch (e: any) {
+    } catch (error: unknown) {
       const message =
-        e?.response?.data?.response?.error ||
-        e?.response?.data?.error ||
-        e?.message ||
+        (axios.isAxiosError(error) && typeof error.response?.data === 'object'
+          ? (error.response.data as { response?: { error?: string }; error?: string }).response?.error ||
+            (error.response.data as { error?: string }).error
+          : undefined) ||
+        (error instanceof Error ? error.message : undefined) ||
         'Worker error';
 
       await this.prisma.videoJob.update({

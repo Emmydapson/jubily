@@ -181,6 +181,7 @@ enum IntegrationProvider {
 }
 
 enum PipelineStage {
+  IMAGE_GENERATION
   RENDER
   PUBLISH
   TRACKING

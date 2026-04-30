@@ -58,7 +58,8 @@ export class AuthController {
 
   // Protected: only authenticated admin can initiate channel connection
   @Get('youtube')
-  youtubeAuth(@Res() res: Response) {
+  youtubeAuth(@Req() req: any, @Res() res: Response) {
+    const adminEmail = this.auth.ensureAdminEmailAllowed(req?.user?.email || '');
     const state = randomBytes(24).toString('hex');
 
     res.cookie('yt_oauth_state', state, {
@@ -66,6 +67,14 @@ export class AuthController {
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       maxAge: 10 * 60 * 1000, // 10 min
+      path: '/auth/youtube/callback',
+    });
+
+    res.cookie('yt_oauth_email', adminEmail, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 10 * 60 * 1000,
       path: '/auth/youtube/callback',
     });
 
@@ -85,11 +94,15 @@ export class AuthController {
     if (!code) throw new BadRequestException('Missing OAuth code');
 
     const expected = this.getCookie(req, 'yt_oauth_state');
+    const adminEmail = this.getCookie(req, 'yt_oauth_email');
     res.clearCookie('yt_oauth_state', { path: '/auth/youtube/callback' });
+    res.clearCookie('yt_oauth_email', { path: '/auth/youtube/callback' });
 
     if (!this.stateMatches(expected, state)) {
       throw new UnauthorizedException('Invalid OAuth state');
     }
+
+    this.auth.ensureAdminEmailAllowed(adminEmail || '');
 
     await this.youtube.handleAuthCallback(code);
     return res.status(200).send('✅ YouTube connected. You can close this tab.');

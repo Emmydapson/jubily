@@ -3,6 +3,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PipelineSeverity, PipelineStage, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
+type MonitoringQuery = {
+  limit?: string | number;
+  stage?: string;
+  severity?: string;
+  status?: string;
+  jobId?: string;
+  offerId?: string;
+  clickId?: string;
+  provider?: string;
+  sinceHours?: string | number;
+  hours?: string | number;
+};
+
 type EventInput = {
   stage: PipelineStage;
   severity?: PipelineSeverity;
@@ -40,8 +53,10 @@ export class MonitoringService {
           meta: input.meta ?? undefined,
         },
       });
-    } catch (e: any) {
-      this.logger.error(`Failed to persist pipeline event: ${e?.message || e}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Failed to persist pipeline event: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return null;
     }
   }
@@ -58,7 +73,7 @@ export class MonitoringService {
     return this.logEvent({ ...input, severity: 'ERROR' });
   }
 
-  async list(query: any) {
+  async list(query: MonitoringQuery) {
     const limit = Math.min(Math.max(Number(query.limit ?? 50), 1), 200);
     const where: Prisma.PipelineEventWhereInput = {};
 
@@ -81,7 +96,7 @@ export class MonitoringService {
     });
   }
 
-  async summary(query: any) {
+  async summary(query: MonitoringQuery) {
     const hours = Math.max(Number(query.hours ?? 24), 1);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
@@ -96,6 +111,7 @@ export class MonitoringService {
     });
 
     const byStage = {
+      IMAGE_GENERATION: { total: 0, errors: 0, warns: 0, lastEventAt: null as string | null },
       RENDER: { total: 0, errors: 0, warns: 0, lastEventAt: null as string | null },
       PUBLISH: { total: 0, errors: 0, warns: 0, lastEventAt: null as string | null },
       TRACKING: { total: 0, errors: 0, warns: 0, lastEventAt: null as string | null },
