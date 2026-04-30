@@ -117,25 +117,29 @@ export class VideosService {
 
     const renderId = await this.shotStackService.renderVideo(scenes, job.id);
 
-    await this.prisma.videoJob.update({
-      where: { id: job.id },
-      data: {
-        status: 'PROCESSING',
-        renderId: result.renderId,
-    provider: result.provider,
-        error: null,
-      },
-    });
+const result = {
+  renderId,
+  provider: 'shotstack' as const,
+};
 
-    if (job.script.topicId) {
-  await this.prisma.topic.update({
+await this.prisma.videoJob.update({
+  where: { id: job.id },
+  data: {
+    status: 'PROCESSING',
+    renderId,
+    provider: 'shotstack',
+    error: null,
+  },
+});
+
+if (job.script.topicId) {
+  await this.prisma.topic.updateMany({
     where: { id: job.script.topicId },
     data: { status: 'USED' },
   });
 }
-    return { jobId: job.id, renderId: result.renderId };
-  }
 
+return { jobId: job.id, renderId};
 
 async listVideos(query: ListVideosQuery) {
   const page = Math.max(Number(query.page ?? 1), 1);

@@ -199,7 +199,10 @@ export class AiImageService {
     this.logger.log(`[IMAGE_GEN] start job=${jobId ?? 'n/a'} model=${modelIdentifier}`);
 
     const result = (await Promise.race([
-      this.replicate.run(modelIdentifier, { input }),
+      this.replicate.run(
+  modelIdentifier as `${string}/${string}:${string}`,
+  { input }
+)
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Replicate timeout')), 60000),
       ),
