@@ -117,11 +117,6 @@ export class VideosService {
 
     const renderId = await this.shotStackService.renderVideo(scenes, job.id);
 
-const result = {
-  renderId,
-  provider: 'shotstack' as const,
-};
-
 await this.prisma.videoJob.update({
   where: { id: job.id },
   data: {
