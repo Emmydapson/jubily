@@ -2,12 +2,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import crypto from 'crypto';
+import { MonitoringService } from 'src/monitoring/monitoring.service';
 
 @Injectable()
 export class Digistore24Service {
   private readonly logger = new Logger(Digistore24Service.name);
+  private readonly allowUnsigned =
+    (process.env.DIGISTORE24_ALLOW_UNSIGNED ?? 'false').toLowerCase() === 'true';
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private monitoring: MonitoringService,
+  ) {}
 
   async processIpn(payload: Record<string, any>) {
     // 1) Verify signature (recommended)
@@ -44,8 +50,13 @@ export class Digistore24Service {
     // 4) Resolve offer
     const offerId =
       click?.offerId ||
-      (payload?.product_id ? await this.mapProductToOfferId(String(payload.product_id)) : null) ||
-      (await this.ensureFallbackOffer());
+      (payload?.product_id ? await this.mapProductToOfferId(String(payload.product_id)) : null);
+
+    if (!offerId) {
+      throw new Error(
+        `Unable to attribute conversion: missing click match and unmapped product_id=${String(payload?.product_id || '')}`,
+      );
+    }
 
     // 5) Resolve videoJobId safely (ONLY if it exists)
     let videoJobId: string | null = null;
@@ -65,7 +76,7 @@ export class Digistore24Service {
     }
 
     // 6) Persist Conversion (never violate FK)
-    await this.prisma.conversion.create({
+    const conversion = await this.prisma.conversion.create({
       data: {
         offerId,
         clickId: click?.id || null,
@@ -77,6 +88,22 @@ export class Digistore24Service {
       },
     });
 
+    await this.monitoring.info({
+      stage: 'CONVERSION',
+      status: transactionType,
+      message: 'Digistore24 conversion recorded',
+      jobId: videoJobId,
+      offerId,
+      clickId: click?.id || null,
+      provider: 'digistore24',
+      meta: {
+        conversionId: conversion.id,
+        orderId,
+        amount,
+        currency,
+      },
+    });
+
     this.logger.log(
       `✅ DS24 IPN saved type=${transactionType} order=${orderId || 'n/a'} click=${click?.id || trackingKey || custom || 'n/a'} videoJob=${videoJobId || 'n/a'}`
     );
@@ -85,11 +112,17 @@ export class Digistore24Service {
   private verifyShaSign(payload: Record<string, any>) {
     const pass = process.env.DIGISTORE24_IPN_PASSPHRASE;
     if (!pass) {
-      this.logger.warn('DIGISTORE24_IPN_PASSPHRASE missing; skipping sha_sign verification');
-      return;
+      if (this.allowUnsigned) {
+        this.logger.warn(
+          'DIGISTORE24_IPN_PASSPHRASE missing; allowing unsigned IPN due to DIGISTORE24_ALLOW_UNSIGNED=true',
+        );
+        return;
+      }
+
+      throw new Error('DIGISTORE24_IPN_PASSPHRASE missing');
     }
 
-    const provided = String(payload?.sha_sign || '');
+    const provided = String(payload?.sha_sign || '').trim();
     if (!provided) throw new Error('Missing sha_sign');
 
     const keys = Object.keys(payload).filter((k) => k !== 'sha_sign').sort();
@@ -102,21 +135,38 @@ export class Digistore24Service {
   }
 
   private async mapProductToOfferId(productId: string): Promise<string | null> {
-    return null;
-  }
+    if (!productId) return null;
 
-  private async ensureFallbackOffer(): Promise<string> {
-    const existing = await this.prisma.offer.findFirst({ where: { name: 'unknown' } });
-    if (existing) return existing.id;
-
-    const created = await this.prisma.offer.create({
-      data: {
-        name: 'unknown',
-        hoplink: 'unknown',
+    const direct = await this.prisma.offer.findFirst({
+      where: {
         network: 'digistore24',
-        active: false,
+        externalProductId: productId,
       },
+      select: { id: true },
     });
-    return created.id;
+    if (direct?.id) return direct.id;
+
+    const rawMap = process.env.DIGISTORE24_PRODUCT_MAP;
+    if (!rawMap) return null;
+
+    try {
+      const parsed = JSON.parse(rawMap) as Record<string, string>;
+      const mappedOfferId = parsed[productId];
+      if (!mappedOfferId) return null;
+
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: mappedOfferId },
+        select: { id: true, network: true },
+      });
+
+      if (!offer || String(offer.network).toLowerCase() !== 'digistore24') {
+        return null;
+      }
+
+      return offer.id;
+    } catch {
+      this.logger.warn('Invalid DIGISTORE24_PRODUCT_MAP JSON');
+      return null;
+    }
   }
 }

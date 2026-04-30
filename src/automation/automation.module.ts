@@ -3,7 +3,6 @@ import { Module } from '@nestjs/common';
 import { AutomationController } from './automation.controller';
 import { AutomationService } from './automation.service';
 import { ScriptService } from './script.service';
-import { PrismaService } from 'src/prisma/prisma.service';
 import { VideosModule } from './videos/videos.module';
 import { AiService } from './ai/ai.service';
 import { AutomationCron } from './automation.cron';
@@ -31,7 +30,6 @@ import { TopicIngestionService } from './topic-ingest.service';
   ],
   providers: [
     AutomationService,
-    PrismaService,
     ScriptService,
     AiService,
     OrchestratorService,

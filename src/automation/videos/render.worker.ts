@@ -5,19 +5,31 @@ import axios from 'axios';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GoogleSheetsService } from '../../common/google-sheets.service';
 import { ShotstackServeService } from './shotstack-serve.service';
+import { VideosService } from './videos.service';
+import { MonitoringService } from 'src/monitoring/monitoring.service';
 
 @Injectable()
 export class RenderWorker implements OnModuleInit {
   private readonly logger = new Logger(RenderWorker.name);
   private running = false;
+  private readonly enabled =
+    (process.env.WORKERS_ENABLED ??
+      (process.env.NODE_ENV === 'test' ? 'false' : 'true')).toLowerCase() === 'true';
 
   constructor(
     private prisma: PrismaService,
     private sheets: GoogleSheetsService,
     private serve: ShotstackServeService,
+    private videos: VideosService,
+    private monitoring: MonitoringService,
   ) {}
 
   onModuleInit() {
+    if (!this.enabled) {
+      this.logger.warn('Render worker disabled via WORKERS_ENABLED');
+      return;
+    }
+
     this.logger.log('🎬 Render worker started');
     this.loop();
   }
@@ -28,6 +40,21 @@ export class RenderWorker implements OnModuleInit {
 
     while (true) {
       try {
+        const pendingJobs = await this.prisma.videoJob.findMany({
+          where: {
+            renderId: null,
+            published: false,
+            attempts: { lt: 6 },
+            status: { in: ['PENDING', 'FAILED'] },
+          },
+          orderBy: { createdAt: 'asc' },
+          take: 25,
+        });
+
+        for (const job of pendingJobs) {
+          await this.startPendingRender(job);
+        }
+
         const jobs = await this.prisma.videoJob.findMany({
           where: {
             status: 'PROCESSING',
@@ -44,6 +71,43 @@ export class RenderWorker implements OnModuleInit {
       }
 
       await new Promise((r) => setTimeout(r, 60000));
+    }
+  }
+
+  async startPendingRender(job: any) {
+    try {
+      const started = await this.videos.startRenderForJob(job.id);
+      this.logger.log(`[Render] started job=${started.jobId} renderId=${started.renderId}`);
+      await this.monitoring.info({
+        stage: 'RENDER',
+        status: 'STARTED',
+        message: 'Render job started',
+        jobId: started.jobId,
+        provider: 'shotstack',
+        meta: { renderId: started.renderId, resumed: !!started.resumed },
+      });
+    } catch (e: any) {
+      const message = e?.message || 'Failed to create render job';
+
+      await this.prisma.videoJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'FAILED',
+          attempts: { increment: 1 },
+          error: message,
+        },
+      });
+
+      this.logger.error(`[Render] failed to start job=${job.id}: ${message}`);
+      await this.monitoring.error({
+        stage: 'RENDER',
+        status: 'START_FAILED',
+        message,
+        jobId: job.id,
+        offerId: job.offerId ?? null,
+        scriptId: job.scriptId ?? null,
+        provider: 'shotstack',
+      });
     }
   }
 
@@ -101,12 +165,32 @@ export class RenderWorker implements OnModuleInit {
           ]);
 
           this.logger.log(`✅ Render complete job=${job.id} cdnHost=${this.shortHost(serveUrl)}`);
+          await this.monitoring.info({
+            stage: 'RENDER',
+            status: 'COMPLETED',
+            message: 'Render completed',
+            jobId: job.id,
+            offerId: job.offerId ?? null,
+            scriptId: job.scriptId ?? null,
+            provider: 'shotstack',
+            meta: { renderId, videoUrl: serveUrl },
+          });
           return;
         } catch (e: any) {
           // Serve not ready yet → wait for next poll, don't increment attempts
           this.logger.warn(
             `⏳ Serve not ready job=${job.id} renderId=${renderId} msg=${e?.message || e}`,
           );
+          await this.monitoring.warn({
+            stage: 'RENDER',
+            status: 'ASSET_PENDING',
+            message: e?.message || String(e),
+            jobId: job.id,
+            offerId: job.offerId ?? null,
+            scriptId: job.scriptId ?? null,
+            provider: 'shotstack',
+            meta: { renderId },
+          });
           return;
         }
       }
@@ -133,6 +217,16 @@ export class RenderWorker implements OnModuleInit {
         ]);
 
         this.logger.warn(`❌ Render failed job=${job.id} — ${error}`);
+        await this.monitoring.error({
+          stage: 'RENDER',
+          status: 'FAILED',
+          message: error,
+          jobId: job.id,
+          offerId: job.offerId ?? null,
+          scriptId: job.scriptId ?? null,
+          provider: 'shotstack',
+          meta: { renderId },
+        });
         return;
       }
 
@@ -152,6 +246,16 @@ export class RenderWorker implements OnModuleInit {
 
       // ✅ No Sheets logging for retries
       this.logger.error(`🔁 Retry job=${job.id} renderId=${renderId}: ${message}`);
+      await this.monitoring.warn({
+        stage: 'RENDER',
+        status: 'RETRY',
+        message,
+        jobId: job.id,
+        offerId: job.offerId ?? null,
+        scriptId: job.scriptId ?? null,
+        provider: 'shotstack',
+        meta: { renderId, attempts: (job.attempts ?? 0) + 1 },
+      });
     }
   }
 }

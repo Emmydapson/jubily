@@ -9,6 +9,7 @@ import { Digistore24Module } from './webhooks/digistore24/digistore24.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuthModule } from './auth/auth.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
 
 @Module({
   imports: [
@@ -20,7 +21,8 @@ import { AuthModule } from './auth/auth.module';
     Digistore24Module,
     TrackingModule,
     SettingsModule,
-    AuthModule
+    AuthModule,
+    MonitoringModule,
   ],
 })
 export class AppModule {}

@@ -1,10 +1,14 @@
 /* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { MonitoringService } from 'src/monitoring/monitoring.service';
 
 @Injectable()
 export class TrackingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private monitoring: MonitoringService,
+  ) {}
 
   async createClick(data: {
     offerId: string;
@@ -21,10 +25,28 @@ export class TrackingService {
     });
     if (!offer) throw new Error(`Offer not found/disabled: ${data.offerId}`);
 
-    return this.prisma.click.create({
+    let videoJobId: string | null = null;
+    if (data.videoJobId) {
+      const job = await this.prisma.videoJob.findUnique({
+        where: { id: data.videoJobId },
+        select: { id: true, offerId: true },
+      });
+
+      if (!job) {
+        throw new Error(`Video job not found: ${data.videoJobId}`);
+      }
+
+      if (job.offerId && job.offerId !== data.offerId) {
+        throw new Error(`Video job ${data.videoJobId} does not belong to offer ${data.offerId}`);
+      }
+
+      videoJobId = job.id;
+    }
+
+    const created = await this.prisma.click.create({
       data: {
         offerId: data.offerId,
-        videoJobId: data.videoJobId || null,
+        videoJobId,
         youtubeId: data.youtubeId || null,
         source: data.source || null,
         ip: data.ip || null,
@@ -32,6 +54,23 @@ export class TrackingService {
       },
       select: { id: true },
     });
+
+    await this.monitoring.info({
+      stage: 'TRACKING',
+      status: 'CLICK_RECORDED',
+      message: 'Affiliate click recorded',
+      jobId: videoJobId,
+      offerId: data.offerId,
+      clickId: created.id,
+      provider: data.source || 'affiliate',
+      meta: {
+        youtubeId: data.youtubeId || null,
+        hasIp: !!data.ip,
+        hasUserAgent: !!data.userAgent,
+      },
+    });
+
+    return created;
   }
 
   async buildOfferUrl(offerId: string, clickId: string) {

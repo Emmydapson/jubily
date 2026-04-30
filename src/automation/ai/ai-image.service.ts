@@ -8,7 +8,7 @@ import * as crypto from 'crypto';
 @Injectable()
 export class AiImageService {
   private readonly logger = new Logger(AiImageService.name);
-  private readonly aiMode = (process.env.AI_MODE || 'live').toLowerCase();
+  private readonly aiMode = (process.env.IMAGE_AI_MODE || 'live').toLowerCase();
 
   private replicate?: Replicate;
 
@@ -16,11 +16,11 @@ export class AiImageService {
   private readonly MAX_PARALLEL = 5;
 
   constructor(private prisma: PrismaService) {
-    if (process.env.REPLICATE_API_TOKEN && this.aiMode !== 'mock') {
-      this.replicate = new Replicate({
-        auth: process.env.REPLICATE_API_TOKEN,
-      });
-    }
+    if (process.env.REPLICATE_API_TOKEN) {
+  this.replicate = new Replicate({
+    auth: process.env.REPLICATE_API_TOKEN,
+  });
+}
 
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -124,10 +124,13 @@ export class AiImageService {
 
     // ✅ 3. MOCK
     if (this.aiMode === 'mock' || !this.replicate) {
-      const fallback = process.env.MOCK_SCENE_IMAGE_URL;
-      if (!fallback) throw new Error('Missing MOCK_SCENE_IMAGE_URL');
-      return fallback;
-    }
+  const fallback =
+    process.env.MOCK_SCENE_IMAGE_URL ||
+    'https://via.placeholder.com/1280x720.png';
+
+  this.logger.warn(`[MOCK IMAGE USED] ${publicId}`);
+  return fallback;
+}
 
     this.logger.log(`[GEN IMAGE] ${publicId}`);
 

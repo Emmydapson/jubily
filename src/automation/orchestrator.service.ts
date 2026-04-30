@@ -147,7 +147,10 @@ return offers[Math.floor(Math.random() * offers.length)];
 
     // 1) Pick best pending topic
     const topic = await this.prisma.topic.findFirst({
-      where: { status: 'PENDING' },
+      where: {
+        status: 'PENDING',
+        scripts: { none: {} },
+      },
       orderBy: [{ score: 'desc' }, { createdAt: 'desc' }],
     });
 
@@ -170,9 +173,7 @@ const script = await this.automation.generateScriptWithAiOffer(
   offer,
 );
 
-await this.automation.markTopicUsed(topic.id);
-
-// ✅ create job already stores offerId (you already have offerId in VideoJob)
+// Only consume the topic after the downstream render job has been created successfully.
 const job = await this.videos.createVideoJob(script.id, offer.id, slot, normalized);
 
     

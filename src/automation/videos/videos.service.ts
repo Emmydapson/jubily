@@ -14,56 +14,119 @@ export class VideosService {
   ) {}
 
   async registerVideo(dto: RegisterVideoDto) {
-    return this.prisma.video.create({
+    const job = await this.prisma.videoJob.findUnique({
+      where: { id: dto.jobId },
+      select: { id: true, youtubeUrl: true, published: true },
+    });
+
+    if (!job) throw new NotFoundException('Job not found');
+
+    return this.prisma.videoJob.update({
+      where: { id: dto.jobId },
       data: {
-        topicId: dto.topicId,
-        scriptId: dto.scriptId,
         videoUrl: dto.videoUrl,
-        format: dto.format,
-        duration: dto.duration,
+        status: dto.status ?? 'COMPLETED',
+        published: dto.published ?? job.published,
+        youtubeUrl: dto.youtubeUrl ?? job.youtubeUrl,
+        error: null,
       },
     });
   }
 
-  async markAsPublished(videoId: string) {
-    return this.prisma.video.update({
-      where: { id: videoId },
-      data: { status: 'PUBLISHED' },
+  async markAsPublished(jobId: string) {
+    return this.prisma.videoJob.update({
+      where: { id: jobId },
+      data: { published: true, status: 'COMPLETED', error: null },
     });
   }
 
-  async markAsFailed(videoId: string) {
-    return this.prisma.video.update({
-      where: { id: videoId },
-      data: { status: 'FAILED' },
+  async markAsFailed(jobId: string, error = 'Marked failed manually') {
+    return this.prisma.videoJob.update({
+      where: { id: jobId },
+      data: { status: 'FAILED', error },
     });
   }
 
- async createVideoJob(scriptId: string, offerId: string | undefined, slot: 'MORNING' | 'AFTERNOON' | 'EVENING',
-  scheduledFor: Date,) {
-  const script = await this.prisma.script.findUnique({ where: { id: scriptId } });
-  if (!script) throw new Error('Script not found');
+  async createVideoJob(
+    scriptId: string,
+    offerId: string | undefined,
+    slot: 'MORNING' | 'AFTERNOON' | 'EVENING',
+    scheduledFor: Date,
+  ) {
+    const job = await this.prisma.videoJob.create({
+      data: {
+        scriptId,
+        offerId: offerId ?? null,
+        slot,
+        scheduledFor,
+      },
+    });
 
-  const scenes = extractScenes(script.content);
+    try {
+      const started = await this.startRenderForJob(job.id);
+      return started;
+    } catch (error: any) {
+      const message = error?.message || 'Failed to create render job';
 
-  const job = await this.prisma.videoJob.create({
-    data: {
-      scriptId,
-      offerId: offerId ?? null, // ✅ NEW
-      slot,
-      scheduledFor,
-    },
-  });
+      await this.prisma.videoJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'FAILED',
+          error: message,
+          attempts: { increment: 1 },
+        },
+      });
 
-  const renderId = await this.shotStackService.renderVideo(scenes);
+      throw error;
+    }
+  }
 
-  await this.prisma.videoJob.update({
-    where: { id: job.id },
-    data: { status: 'PROCESSING', renderId },
-  });
+  async startRenderForJob(jobId: string) {
+    const job = await this.prisma.videoJob.findUnique({
+      where: { id: jobId },
+      include: {
+        script: {
+          select: {
+            id: true,
+            content: true,
+            topicId: true,
+          },
+        },
+      },
+    });
 
-  return { jobId: job.id, renderId };
-}
+    if (!job) throw new NotFoundException('Job not found');
+    if (!job.script) throw new Error('Script not found');
+    if (job.renderId) {
+      return { jobId: job.id, renderId: job.renderId, resumed: true };
+    }
+
+    const scenes = extractScenes(job.script.content);
+    if (!Array.isArray(scenes) || scenes.length === 0) {
+      throw new Error('No scenes extracted from script');
+    }
+
+    const renderId = await this.shotStackService.renderVideo(scenes);
+
+    await this.prisma.videoJob.update({
+      where: { id: job.id },
+      data: {
+        status: 'PROCESSING',
+        renderId,
+        error: null,
+      },
+    });
+
+    await this.prisma.topic.updateMany({
+      where: {
+        id: job.script.topicId,
+        status: 'PENDING',
+      },
+      data: { status: 'USED' },
+    });
+
+    return { jobId: job.id, renderId };
+  }
 
 
 async listVideos(query: any) {
@@ -72,99 +135,92 @@ async listVideos(query: any) {
   const skip = (page - 1) * limit;
 
   const where: any = {};
-  if (query.status) where.status = query.status; // READY | PUBLISHED | FAILED
+  if (query.status) where.status = String(query.status).toUpperCase();
+  if (query.published != null) where.published = String(query.published) === 'true';
 
-  // platform filter (optional) -> based on PublishResult rows
-  if (query.platform) {
-    where.publishResults = { some: { platform: query.platform } };
-  }
-
-  // q filter (optional) -> search topic title
   if (query.q) {
-    where.topic = { title: { contains: query.q, mode: 'insensitive' } };
+    const q = String(query.q);
+    where.OR = [
+      { script: { topic: { title: { contains: q, mode: 'insensitive' } } } },
+      { offer: { name: { contains: q, mode: 'insensitive' } } },
+    ];
   }
 
   const [items, total] = await Promise.all([
-    this.prisma.video.findMany({
+    this.prisma.videoJob.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
       include: {
-        topic: { select: { title: true } },
-        publishResults: { select: { platform: true, status: true } },
+        offer: { select: { id: true, name: true } },
+        script: {
+          select: {
+            id: true,
+            topic: { select: { id: true, title: true } },
+          },
+        },
       },
     }),
-    this.prisma.video.count({ where }),
+    this.prisma.videoJob.count({ where }),
   ]);
 
-  // shape for frontend
-  const mapped = items.map((v) => ({
-    id: v.id,
-    title: v.topic?.title ?? 'Untitled',
-    platform: v.publishResults?.map((p) => p.platform).join(', ') || '—',
-    status: v.status, // READY | PUBLISHED | FAILED
-    thumbnail: null, // you can add later
-    videoUrl: v.videoUrl,
-    format: v.format,
-    duration: v.duration,
-    createdAt: v.createdAt,
+  const mapped = items.map((j) => ({
+    id: j.id,
+    title: j.script?.topic?.title ?? 'Untitled',
+    status: j.status,
+    published: j.published,
+    platform: j.youtubeUrl ? 'youtube' : '—',
+    thumbnail: null,
+    videoUrl: j.videoUrl,
+    youtubeUrl: j.youtubeUrl,
+    renderId: j.renderId,
+    createdAt: j.createdAt,
+    slot: j.slot,
+    scheduledFor: j.scheduledFor,
+    offerId: j.offer?.id ?? null,
+    offerName: j.offer?.name ?? null,
   }));
 
   return { items: mapped, page, limit, total };
 }
 
-async getVideoAssets(videoId: string) {
-    const video = await this.prisma.video.findUnique({
-      where: { id: videoId },
-      select: {
-        id: true,
-        topicId: true,
-        scriptId: true,
-        videoUrl: true,
-        format: true,
-        duration: true,
-        status: true,
-        createdAt: true,
+async getVideoAssets(jobId: string) {
+    const job = await this.prisma.videoJob.findUnique({
+      where: { id: jobId },
+      include: {
+        script: {
+          select: {
+            id: true,
+            content: true,
+            promptVer: true,
+            createdAt: true,
+            topic: { select: { id: true, title: true } },
+          },
+        },
+        offer: { select: { id: true, name: true, externalProductId: true } },
       },
     });
 
-    if (!video) throw new NotFoundException('Video not found');
-
-    const script = await this.prisma.script.findUnique({
-      where: { id: video.scriptId },
-      select: {
-        id: true,
-        content: true,
-        promptVer: true,
-        createdAt: true,
-      },
-    });
-
-    // OPTIONAL: if captions are stored somewhere else, swap this part.
-    // Using VideoJob linked to scriptId (latest job)
-    const latestJob = await this.prisma.videoJob.findFirst({
-      where: { scriptId: video.scriptId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-  id: true,
-  renderId: true,
-  status: true,
-  error: true,
-  videoSrt: true,
-  offerId: true, // ✅
-  offer: { select: { name: true } }, // ✅ (requires schema back relation fix)
-},
-
-    });
+    if (!job) throw new NotFoundException('Job not found');
 
     return {
-  video,
-  script,
-  captionsSrt: latestJob?.videoSrt ?? null,
-  job: latestJob,
-};
-
+      job: {
+        id: job.id,
+        status: job.status,
+        published: job.published,
+        slot: job.slot,
+        scheduledFor: job.scheduledFor,
+        renderId: job.renderId,
+        youtubeUrl: job.youtubeUrl,
+        videoUrl: job.videoUrl,
+        error: job.error,
+        youtubeVideoId: job.youtubeVideoId,
+        offer: job.offer,
+      },
+      script: job.script,
+      captionsSrt: job.videoSrt ?? null,
+    };
   }
 
 }

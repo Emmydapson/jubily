@@ -1,18 +1,21 @@
-import { IsString, IsInt, IsIn } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class RegisterVideoDto {
   @IsString()
-  topicId: string;
-
-  @IsString()
-  scriptId: string;
+  jobId: string;
 
   @IsString()
   videoUrl: string;
 
-  @IsIn(['vertical', 'horizontal'])
-  format: 'vertical' | 'horizontal';
+  @IsOptional()
+  @IsString()
+  youtubeUrl?: string;
 
-  @IsInt()
-  duration: number;
+  @IsOptional()
+  @IsIn(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'])
+  status?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+
+  @IsOptional()
+  @IsBoolean()
+  published?: boolean;
 }

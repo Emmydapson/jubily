@@ -7,17 +7,22 @@ import { YoutubeService } from '../../common/youtube.service';
 import { ShotstackServeService } from './shotstack-serve.service';
 import { v2 as cloudinary } from 'cloudinary';
 import { extractScenes } from '../scene.parser';
+import { MonitoringService } from 'src/monitoring/monitoring.service';
 
 @Injectable()
 export class PublishWorker implements OnModuleInit {
   private running = false;
   private logger = new Logger(PublishWorker.name);
+  private readonly enabled =
+    (process.env.WORKERS_ENABLED ??
+      (process.env.NODE_ENV === 'test' ? 'false' : 'true')).toLowerCase() === 'true';
 
   constructor(
     private prisma: PrismaService,
     private youtube: YoutubeService,
     private sheets: GoogleSheetsService,
     private serve: ShotstackServeService,
+    private monitoring: MonitoringService,
   ) {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -28,6 +33,11 @@ export class PublishWorker implements OnModuleInit {
   }
 
   onModuleInit() {
+    if (!this.enabled) {
+      this.logger.warn('Publish worker disabled via WORKERS_ENABLED');
+      return;
+    }
+
     this.logger.log('📤 Publish worker started');
     this.loop();
   }
@@ -70,7 +80,7 @@ export class PublishWorker implements OnModuleInit {
   return { hit, reason: reason || 'unknown' };
 }
 
-private async markPublishPaused(jobId: string, reason: string, msg: string) {
+  private async markPublishPaused(jobId: string, reason: string, msg: string) {
   await this.prisma.videoJob.update({
     where: { id: jobId },
     data: {
@@ -78,6 +88,13 @@ private async markPublishPaused(jobId: string, reason: string, msg: string) {
       attempts: { increment: 1 },
       error: `YouTube publish blocked (${reason}): ${msg}`,
     },
+  });
+  await this.monitoring.warn({
+    stage: 'PUBLISH',
+    status: 'PAUSED_QUOTA',
+    message: `YouTube publish blocked (${reason}): ${msg}`,
+    jobId,
+    provider: 'youtube',
   });
 }
 
@@ -168,7 +185,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
     let idx = 1;
 
     for (const sc of scenes) {
-      const len = Number(sc.duration || 0);
+      const len = Number(sc.seconds || sc.duration || 0);
       const cap = String(sc.caption || sc.narration || '').trim();
       if (!len || !cap) {
         t += len || 0;
@@ -317,6 +334,16 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       // Ensure stable URL (Cloudinary)
       const stableUrl = await this.ensureStableUrl(fullJob);
       this.logger.log(`📤 Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
+      await this.monitoring.info({
+        stage: 'PUBLISH',
+        status: 'STARTED',
+        message: 'Publish flow started',
+        jobId: job.id,
+        offerId: fullJob.offerId ?? null,
+        scriptId: fullJob.scriptId,
+        provider: 'youtube',
+        meta: { renderId: fullJob.renderId, sourceHost: this.shortHost(stableUrl) },
+      });
 
       // Build + store SRT (non-fatal)
       const scenes = extractScenes(fullJob.script.content);
@@ -364,6 +391,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
           where: { id: job.id },
           data: {
             published: true,
+            youtubeVideoId: youtubeId,
             youtubeUrl,
             error: null,
           },
@@ -384,11 +412,21 @@ ${hashtags.join(' ')}`.slice(0, 4500);
         ]);
 
         this.logger.log(`✅ YouTube uploaded job=${job.id} youtubeUrl=${youtubeUrl}`);
+        await this.monitoring.info({
+          stage: 'PUBLISH',
+          status: 'UPLOADED',
+          message: 'Video uploaded to YouTube',
+          jobId: job.id,
+          offerId: fullJob.offerId ?? null,
+          scriptId: fullJob.scriptId,
+          provider: 'youtube',
+          meta: { youtubeId, youtubeUrl },
+        });
       } else {
         // already uploaded in the past - ensure published stays true
         await this.prisma.videoJob.update({
           where: { id: job.id },
-          data: { published: true },
+          data: { published: true, youtubeVideoId: youtubeId },
         });
       }
 
@@ -408,6 +446,16 @@ ${trackUrl}`.slice(0, 4500);
       // Update metadata (safe retry; never causes re-upload)
       try {
         await this.youtube.updateMetadata(youtubeId!, videoTitle, finalDesc, tags);
+        await this.monitoring.info({
+          stage: 'PUBLISH',
+          status: 'METADATA_DONE',
+          message: 'YouTube metadata updated',
+          jobId: job.id,
+          offerId: fullJob.offerId ?? null,
+          scriptId: fullJob.scriptId,
+          provider: 'youtube',
+          meta: { youtubeId },
+        });
       } catch (e: any) {
         const msg = e?.message || String(e);
         await this.prisma.videoJob.update({
@@ -415,6 +463,16 @@ ${trackUrl}`.slice(0, 4500);
           data: { error: `Metadata failed: ${msg}` },
         });
         this.logger.warn(`⚠️ Metadata failed job=${job.id} msg=${this.short(msg, 250)}`);
+        await this.monitoring.warn({
+          stage: 'PUBLISH',
+          status: 'METADATA_FAILED',
+          message: msg,
+          jobId: job.id,
+          offerId: fullJob.offerId ?? null,
+          scriptId: fullJob.scriptId,
+          provider: 'youtube',
+          meta: { youtubeId },
+        });
       }
 
       // -----------------------------
@@ -422,6 +480,16 @@ ${trackUrl}`.slice(0, 4500);
       // -----------------------------
       try {
         await this.youtube.uploadCaptions(youtubeId!, srt);
+        await this.monitoring.info({
+          stage: 'PUBLISH',
+          status: 'CAPTIONS_DONE',
+          message: 'YouTube captions uploaded',
+          jobId: job.id,
+          offerId: fullJob.offerId ?? null,
+          scriptId: fullJob.scriptId,
+          provider: 'youtube',
+          meta: { youtubeId },
+        });
       } catch (e: any) {
         const msg = e?.message || String(e);
         await this.prisma.videoJob.update({
@@ -429,9 +497,29 @@ ${trackUrl}`.slice(0, 4500);
           data: { error: `Captions failed: ${msg}` },
         });
         this.logger.warn(`⚠️ Captions failed job=${job.id} msg=${this.short(msg, 250)}`);
+        await this.monitoring.warn({
+          stage: 'PUBLISH',
+          status: 'CAPTIONS_FAILED',
+          message: msg,
+          jobId: job.id,
+          offerId: fullJob.offerId ?? null,
+          scriptId: fullJob.scriptId,
+          provider: 'youtube',
+          meta: { youtubeId },
+        });
       }
 
       this.logger.log(`✅ Publish flow done job=${job.id} youtubeUrl=${youtubeUrl}`);
+      await this.monitoring.info({
+        stage: 'PUBLISH',
+        status: 'COMPLETED',
+        message: 'Publish flow completed',
+        jobId: job.id,
+        offerId: fullJob.offerId ?? null,
+        scriptId: fullJob.scriptId,
+        provider: 'youtube',
+        meta: { youtubeId, youtubeUrl },
+      });
     } catch (e: any) {
       const msg = e?.message || String(e);
 
@@ -461,6 +549,14 @@ ${trackUrl}`.slice(0, 4500);
       }
 
       this.logger.warn(`❌ Publish failed job=${job.id} msg=${this.short(msg, 300)}`);
+      await this.monitoring.error({
+        stage: 'PUBLISH',
+        status: 'FAILED',
+        message: msg,
+        jobId: job.id,
+        scriptId: job.scriptId ?? null,
+        provider: 'youtube',
+      });
     }
   }
 }

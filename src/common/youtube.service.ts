@@ -79,7 +79,7 @@ export class YoutubeService {
 });
   }
 
-  getAuthUrl() {
+  getAuthUrl(state?: string) {
   return this.oauth.generateAuthUrl({
     access_type: 'offline', // ✅ REQUIRED
     prompt: 'consent',      // ✅ VERY IMPORTANT (forces refresh token)
@@ -88,6 +88,7 @@ export class YoutubeService {
 ],
     include_granted_scopes: true,
     response_type: 'code',
+    ...(state ? { state } : {}),
   });
 }
 

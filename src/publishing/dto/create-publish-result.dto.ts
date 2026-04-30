@@ -6,9 +6,13 @@ export enum PublishStatus {
 }
 
 export class CreatePublishResultDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  videoId: string;
+  jobId?: string;
+
+  @IsString()
+  @IsOptional()
+  videoId?: string;
 
   @IsString()
   @IsNotEmpty()

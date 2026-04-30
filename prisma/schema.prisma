@@ -120,6 +120,7 @@ model VideoJob {
 model Offer {
   id          String       @id @default(uuid())
   network     String       @default("digistore24") // future-proof
+  externalProductId String? @unique
   name        String
   nicheTag    String? // "sleep", "fat-loss", "gut", etc
   hoplink     String // your affiliate link or promo link base
@@ -179,6 +180,42 @@ enum IntegrationProvider {
   SHOTSTACK
 }
 
+enum PipelineStage {
+  RENDER
+  PUBLISH
+  TRACKING
+  CONVERSION
+}
+
+enum PipelineSeverity {
+  INFO
+  WARN
+  ERROR
+}
+
+model PipelineEvent {
+  id        String           @id @default(uuid())
+  stage     PipelineStage
+  severity  PipelineSeverity @default(INFO)
+  status    String
+  message   String
+  jobId     String?
+  offerId   String?
+  clickId   String?
+  topicId   String?
+  scriptId  String?
+  provider  String?
+  meta      Json?
+  createdAt DateTime         @default(now())
+
+  @@index([stage, createdAt])
+  @@index([severity, createdAt])
+  @@index([status, createdAt])
+  @@index([jobId, createdAt])
+  @@index([offerId, createdAt])
+  @@index([clickId, createdAt])
+}
+
 model AppSettings {
   id               String   @id @default("app") // singleton row
   automationEnabled Boolean @default(true)
@@ -228,4 +265,3 @@ model AdminUser {
    promptText  String
 }
  
-

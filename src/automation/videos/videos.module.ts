@@ -10,6 +10,7 @@ import { YoutubeService } from '../../common/youtube.service';
 import { ShotstackServeService } from './shotstack-serve.service';
 import { GoogleTtsService } from '../tts/google-tts.service';
 import { AiImageService } from '../ai/ai-image.service';
+import { MonitoringModule } from 'src/monitoring/monitoring.module';
 
 @Module({
   providers: [
@@ -25,5 +26,6 @@ import { AiImageService } from '../ai/ai-image.service';
   ],
   controllers: [VideosController],
   exports: [VideosService, YoutubeService,],
+  imports: [MonitoringModule],
 })
 export class VideosModule {}
