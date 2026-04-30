@@ -35,7 +35,7 @@ export class TopicIngestionService {
   private readonly rssSource = 'rss';
 
   private readonly maxPerRun = Number(process.env.TOPIC_INGEST_MAX_PER_RUN || 30);
-  private readonly minPending = Number(process.env.TOPIC_INGEST_MIN_PENDING || 5);
+  private readonly minPending = Number(process.env.TOPIC_INGEST_MIN_PENDING || 20);
   private readonly freshHours = Number(process.env.TOPIC_INGEST_FRESH_HOURS || 72);
   private readonly fallbackAiCount = Number(process.env.TOPIC_INGEST_AI_FALLBACK_COUNT || 25);
 
@@ -81,8 +81,8 @@ export class TopicIngestionService {
     this.logger.log(`[Ingest] pendingCount=${pendingCount} minPending=${this.minPending}`);
 
     if (pendingCount >= this.minPending) {
-      return { ok: true, skipped: true, reason: 'enough-pending', pendingCount };
-    }
+  this.logger.log(`[Ingest] enough pending, but topping up slightly...`);
+}
 
     const rssCreated = await this.ingestFromRss();
 
@@ -341,16 +341,15 @@ export class TopicIngestionService {
     const seen = new Set<string>();
 
     for (const raw of topics) {
-      if (created >= this.maxPerRun) break;
+      if (created >= Math.max(5, this.minPending - pendingCount)) break;
 
       const title = this.normalizeTitle(raw);
       if (!title) continue;
 
       // ✅ Relaxed AI filter (FIXED LOGIC)
       const aiRelaxed =
-        /health|sleep|fitness|diet|brain|energy|body|wellness|stress|focus|routine/i.test(
-          title,
-        );
+        const aiRelaxed =
+  /health|sleep|fitness|diet|brain|energy|body|wellness|stress|focus|routine|hydration|water|habits|daily/i.test(title);
 
       if (!aiRelaxed) {
         this.logger.warn(`[AI-SKIP] filtered out: "${title}"`);
