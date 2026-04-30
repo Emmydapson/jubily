@@ -88,7 +88,7 @@ model VideoJob {
   scriptId     String
   offerId      String? // ✅ NEW (store product used for the video)
   status       String   @default("PENDING")
-  provider     String   @default("shotstack")
+  provider String? // 'shotstack' | 'replicate'
   videoUrl     String?
   youtubeVideoId String? 
   publishStage String?   // optional: UPLOADED | METADATA_DONE | CAPTIONS_DONE

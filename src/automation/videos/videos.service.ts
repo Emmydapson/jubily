@@ -78,13 +78,13 @@ export class VideosService {
       const message = error instanceof Error ? error.message : 'Failed to create render job';
 
       await this.prisma.videoJob.update({
-        where: { id: job.id },
-        data: {
-          status: 'FAILED',
-          error: message,
-          attempts: { increment: 1 },
-        },
-      });
+  where: { id: job.id },
+  data: {
+    status: 'FAILED',
+    error: message,
+    attempts: { increment: 1 },
+  },
+});
 
       throw error;
     }
@@ -121,20 +121,19 @@ export class VideosService {
       where: { id: job.id },
       data: {
         status: 'PROCESSING',
-        renderId,
+        renderId: result.renderId,
+    provider: result.provider,
         error: null,
       },
     });
 
-    await this.prisma.topic.updateMany({
-      where: {
-        id: job.script.topicId,
-        status: 'PENDING',
-      },
-      data: { status: 'USED' },
-    });
-
-    return { jobId: job.id, renderId };
+    if (job.script.topicId) {
+  await this.prisma.topic.update({
+    where: { id: job.script.topicId },
+    data: { status: 'USED' },
+  });
+}
+    return { jobId: job.id, renderId: result.renderId };
   }
 
 
@@ -207,7 +206,13 @@ async getVideoAssets(jobId: string) {
             topic: { select: { id: true, title: true } },
           },
         },
-        offer: { select: { id: true, name: true, externalProductId: true } },
+        offer: {
+  select: {
+    id: true,
+    name: true,
+    externalProductId: true, // keep ONLY if it exists in schema
+  },
+},
       },
     });
 

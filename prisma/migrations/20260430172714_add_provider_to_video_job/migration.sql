@@ -1,0 +1,6 @@
+-- AlterEnum
+ALTER TYPE "PipelineStage" ADD VALUE 'IMAGE_GENERATION';
+
+-- AlterTable
+ALTER TABLE "VideoJob" ALTER COLUMN "provider" DROP NOT NULL,
+ALTER COLUMN "provider" DROP DEFAULT;

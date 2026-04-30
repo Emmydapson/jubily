@@ -22,6 +22,7 @@ type RenderWorkerJob = {
   published: boolean;
   createdAt: Date;
   error: string | null;
+  provider?: string | null;
   script?: RenderWorkerScript | null;
 };
 
@@ -41,6 +42,16 @@ export class RenderWorker implements OnModuleInit {
     private monitoring: MonitoringService,
   ) {}
 
+private async bumpAttempt(jobId: string, message: string) {
+  return this.prisma.videoJob.update({
+    where: { id: jobId },
+    data: {
+      attempts: { increment: 1 },
+      error: message,
+    },
+  });
+}
+
   onModuleInit() {
     if (!this.enabled) {
       this.logger.warn('Render worker disabled via WORKERS_ENABLED');
@@ -52,107 +63,158 @@ export class RenderWorker implements OnModuleInit {
   }
 
   async loop() {
-    if (this.running) return;
-    this.running = true;
+  if (this.running) return;
+  this.running = true;
 
-    while (true) {
-      try {
-        const exhaustedJobs = await this.prisma.videoJob.findMany({
-          where: {
-            renderId: null,
-            published: false,
-            attempts: { gte: 6 },
-            status: { in: ['PENDING', 'FAILED'] },
-          },
-          include: {
-            script: {
-              select: {
-                id: true,
-                topicId: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'asc' },
-          take: 25,
-        });
-
-        for (const job of exhaustedJobs) {
-          await this.finalizePermanentFailure(job);
-        }
-
-        const pendingJobs = await this.prisma.videoJob.findMany({
-          where: {
-            renderId: null,
-            published: false,
-            attempts: { lt: 6 },
-            status: { in: ['PENDING', 'FAILED'] },
-          },
-          orderBy: { createdAt: 'asc' },
-          take: 25,
-        });
-
-        for (const job of pendingJobs) {
-          await this.startPendingRender(job);
-        }
-
-        const jobs = await this.prisma.videoJob.findMany({
-          where: {
-            status: 'PROCESSING',
-            renderId: { not: null },
-            attempts: { lt: 6 },
-          },
-        });
-
-        for (const job of jobs) {
-          await this.handle(job);
-        }
-      } catch (error: unknown) {
-        this.logger.error(
-          'Worker crashed',
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-
-      await new Promise((r) => setTimeout(r, 60000));
-    }
-  }
-
-  async startPendingRender(job: RenderWorkerJob) {
+  while (true) {
     try {
-      const started = await this.videos.startRenderForJob(job.id);
-      this.logger.log(`[Render] started job=${started.jobId} renderId=${started.renderId}`);
-      await this.monitoring.info({
-        stage: 'RENDER',
-        status: 'STARTED',
-        message: 'Render job started',
-        jobId: started.jobId,
-        provider: 'shotstack',
-        meta: { renderId: started.renderId, resumed: !!started.resumed },
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to create render job';
-
-      await this.prisma.videoJob.update({
-        where: { id: job.id },
-        data: {
-          status: 'FAILED',
-          attempts: { increment: 1 },
-          error: message,
+      // 🧨 1. HARD STUCK JOB CLEANUP (no renderId after retries)
+      const stuckJobs = await this.prisma.videoJob.findMany({
+        where: {
+          renderId: null,
+          attempts: { gte: 6 },
+          status: { in: ['PENDING', 'FAILED'] },
+        },
+        include: {
+          script: {
+            select: { id: true, topicId: true },
+          },
         },
       });
 
-      this.logger.error(`[Render] failed to start job=${job.id}: ${message}`);
+      for (const job of stuckJobs) {
+        await this.prisma.videoJob.update({
+          where: { id: job.id },
+          data: {
+            status: 'FAILED_PERMANENT',
+            error: 'Render never initialized (no renderId after retries)',
+          },
+        });
+
+        await this.monitoring.error({
+          stage: 'RENDER',
+          status: 'FAILED_PERMANENT',
+          message: 'Render stuck before initialization',
+          jobId: job.id,
+          scriptId: job.scriptId,
+          provider: 'shotstack',
+        });
+      }
+
+      // 🔁 2. NORMAL RETRY JOBS
+      const pendingJobs = await this.prisma.videoJob.findMany({
+        where: {
+          renderId: null,
+          published: false,
+          attempts: { lt: 6 },
+          status: { in: ['PENDING', 'FAILED'] },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 25,
+      });
+
+      for (const job of pendingJobs) {
+        await this.startPendingRender(job);
+      }
+
+      // 🎬 3. ACTIVE RENDER POLLING
+      const jobs = await this.prisma.videoJob.findMany({
+  where: {
+    status: 'PROCESSING',
+    renderId: { not: null },
+    attempts: { lt: 6 },
+  },
+  select: {
+    id: true,
+    scriptId: true,
+    offerId: true,
+    renderId: true,
+    status: true,
+    attempts: true,
+    published: true,
+    createdAt: true,
+    error: true,
+    provider: true, // ✅ ADD THIS
+  },
+});
+
+      for (const job of jobs) {
+        await this.handle(job);
+      }
+    } catch (error: unknown) {
+      this.logger.error(
+        'Worker crashed',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
+    await new Promise((r) => setTimeout(r, 60000));
+  }
+}
+
+  async startPendingRender(job: RenderWorkerJob) {
+  try {
+    const started = await this.videos.startRenderForJob(job.id);
+
+    if (!started?.renderId) {
+      throw new Error('Render service did not return renderId');
+    }
+
+    this.logger.log(
+      `[Render] started job=${started.jobId} renderId=${started.renderId}`,
+    );
+
+    await this.monitoring.info({
+      stage: 'RENDER',
+      status: 'CREATION_SUCCESS',
+      message: 'Render successfully initialized',
+      jobId: started.jobId,
+      provider: 'shotstack',
+      meta: {
+        renderId: started.renderId,
+        resumed: !!started.resumed,
+      },
+    });
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : 'Failed to create render job';
+
+    await this.bumpAttempt(job.id, message);
+
+    const updated = await this.prisma.videoJob.findUnique({
+      where: { id: job.id },
+    });
+
+    const attempts = updated?.attempts ?? 0;
+
+    if (attempts >= 6) {
+      await this.prisma.videoJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'FAILED_PERMANENT',
+        },
+      });
+
+      await this.monitoring.error({
+        stage: 'RENDER',
+        status: 'FAILED_PERMANENT',
+        message,
+        jobId: job.id,
+        provider: 'shotstack',
+      });
+    } else {
       await this.monitoring.error({
         stage: 'RENDER',
         status: 'START_FAILED',
         message,
         jobId: job.id,
-        offerId: job.offerId ?? null,
-        scriptId: job.scriptId ?? null,
         provider: 'shotstack',
       });
     }
+
+    this.logger.error(`[Render] failed job=${job.id}: ${message}`);
   }
+}
 
   async finalizePermanentFailure(job: RenderWorkerJob) {
     const message = String(job.error || 'Render start failed too many times');
@@ -195,6 +257,42 @@ export class RenderWorker implements OnModuleInit {
   }
 
   async handle(job: RenderWorkerJob) {
+   if (job.provider === 'replicate') {
+  await this.prisma.videoJob.update({
+    where: { id: job.id },
+    data: {
+      status: 'COMPLETED',
+      videoUrl: job.renderId,
+      error: null,
+    },
+  });
+
+  await this.sheets.append([
+    job.id,
+    job.scriptId,
+    '',
+    '',
+    'replicate',
+    'COMPLETED',
+    job.renderId,
+    '',
+    job.createdAt,
+    new Date(),
+  ]);
+
+  await this.monitoring.info({
+    stage: 'RENDER',
+    status: 'COMPLETED',
+    message: 'Replicate video completed',
+    jobId: job.id,
+    provider: 'replicate',
+    meta: { videoUrl: job.renderId },
+  });
+
+  this.logger.log(`✅ Replicate video done job=${job.id}`);
+
+  return;
+}
     const renderId = String(job.renderId || '');
     if (!renderId) return;
 
