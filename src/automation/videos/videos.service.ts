@@ -135,6 +135,7 @@ if (job.script.topicId) {
 }
 
 return { jobId: job.id, renderId};
+  }
 
 async listVideos(query: ListVideosQuery) {
   const page = Math.max(Number(query.page ?? 1), 1);
