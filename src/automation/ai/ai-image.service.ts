@@ -22,27 +22,22 @@ export class AiImageService {
   private readonly aiMode = (process.env.IMAGE_AI_MODE || 'live').toLowerCase();
 
   private readonly primaryModel: ImageModelSpec = {
-    owner: 'alibaba',
-    name: 'happyhorse-1.0',
-    label: 'alibaba/happyhorse-1.0',
-    input: {
-      prompt: undefined,
-      resolution: '1080p',
-      aspect_ratio: '16:9',
-      duration: 5,
-    },
-  };
+  owner: 'black-forest-labs',
+  name: 'flux-schnell',
+  label: 'flux-schnell',
+  input: {
+    prompt: undefined,
+  },
+};
 
-  private readonly fallbackModel: ImageModelSpec = {
-    owner: 'stability-ai',
-    name: 'sdxl',
-    label: 'stability-ai/sdxl',
-    input: {
-      prompt: undefined,
-      width: 1024,
-      height: 1024,
-    },
-  };
+private readonly fallbackModel: ImageModelSpec = {
+  owner: 'black-forest-labs',
+  name: 'flux-dev',
+  label: 'flux-dev',
+  input: {
+    prompt: undefined,
+  },
+};
 
   private replicate?: Replicate;
   private versionCache = new Map<string, string>();
