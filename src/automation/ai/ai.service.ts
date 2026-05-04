@@ -1,7 +1,6 @@
 /* eslint-disable prettier/prettier */
-import { Injectable } from '@nestjs/common';
-import axios from 'axios';
-import { Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import OpenAI from 'openai';
 
 type Scene = {
   narration: string;
@@ -19,173 +18,87 @@ type ScriptJson = {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
   private readonly aiMode = (process.env.AI_MODE || 'live').toLowerCase();
 
-  private readonly apiKey = process.env.DEEPSEEK_API_KEY;
-  private readonly baseUrl = 'https://api.deepseek.com/v1/chat/completions';
-  private readonly model = 'deepseek-chat';
-  private readonly logger = new Logger(AiService.name);
+  private openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
 
-  private async callDeepseek(messages: any[]) {
-    const res = await axios.post(
-      this.baseUrl,
-      {
-        model: this.model,
-        messages,
-        temperature: 0.6,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-      },
-    );
-
-    return res.data?.choices?.[0]?.message?.content;
-  }
-
-  async generateTopics(count = 25): Promise<string[]> {
-  if (this.aiMode === 'mock' || !this.apiKey) {
-    return [
-      'Morning routine for energy',
-      'Better sleep habits',
-      'Hydration tips',
-      'Quick stress relief',
-    ];
-  }
-
-  const text = await this.callDeepseek([
-    {
-      role: 'system',
-      content: `
-You are a content engine.
-
-Return ONLY valid JSON in this format:
-{
-  "topics": [
-    "short health video title",
-    "another title"
-  ]
-}
-
-Rules:
-- Health & wellness only
-- No numbering
-- No explanations
-- Max 12 words per topic
-- Return EXACTLY ${count} items
-`,
-    },
-    {
-      role: 'user',
-      content: `Generate ${count} viral health & wellness short-form video topics`,
-    },
-  ]);
-
-  if (!text) return [];
-
-  const cleaned = text
-    .replace(/```json/g, '')
-    .replace(/```/g, '')
-    .trim();
-
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (!Array.isArray(parsed?.topics)) return [];
-    return parsed.topics;
-  } catch (e) {
-    this.logger.warn(`[AI] JSON parse failed, raw output: ${cleaned}`);
-    return [];
-  }
-}
-  async generateScriptWithOffer(
-  topic: string,
-  offer: { name: string; url: string; bullets?: string[] },
-): Promise<string> {
-    if (this.aiMode === 'mock' || !this.apiKey) {
-      const mock = this.buildMockScript(topic);
-      mock.cta = `Check ${offer.name}: ${offer.url}`;
-      return JSON.stringify(mock);
+  // ------------------------
+  // 🎯 TOPIC GENERATION
+  // ------------------------
+  async generateTopics(count = 10): Promise<string[]> {
+    if (this.aiMode === 'mock') {
+      return [
+        'Why you feel tired after sleeping',
+        'The hidden cause of low energy',
+        'Morning habits ruining your day',
+      ];
     }
 
-    const text = await this.callDeepseek([
-      {
-        role: 'system',
-        content: `Return JSON script and include product recommendation naturally`,
-      },
-      {
-        role: 'user',
-        content: `
-Topic: ${topic}
-
-Offer:
-- Name: ${offer.name}
-- Link: ${offer.url}
-- Benefits: ${(offer.bullets || []).join(', ')}
-
-Make the recommendation feel natural, not salesy.
-`,
-      },
-    ]);
-
-    const json = this.safeParseJson(text);
-    if (!json) throw new Error('Invalid JSON');
-
-    return JSON.stringify(json);
-  }
-
-  private safeParseJson(text: string): ScriptJson | null {
-    try {
-      return JSON.parse(
-        text.replace(/```json|```/g, '').trim(),
-      );
-    } catch {
-      return null;
-    }
-  }
-
- private buildMockScript(topic: string): ScriptJson {
-  return {
-    title: topic,
-    cta: 'Follow for more daily health tips',
-    scenes: [
-      {
-        narration: `Most people ignore this about ${topic}, but it changes everything.`,
-        caption: 'Did you know?',
-        visualPrompt: 'cinematic lifestyle health visuals, clean modern style',
-        seconds: 6,
-      },
-      {
-        narration: `If you fix this one habit, your energy improves within days.`,
-        caption: 'Quick fix',
-        visualPrompt: 'morning routine, healthy lifestyle, bright lighting',
-        seconds: 6,
-      },
-      {
-        narration: `Start today and your body will thank you later.`,
-        caption: 'Start now',
-        visualPrompt: 'motivational health transformation scene',
-        seconds: 6,
-      },
-    ],
-  };
-}
-  async generateScript(topic: string): Promise<string> {
-  if (this.aiMode === 'mock' || !this.apiKey) {
-    return JSON.stringify(this.buildMockScript(topic));
-  }
-
-  const text = await this.callDeepseek([
-    {
-      role: 'system',
-      content: `
-Create a 60-second HEALTH & WELLNESS short video script.
+    const res = await this.openai.chat.completions.create({
+      model: 'gpt-4.1-mini',
+      temperature: 0.7,
+      messages: [
+        {
+          role: 'system',
+          content: `
+You are a viral content strategist.
 
 Return ONLY JSON:
 {
+  "topics": ["topic1", "topic2"]
+}
+
+Rules:
+- Health + wellness niche
+- Highly curiosity-driven
+- Max 10 words each
+- No numbering
+- EXACTLY ${count} topics
+          `,
+        },
+        {
+          role: 'user',
+          content: `Generate ${count} viral short-form video topics`,
+        },
+      ],
+    });
+
+    const text = res.choices[0].message.content || '';
+
+    try {
+      return JSON.parse(text).topics || [];
+    } catch {
+      this.logger.warn('[AI] Topic parse failed');
+      return [];
+    }
+  }
+
+  // ------------------------
+  // 🎬 SCRIPT GENERATION (UPGRADED)
+  // ------------------------
+  async generateScript(topic: string): Promise<string> {
+    if (this.aiMode === 'mock') {
+      return JSON.stringify(this.buildMockScript(topic));
+    }
+
+    const res = await this.openai.chat.completions.create({
+      model: 'gpt-4.1-mini',
+      temperature: 0.7,
+      messages: [
+        {
+          role: 'system',
+          content: `
+You are a viral TikTok/Reels script generator.
+
+Return ONLY JSON:
+
+{
   "title": "",
   "cta": "",
+  "hashtags": [],
   "scenes": [
     {
       "narration": "",
@@ -196,21 +109,94 @@ Return ONLY JSON:
   ]
 }
 
-Rules:
-- 55–65 seconds total
-- Hook in first 3 seconds
+STRICT RULES:
+
+🎯 STRUCTURE:
+- Total video: 45–60 seconds
+- 5–7 scenes
+- Scene length: 5–9 seconds
+
+🔥 HOOK:
+- First scene MUST be a strong pattern interrupt
+- Create curiosity or shock
+
+⚡ PACING:
+- Fast, punchy narration
+- Each scene must feel different
+
+🎬 VISUAL PROMPTS (VERY IMPORTANT):
+Each visualPrompt must include:
+- camera movement (zoom in, pan, slow motion)
+- subject action
+- lighting style
+- mood
+- realism
+
+Example:
+"close-up of tired woman waking up, slow zoom in, morning sunlight, cinematic lighting, realistic"
+
+🚫 DO NOT:
+- Use generic prompts
+- Repeat visuals
+- Add text inside image
+
+🎯 CONTENT STYLE:
+- Relatable
+- Simple language
 - No medical claims
-      `,
-    },
-    {
-      role: 'user',
-      content: topic,
-    },
-  ]);
 
-  const json = this.safeParseJson(text);
-  if (!json) throw new Error('Invalid script JSON');
+Return ONLY JSON. No explanation.
+          `,
+        },
+        {
+          role: 'user',
+          content: topic,
+        },
+      ],
+    });
 
-  return JSON.stringify(json);
-}
+    const text = res.choices[0].message.content || '';
+
+    try {
+      const parsed = JSON.parse(text);
+      return JSON.stringify(parsed);
+    } catch {
+      this.logger.error('[AI] Script parse failed');
+      throw new Error('INVALID_SCRIPT_JSON');
+    }
+  }
+
+  // ------------------------
+  // 🧪 MOCK
+  // ------------------------
+  private buildMockScript(topic: string): ScriptJson {
+    return {
+      title: topic,
+      cta: 'Follow for more health tips',
+      hashtags: ['#health', '#wellness', '#fyp'],
+      scenes: [
+        {
+          narration: `You’re doing this every morning… and it’s draining your energy.`,
+          caption: 'Stop doing this',
+          visualPrompt:
+            'person waking up tired in bed, slow zoom in, soft morning light, cinematic, realistic',
+          seconds: 6,
+        },
+        {
+          narration: `Your body actually needs this instead.`,
+          caption: 'Here’s why',
+          visualPrompt:
+            'person drinking water, close-up, bright lighting, clean lifestyle, realistic',
+          seconds: 6,
+        },
+        {
+          narration: `Fix this one habit and everything changes.`,
+          caption: 'Game changer',
+          visualPrompt:
+            'person stretching confidently, slow motion, sunrise background, cinematic',
+          seconds: 6,
+        },
+      ],
+    };
+  }
 }

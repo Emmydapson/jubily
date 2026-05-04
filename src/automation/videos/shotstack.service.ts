@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { Scene } from './interfaces/scene.interface';
 import { GoogleTtsService } from '../tts/google-tts.service';
-import { AiImageService } from '../ai/ai-image.service'; // ✅ adjust path to where you create it
+import { AiImageService } from '../ai/ai-image.service';
 
 @Injectable()
 export class ShotstackService {
@@ -13,7 +13,7 @@ export class ShotstackService {
 
   constructor(
     private readonly tts: GoogleTtsService,
-    private readonly aiImages: AiImageService, // ✅ inject image generator
+    private readonly aiImages: AiImageService,
   ) {}
 
   private apiKey(): string {
@@ -22,70 +22,96 @@ export class ShotstackService {
     return k;
   }
 
+  // ------------------------
+  // ⏱️ duration estimation fallback
+  // ------------------------
   private estimateSeconds(narration: string) {
-  const words = narration.trim().split(/\s+/).filter(Boolean).length;
-  const sec = words / 2.2; // ~132 wpm
-  return Math.max(3, Math.min(9, sec));
-}
-
-  private shortHost(url: string) {
-    try {
-      return new URL(url).host;
-    } catch {
-      return 'invalid-url';
-    }
+    const words = narration.trim().split(/\s+/).filter(Boolean).length;
+    return Math.max(3, Math.min(9, words / 2.2));
   }
 
-  /**
-   * Preflight-check assets from *your server* to spot which URL is not public.
-   * Shotstack needs assets to be publicly fetchable (no auth, no blocked redirects).
-   */
-  private async preflight(url: string, label: string) {
-    try {
-      const res = await axios.head(url, {
-        timeout: 15000,
-        maxRedirects: 5,
-        validateStatus: () => true,
-        headers: { 'User-Agent': 'jubily-preflight/1.0' },
-      });
+  // ------------------------
+  // 🎵 MOOD-BASED MUSIC SELECTION
+  // ------------------------
+  private pickMusic(topic: string) {
+    const t = topic.toLowerCase();
 
-      const status = res.status;
-      const ct = String(res.headers?.['content-type'] || '');
-      const cl = String(res.headers?.['content-length'] || '');
-      const loc = String(res.headers?.location || '');
-
-      this.logger.log(
-        `[AssetPreflight] ${label} status=${status} host=${this.shortHost(url)} ct=${ct} len=${cl}${
-          loc ? ` redirect=${loc}` : ''
-        } url=${url}`,
-      );
-
-      if (status < 200 || status >= 300) {
-        this.logger.warn(`[AssetPreflight] ❗ ${label} not-200 status=${status} url=${url}`);
-      }
-    } catch (error: unknown) {
-      this.logger.error(
-        `[AssetPreflight] ❌ ${label} FAILED host=${this.shortHost(url)} url=${url} msg=${error instanceof Error ? error.message : String(error)}`,
-      );
+    if (t.includes('stress') || t.includes('anxiety')) {
+      return process.env.MUSIC_CALM;
     }
+
+    if (t.includes('energy') || t.includes('morning')) {
+      return process.env.MUSIC_UPBEAT;
+    }
+
+    if (t.includes('sleep') || t.includes('night')) {
+      return process.env.MUSIC_SOFT;
+    }
+
+    return process.env.MUSIC_DEFAULT;
   }
 
+  // ------------------------
+  // 🎯 GROUPED SUBTITLES (OPTIMIZED — NOT WORD EXPLOSION)
+  // ------------------------
+  private buildGroupedSubtitles(text: string, start: number, duration: number) {
+    const words = text.split(' ').filter(Boolean);
+
+    // group words in chunks (prevents Shotstack overload)
+    const chunkSize = 3;
+    const chunks: string[] = [];
+
+    for (let i = 0; i < words.length; i += chunkSize) {
+      chunks.push(words.slice(i, i + chunkSize).join(' '));
+    }
+
+    const perChunk = duration / chunks.length;
+
+    return chunks.map((chunk, i) => ({
+      asset: {
+        type: 'html',
+        html: `
+        <div style="
+          width:100%; height:100%;
+          display:flex;
+          align-items:flex-end;
+          justify-content:center;
+          padding:80px;
+          font-family:Arial;
+          font-size:58px;
+          font-weight:900;
+          color:white;
+          text-align:center;
+          text-shadow: 0 4px 18px rgba(0,0,0,0.95);
+        ">
+          <div style="
+            background: rgba(0,0,0,0.55);
+            padding:22px 32px;
+            border-radius:18px;
+            backdrop-filter: blur(6px);
+          ">
+            ${chunk}
+          </div>
+        </div>
+        `,
+      },
+      start: start + i * perChunk,
+      length: perChunk,
+    }));
+  }
+
+  // ------------------------
+  // 🚀 MAIN RENDER FUNCTION
+  // ------------------------
   async renderVideo(scenes: Scene[], jobId?: string): Promise<string> {
     if (!Array.isArray(scenes) || scenes.length === 0) {
       throw new Error('renderVideo: scenes empty');
     }
 
-    
-
-    const fullNarration = scenes.map((s) => s.narration).join(' ').trim();
-
-    if (!fullNarration) throw new Error('renderVideo: narration empty');
-
-    // ✅ One job key per render run (used for voiceover + scene image public ids)
     const jobKey = `job-${Date.now()}`;
+    const narrations = scenes.map((s) => s.narration);
 
-    // ✅ Get voice URL + timepoints
-    const narrations = scenes.map((s) => String(s.narration || '').trim());
+    // 🎙️ TTS generation
     const { url: voiceoverUrl, timepoints } =
       await this.tts.synthesizeWithMarksToCloudinaryMp3(narrations, jobKey);
 
@@ -98,150 +124,150 @@ export class ShotstackService {
 
     let end = byName.get('end');
 
-    if (typeof end !== 'number' || !Number.isFinite(end) || end <= 0) {
-      this.logger.warn(
-        `[TTS] No valid "end" mark. Falling back to estimated narration duration`,
-      );
-
-      end = narrations.reduce((total, line) => {
-        return total + this.estimateSeconds(line);
-      }, 0);
+    if (!end) {
+      end = narrations.reduce((t, n) => t + this.estimateSeconds(n), 0);
     }
-    this.logger.log(
-      `[TTS] publicId=${jobKey} voiceHost=${this.shortHost(voiceoverUrl)} voiceoverUrl=${voiceoverUrl}`,
+
+    // 🎨 AI images (parallel)
+    const images = await this.aiImages.generateMultipleScenes(
+      scenes.map((s, i) => ({
+        visualPrompt: s.visualPrompt,
+        publicId: `${jobKey}-scene-${i}`,
+        jobId,
+      })),
     );
 
-    // Shotstack will fetch this
-    await this.preflight(voiceoverUrl, 'voiceover');
+    const bgClips = [];
+    const subtitleClips = [];
+    const sfxClips = [];
 
-    const bgClips: Array<{
-      asset: { type: 'image'; src: string };
-      start: number;
-      length: number;
-      effect: string;
-    }> = [];
-    const captionClips: Array<{
-      asset: { type: 'html'; html: string };
-      start: number;
-      length: number;
-    }> = [];
+    const motionEffects = [
+      'zoomIn',
+      'zoomOut',
+      'panLeft',
+      'panRight',
+      'fadeIn',
+    ];
 
-    for (let i = 0; i < scenes.length; i += 1) {
+    // ------------------------
+    // 🎬 BUILD SCENES
+    // ------------------------
+    for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
 
-      const start = byName.get(`s${i + 1}`);
-      const nextStart = byName.get(`s${i + 2}`);
+      let start = byName.get(`s${i + 1}`) ?? 0;
+      let next = byName.get(`s${i + 2}`) ?? end;
 
-      let sceneStart = start;
+      let length = Math.max(1.5, next - start);
 
-      if (typeof sceneStart !== 'number') {
-        this.logger.warn(`[TTS] Missing mark s${i + 1}, estimating start time`);
+      // slight overlap for smooth flow
+      if (i !== 0) start -= 0.25;
 
-        sceneStart = scenes
-          .slice(0, i)
-          .reduce((t, s) => t + this.estimateSeconds(s.narration), 0);
-      }
+      const effect = motionEffects[i % motionEffects.length];
 
-      const sceneEnd = typeof nextStart === 'number' ? nextStart : end;
-
-      // ✅ real duration based on audio marks
-      const length = Math.max(1.2, Number((sceneEnd - sceneStart).toFixed(2)));
-
-      // ✅ AI image per scene using visualPrompt
-      const visualPrompt = String(scene.visualPrompt || '').trim();
-      if (!visualPrompt) throw new Error(`Missing visualPrompt at scene index=${i}`);
-
-      const imgPublicId = `${jobKey}-scene-${i}`;
-      const sceneImageUrl = await this.aiImages.generateSceneImageUrl(
-        visualPrompt,
-        imgPublicId,
-        jobId,
-      );
-
-      await this.preflight(sceneImageUrl, `sceneImage-${i}`);
-
+      // ------------------------
+      // 🎥 BACKGROUND IMAGE
+      // ------------------------
       bgClips.push({
-        asset: { type: 'image', src: sceneImageUrl },
-        start: sceneStart,
+        asset: { type: 'image', src: images[i] },
+        start,
         length,
-        effect: 'zoomIn',
+        effect,
       });
 
-      captionClips.push({
-        asset: {
-          type: 'html',
-          html: `
-        <div style="
-          width:100%; height:100%;
-          display:flex; align-items:flex-end; justify-content:center;
-          padding:90px;
-          font-family:Arial; font-size:56px; font-weight:800;
-          color:white; text-shadow: 0 2px 14px rgba(0,0,0,.9);
-          text-align:center;">
-          <div style="background: rgba(0,0,0,.45); padding:24px 30px; border-radius:18px;">
-            ${String(scene.caption || '')}
-          </div>
-        </div>
-      `,
-        },
-        start: sceneStart,
+      // ------------------------
+      // 📝 SUBTITLES (GROUPED)
+      // ------------------------
+      const subtitleBlocks = this.buildGroupedSubtitles(
+        scene.narration,
+        start,
         length,
+      );
+
+      subtitleClips.push(...subtitleBlocks);
+
+      // ------------------------
+      // 🔊 SFX (soft pop per scene)
+      // ------------------------
+      sfxClips.push({
+        asset: {
+          type: 'audio',
+          src: process.env.SFX_POP,
+        },
+        start,
+        length: 0.25,
+        volume: 0.15,
       });
     }
 
-bgClips.sort((a, b) => a.start - b.start);
-captionClips.sort((a, b) => a.start - b.start);
-
-    // ✅ NO BACKGROUND MUSIC: only image + captions + voiceover audio track
+    // ------------------------
+    // 🎞️ FINAL PAYLOAD
+    // ------------------------
     const payload = {
       timeline: {
         tracks: [
           { clips: bgClips },
-          { clips: captionClips },
+          { clips: subtitleClips },
+
+          // 🎙 voiceover
           {
             clips: [
               {
                 asset: { type: 'audio', src: voiceoverUrl },
                 start: 0,
-                length: Math.max(1, Math.ceil(end)),
+                length: Math.ceil(end),
               },
             ],
           },
+
+          // 🎵 background music
+          {
+            clips: [
+              {
+                asset: {
+                  type: 'audio',
+                  src: this.pickMusic(scenes[0].narration),
+                },
+                start: 0,
+                length: Math.ceil(end),
+                volume: 0.08,
+              },
+            ],
+          },
+
+          // 🔊 SFX layer
+          {
+            clips: sfxClips,
+          },
         ],
       },
+
       output: {
         format: 'mp4',
         resolution: 'hd',
       },
     };
 
-    this.logger.log(`[ShotstackPayload] scenes=${scenes.length} totalSeconds=${Math.ceil(end)} voiceHost=${this.shortHost(voiceoverUrl)}`);
+    this.logger.log(
+      `[ShotstackRender] scenes=${scenes.length} duration=${Math.ceil(end)}`,
+    );
 
-    try {
-      const res = await axios.post(`${this.baseUrl}/render`, payload, {
-        headers: {
-          'x-api-key': this.apiKey(),
-          'x-shotstack-stage': 'true',
-          'Content-Type': 'application/json',
-        },
-        timeout: 20000,
-      });
+    const res = await axios.post(`${this.baseUrl}/render`, payload, {
+      headers: {
+        'x-api-key': this.apiKey(),
+        'x-shotstack-stage': 'true',
+        'Content-Type': 'application/json',
+      },
+    });
 
-      const renderId = res.data?.response?.id;
-      if (!renderId) throw new Error('Shotstack did not return render id');
+    const renderId = res.data?.response?.id;
 
-      this.logger.log(`[ShotstackRenderCreated] renderId=${renderId}`);
-      return renderId;
-    } catch (error: unknown) {
-      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-      const data = axios.isAxiosError(error) ? error.response?.data : undefined;
-      const msg = error instanceof Error ? error.message : String(error);
-
-      this.logger.error(
-        `[ShotstackRenderError] status=${status} msg=${msg} response=${JSON.stringify(data)}`,
-      );
-
-      throw error;
+    if (!renderId) {
+      throw new Error('Shotstack did not return render id');
     }
+
+    this.logger.log(`[ShotstackRenderCreated] id=${renderId}`);
+
+    return renderId;
   }
 }
