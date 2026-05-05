@@ -137,9 +137,9 @@ export class ShotstackService {
       })),
     );
 
-    const bgClips = [];
-    const subtitleClips = [];
-    const sfxClips = [];
+    const bgClips: any[] = [];
+const subtitleClips: any[] = [];
+const sfxClips: any[] = [];
 
     const motionEffects = [
       'zoomIn',
@@ -192,7 +192,7 @@ export class ShotstackService {
       sfxClips.push({
         asset: {
           type: 'audio',
-          src: process.env.SFX_POP,
+          src: process.env.SFX_POP || '',
         },
         start,
         length: 0.25,
@@ -226,7 +226,7 @@ export class ShotstackService {
               {
                 asset: {
                   type: 'audio',
-                  src: this.pickMusic(scenes[0].narration),
+                  src: this.pickMusic(scenes[0].narration) || '',
                 },
                 start: 0,
                 length: Math.ceil(end),

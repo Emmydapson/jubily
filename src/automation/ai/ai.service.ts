@@ -199,4 +199,16 @@ Return ONLY JSON. No explanation.
       ],
     };
   }
+
+  async generateScriptWithOffer(
+  topic: string,
+  offer: { name: string; url: string; bullets?: string[] },
+): Promise<string> {
+  const script = await this.generateScript(topic);
+  const parsed = JSON.parse(script);
+
+  parsed.cta = `Check out ${offer.name}: ${offer.url}`;
+
+  return JSON.stringify(parsed);
+}
 }
