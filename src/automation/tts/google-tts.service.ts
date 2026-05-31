@@ -90,6 +90,6 @@ const [response]: any = await this.client.synthesizeSpeech(request);
       timeSeconds: Number(tp?.timeSeconds || 0),
     }));
 
-    return { url: upload.secure_url as string, timepoints };
+    return { url: upload.secure_url, timepoints };
   }
 }

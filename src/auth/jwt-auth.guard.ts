@@ -10,16 +10,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     super();
   }
 
-  private isPublicPath(path: string) {
-    const normalized = String(path || '').toLowerCase();
-    return (
-      normalized.startsWith('/r/') ||
-      normalized.startsWith('/webhooks/digistore24') ||
-      normalized.startsWith('/webhooks/clickbank') ||
-      normalized === '/monitoring/pipeline/health'
-    );
-  }
-
   canActivate(context: ExecutionContext) {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
@@ -27,9 +17,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     ]);
 
     if (isPublic) return true;
-
-    const req = context.switchToHttp().getRequest();
-    if (this.isPublicPath(req?.path || req?.originalUrl || '')) return true;
 
     return super.canActivate(context);
   }

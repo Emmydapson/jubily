@@ -1,24 +1,31 @@
 /* eslint-disable prettier/prettier */
 import { Body, Controller, Post } from '@nestjs/common';
 import { OrchestratorService } from './orchestrator.service';
-
-type Slot = 'MORNING' | 'AFTERNOON' | 'EVENING';
+import { Roles } from '../auth/roles.decorator';
+import { RunSlotDto } from './run-slot.dto';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 @Controller('automation/orchestrator')
+@Roles('ADMIN')
+@ApiTags('Orchestrator')
+@ApiBearerAuth('jwt')
 export class OrchestratorController {
   constructor(private readonly orchestrator: OrchestratorService) {}
 
-  // ❗ keep protected if you want (recommended). Remove @Public
   @Post('run')
-  async run(@Body() body: { slot: Slot; scheduledFor?: string }) {
-    const slot = body.slot;
+  @ApiOperation({ summary: 'Run an orchestrator slot', description: 'Requires a valid ADMIN bearer token. Uses scheduledFor when provided.' })
+  @ApiBody({ type: RunSlotDto })
+  @ApiOkResponse({ description: 'Slot run result.', schema: { example: { ok: true, slot: 'MORNING', jobId: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c' } } })
+  async run(@Body() body: RunSlotDto) {
     const scheduledFor = body.scheduledFor ? new Date(body.scheduledFor) : new Date();
-    return this.orchestrator.runSlot(slot, scheduledFor);
+    return this.orchestrator.runSlot(body.slot, scheduledFor);
   }
 
-  // Optional: quick health check
   @Post('run-now')
-  async runNow(@Body() body: { slot: Slot }) {
+  @ApiOperation({ summary: 'Run an orchestrator slot immediately', description: 'Requires a valid ADMIN bearer token. Ignores scheduledFor and uses the current server time.' })
+  @ApiBody({ type: RunSlotDto })
+  @ApiOkResponse({ description: 'Immediate slot run result.', schema: { example: { ok: true, slot: 'MORNING', jobId: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c' } } })
+  async runNow(@Body() body: RunSlotDto) {
     return this.orchestrator.runSlot(body.slot, new Date());
   }
 }

@@ -4,8 +4,10 @@ import type { Request, Response } from 'express';
 import { Digistore24Service } from './digistore24.service';
 import { Public } from 'src/auth/public.decorator';
 import { MonitoringService } from 'src/monitoring/monitoring.service';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 @Controller('webhooks/digistore24')
+@ApiTags('Webhooks')
 export class Digistore24Controller {
   private readonly logger = new Logger(Digistore24Controller.name);
 
@@ -13,8 +15,15 @@ export class Digistore24Controller {
     private readonly ds: Digistore24Service,
     private readonly monitoring: MonitoringService,
   ) {}
-@Public()
+  // Public because Digistore24 must post IPN events without a Jubily bearer token.
+  @Public()
   @Post()
+  @ApiOperation({ summary: 'Receive Digistore24 IPN webhook', description: 'Public webhook endpoint. Digistore24 posts x-www-form-urlencoded payloads and expects an OK response.' })
+  @ApiBody({
+    description: 'Digistore24 IPN form payload.',
+    schema: { example: { event: 'payment', transaction_id: 'D24-123456', order_id: 'ORDER-123', product_id: '12345', amount: '49.00', currency: 'USD' } },
+  })
+  @ApiOkResponse({ description: 'Always responds OK for accepted, ignored, and logged webhook events.', schema: { example: 'OK' } })
   async handle(@Req() req: Request, @Res() res: Response) {
     // Digistore sends x-www-form-urlencoded, so req.body is key/value
     const payload = req.body as Record<string, any>;

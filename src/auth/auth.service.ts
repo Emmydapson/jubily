@@ -1,11 +1,11 @@
 /* eslint-disable prettier/prettier */
-import { Injectable, UnauthorizedException, OnModuleInit } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import * as bcrypt from 'bcrypt';
+import bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
-export class AuthService implements OnModuleInit {
+export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
@@ -33,48 +33,14 @@ export class AuthService implements OnModuleInit {
     return normalizedEmail;
   }
 
-  async onModuleInit() {
-    await this.seedAdminFromEnv();
-  }
-
-  async seedAdminFromEnv() {
-    const email = process.env.ADMIN_SEED_EMAIL;
-    const password = process.env.ADMIN_SEED_PASSWORD;
-
-    if (!email || !password) return;
-
-    const normalizedEmail = this.ensureAdminEmailAllowed(email);
-
-    const exists = await this.prisma.adminUser.findUnique({ where: { email: normalizedEmail } });
-    if (exists) return;
-
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    await this.prisma.adminUser.create({
-      data: { email: normalizedEmail, passwordHash, role: 'ADMIN', active: true },
-    });
-  }
-
   async login(email: string, password: string) {
     const normalizedEmail = this.ensureAdminEmailAllowed(email);
 
-    let admin = await this.prisma.adminUser.findUnique({ where: { email: normalizedEmail } });
+    const admin = await this.prisma.adminUser.findUnique({ where: { email: normalizedEmail } });
 
-    if (!admin) {
-      const passwordHash = await bcrypt.hash(password, 12);
-      admin = await this.prisma.adminUser.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash,
-          role: 'ADMIN',
-          active: true,
-          lastLoginAt: new Date(),
-        },
-      });
-    }
+    if (!admin || !admin.active) throw new UnauthorizedException('Invalid credentials');
 
-    if (!admin.active) throw new UnauthorizedException('Invalid credentials');
-
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     const ok = await bcrypt.compare(password, admin.passwordHash);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 

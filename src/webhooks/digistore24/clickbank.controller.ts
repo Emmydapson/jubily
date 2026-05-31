@@ -6,8 +6,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { Public } from 'src/auth/public.decorator';
 import { Logger } from '@nestjs/common';
 import { MonitoringService } from 'src/monitoring/monitoring.service';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 
 @Controller('/webhooks/clickbank')
+@ApiTags('Webhooks')
 export class ClickbankWebhookController {
   private readonly logger = new Logger(ClickbankWebhookController.name);
 
@@ -16,8 +18,17 @@ export class ClickbankWebhookController {
     private monitoring: MonitoringService,
   ) {}
 
+  // Public because ClickBank must post INS events without a Jubily bearer token.
   @Public()
   @Post()
+  @ApiOperation({ summary: 'Receive ClickBank INS webhook', description: 'Public webhook endpoint. When ClickBank secret validation is enabled, the shared secret must be supplied in the key query parameter.' })
+  @ApiSecurity('clickbank-key')
+  @ApiQuery({ name: 'key', required: false, example: 'clickbank-shared-secret', description: 'ClickBank INS shared secret when CLICKBANK_INS_ENABLED is true.' })
+  @ApiBody({
+    description: 'ClickBank INS JSON payload.',
+    schema: { example: { tid: '36ca5c2e-c4bc-4f45-ad02-65f0ed42e2f8', transactionType: 'SALE', amount: '49.00', currency: 'USD' } },
+  })
+  @ApiOkResponse({ description: 'Always responds OK for accepted, ignored, rejected, and logged webhook events.', schema: { example: 'OK' } })
   async handle(@Body() body: any, @Query('key') key: string | undefined, @Res() res: Response) {
     // ✅ shared secret (simple + effective)
     const secretEnabled = (process.env.CLICKBANK_INS_ENABLED ?? 'true').toLowerCase() === 'true';

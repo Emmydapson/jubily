@@ -8,11 +8,17 @@ import { ShotstackServeService } from './shotstack-serve.service';
 import { v2 as cloudinary } from 'cloudinary';
 import { extractScenes } from '../scene.parser';
 import { MonitoringService } from 'src/monitoring/monitoring.service';
+import { randomUUID } from 'crypto';
+import { SettingsService } from '../../settings/settings.service';
 
 @Injectable()
 export class PublishWorker implements OnModuleInit {
   private running = false;
   private logger = new Logger(PublishWorker.name);
+  private autoPublishPausedLogged = false;
+  private readonly workerId = `publish-${process.pid}-${randomUUID()}`;
+  private readonly lockTtlMs = Number(process.env.WORKER_LOCK_TTL_MS || 30 * 60 * 1000);
+  private readonly maxPublishAttempts = Number(process.env.PUBLISH_MAX_ATTEMPTS || 6);
   private readonly enabled =
     (process.env.WORKERS_ENABLED ??
       (process.env.NODE_ENV === 'test' ? 'false' : 'true')).toLowerCase() === 'true';
@@ -23,6 +29,7 @@ export class PublishWorker implements OnModuleInit {
     private sheets: GoogleSheetsService,
     private serve: ShotstackServeService,
     private monitoring: MonitoringService,
+    private settingsService: SettingsService,
   ) {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -32,14 +39,86 @@ export class PublishWorker implements OnModuleInit {
     });
   }
 
+  private lockCutoff() {
+    return new Date(Date.now() - this.lockTtlMs);
+  }
+
+  private availableLeaseWhere() {
+    return [
+      { workerLockedAt: null },
+      { workerLockedAt: { lt: this.lockCutoff() } },
+    ];
+  }
+
+  private async claimPublishJob(job: { id: string; renderId: string | null }) {
+    const claimed = await this.prisma.videoJob.updateMany({
+      where: {
+        id: job.id,
+        status: 'COMPLETED',
+        published: false,
+        renderId: job.renderId,
+        attempts: { lt: this.maxPublishAttempts },
+        script: { reviewStatus: 'APPROVED' },
+        OR: this.availableLeaseWhere(),
+      },
+      data: {
+        workerLockedAt: new Date(),
+        workerLockedBy: this.workerId,
+        workerStage: 'PUBLISH',
+        error: null,
+      },
+    });
+
+    if (claimed.count === 1) {
+      this.logger.log(`[PublishClaim] claimed job=${job.id}`);
+      return true;
+    }
+
+    this.logger.log(`[PublishClaim] skipped job=${job.id}`);
+    return false;
+  }
+
+  private async releaseClaim(jobId: string, data: Record<string, unknown> = {}) {
+    return this.prisma.videoJob.updateMany({
+      where: { id: jobId, workerLockedBy: this.workerId },
+      data: {
+        ...data,
+        workerLockedAt: null,
+        workerLockedBy: null,
+        workerStage: null,
+      },
+    });
+  }
+
+  private async recoverStaleClaims() {
+    const recovered = await this.prisma.videoJob.updateMany({
+      where: {
+        workerStage: 'PUBLISH',
+        workerLockedAt: { lt: this.lockCutoff() },
+        status: 'COMPLETED',
+        published: false,
+      },
+      data: {
+        error: 'Publish claim expired before completion',
+        workerLockedAt: null,
+        workerLockedBy: null,
+        workerStage: null,
+      },
+    });
+
+    if (recovered.count) {
+      this.logger.warn(`[PublishClaim] recovered stale claims count=${recovered.count}`);
+    }
+  }
+
   onModuleInit() {
     if (!this.enabled) {
       this.logger.warn('Publish worker disabled via WORKERS_ENABLED');
       return;
     }
 
-    this.logger.log('📤 Publish worker started');
-    this.loop();
+    this.logger.log('Publish worker started');
+    void this.loop();
   }
 
   // -----------------------------
@@ -62,6 +141,11 @@ export class PublishWorker implements OnModuleInit {
     }
   }
 
+  private publicApiBaseUrl() {
+    const configured = process.env.PUBLIC_API_BASE_URL || process.env.JUBILY_API_BASE_URL;
+    return configured ? String(configured).replace(/\/+$/, '') : null;
+  }
+
   private isPublishRateLimited(err: any): { hit: boolean; reason: string } {
   const reason =
     err?.response?.data?.error?.errors?.[0]?.reason ||
@@ -81,13 +165,10 @@ export class PublishWorker implements OnModuleInit {
 }
 
   private async markPublishPaused(jobId: string, reason: string, msg: string) {
-  await this.prisma.videoJob.update({
-    where: { id: jobId },
-    data: {
+  await this.releaseClaim(jobId, {
       status: 'FAILED_QUOTA', // or rename to 'PUBLISH_PAUSED' if you want
       attempts: { increment: 1 },
       error: `YouTube publish blocked (${reason}): ${msg}`,
-    },
   });
   await this.monitoring.warn({
     stage: 'PUBLISH',
@@ -221,7 +302,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
     });
 
     if (!res?.secure_url) throw new Error('Cloudinary upload missing secure_url');
-    return res.secure_url as string;
+    return res.secure_url;
   }
 
   private async ensureStableUrl(job: any): Promise<string> {
@@ -230,7 +311,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
 
     // If we already have a URL, upload it to Cloudinary
     if (current) {
-      this.logger.warn(`☁️ Uploading existing videoUrl job=${job.id} host=${this.shortHost(current)}`);
+      this.logger.warn(`Uploading existing videoUrl job=${job.id} host=${this.shortHost(current)}`);
       const cloudUrl = await this.uploadToCloudinaryFromRemoteUrl(current, job.id);
 
       await this.prisma.videoJob.update({
@@ -269,18 +350,34 @@ ${hashtags.join(' ')}`.slice(0, 4500);
 
     while (true) {
       try {
+        await this.recoverStaleClaims();
+
+        const settings = await this.settingsService.getSettings();
+        if (!settings.autoPublish) {
+          if (!this.autoPublishPausedLogged) {
+            this.logger.warn('[PublishWorker] autoPublish=false; publish loop paused');
+            this.autoPublishPausedLogged = true;
+          }
+          await new Promise((r) => setTimeout(r, 60_000));
+          continue;
+        }
+        this.autoPublishPausedLogged = false;
+
         const jobs = await this.prisma.videoJob.findMany({
           where: {
             status: 'COMPLETED',
             published: false,
             renderId: { not: null },
+            script: { reviewStatus: 'APPROVED' },
           },
           orderBy: { createdAt: 'asc' },
           take: 25,
         });
 
         for (const job of jobs) {
-          await this.publish(job);
+          if (await this.claimPublishJob(job)) {
+            await this.publish(job);
+          }
         }
       } catch (e: any) {
         this.logger.error('Publish worker crash', e?.message || e);
@@ -305,6 +402,8 @@ ${hashtags.join(' ')}`.slice(0, 4500);
           id: true,
           offerId: true,
           youtubeUrl: true,
+          published: true,
+          status: true,
           createdAt: true,
           scriptId: true,
           videoUrl: true,
@@ -315,6 +414,37 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       });
 
       if (!fullJob?.script) throw new Error('Script not found');
+
+      if (fullJob.script.reviewStatus !== 'APPROVED') {
+        await this.releaseClaim(job.id, {
+          error:
+            fullJob.script.reviewStatus === 'REJECTED'
+              ? 'Publish blocked: script reviewStatus is REJECTED'
+              : 'Publish blocked: script requires manual approval',
+        });
+        this.logger.warn(
+          `[PublishGate] blocked job=${job.id} script=${fullJob.scriptId} reviewStatus=${fullJob.script.reviewStatus}`,
+        );
+        await this.monitoring.warn({
+          stage: 'PUBLISH',
+          status: 'QUALITY_GATE_BLOCKED',
+          message:
+            fullJob.script.reviewStatus === 'REJECTED'
+              ? 'Publish blocked: script reviewStatus is REJECTED'
+              : 'Publish blocked: script requires manual approval',
+          jobId: job.id,
+          scriptId: fullJob.scriptId,
+          provider: 'youtube',
+          meta: { reviewStatus: fullJob.script.reviewStatus },
+        });
+        return;
+      }
+
+      if (fullJob.published || fullJob.status !== 'COMPLETED') {
+        await this.releaseClaim(job.id);
+        this.logger.log(`[PublishClaim] skipped stale job=${job.id}`);
+        return;
+      }
 
       topicTitle = fullJob.script.topic?.title ?? '';
       offerName = fullJob.offer?.name ?? '';
@@ -333,7 +463,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
 
       // Ensure stable URL (Cloudinary)
       const stableUrl = await this.ensureStableUrl(fullJob);
-      this.logger.log(`📤 Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
+      this.logger.log(`Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
       await this.monitoring.info({
         stage: 'PUBLISH',
         status: 'STARTED',
@@ -379,7 +509,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
   const gate = this.isPublishRateLimited(e);
   if (gate.hit) {
     await this.markPublishPaused(job.id, gate.reason, e?.message || String(e));
-    this.logger.warn(`⏸️ YouTube publish blocked (${gate.reason}). Pausing job=${job.id}`);
+    this.logger.warn(`YouTube publish blocked reason=${gate.reason} job=${job.id}`);
     return; // ✅ stop retry loop
   }
   throw e;
@@ -387,15 +517,21 @@ ${hashtags.join(' ')}`.slice(0, 4500);
         youtubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
 
         // ✅ Mark published immediately after upload so retries never re-upload
-        await this.prisma.videoJob.update({
-          where: { id: job.id },
+        const savedUpload = await this.prisma.videoJob.updateMany({
+          where: { id: job.id, workerLockedBy: this.workerId },
           data: {
             published: true,
             youtubeVideoId: youtubeId,
             youtubeUrl,
+            attempts: 0,
             error: null,
           },
         });
+
+        if (savedUpload.count !== 1) {
+          this.logger.warn(`[PublishClaim] upload result skipped because claim was lost job=${job.id}`);
+          return;
+        }
 
         // ✅ Write to sheet ONCE on first upload
         await this.sheets.append([
@@ -411,7 +547,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
           new Date(),
         ]);
 
-        this.logger.log(`✅ YouTube uploaded job=${job.id} youtubeUrl=${youtubeUrl}`);
+        this.logger.log(`YouTube uploaded job=${job.id} youtubeId=${youtubeId}`);
         await this.monitoring.info({
           stage: 'PUBLISH',
           status: 'UPLOADED',
@@ -424,8 +560,8 @@ ${hashtags.join(' ')}`.slice(0, 4500);
         });
       } else {
         // already uploaded in the past - ensure published stays true
-        await this.prisma.videoJob.update({
-          where: { id: job.id },
+        await this.prisma.videoJob.updateMany({
+          where: { id: job.id, workerLockedBy: this.workerId },
           data: { published: true, youtubeVideoId: youtubeId },
         });
       }
@@ -436,16 +572,30 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       let finalDesc = baseDesc;
 
       if (fullJob.offerId && youtubeId) {
-  const trackUrl = `https://api.joinjubily.com/r/${fullJob.offerId}?jobId=${job.id}&yt=${youtubeId}`;
-  finalDesc = `${baseDesc}
+        const apiBaseUrl = this.publicApiBaseUrl();
+        if (apiBaseUrl) {
+          const trackUrl = `${apiBaseUrl}/r/${fullJob.offerId}?jobId=${job.id}&yt=${youtubeId}`;
+          finalDesc = `${baseDesc}
 
 Recommended product:
 ${trackUrl}`.slice(0, 4500);
-}
+        } else {
+          this.logger.warn(`Tracking link skipped job=${job.id}; set PUBLIC_API_BASE_URL or JUBILY_API_BASE_URL`);
+          await this.monitoring.warn({
+            stage: 'PUBLISH',
+            status: 'TRACKING_LINK_SKIPPED',
+            message: 'Tracking link skipped because public API base URL is not configured',
+            jobId: job.id,
+            offerId: fullJob.offerId,
+            scriptId: fullJob.scriptId,
+            provider: 'youtube',
+          });
+        }
+      }
 
       // Update metadata (safe retry; never causes re-upload)
       try {
-        await this.youtube.updateMetadata(youtubeId!, videoTitle, finalDesc, tags);
+        await this.youtube.updateMetadata(youtubeId, videoTitle, finalDesc, tags);
         await this.monitoring.info({
           stage: 'PUBLISH',
           status: 'METADATA_DONE',
@@ -458,11 +608,11 @@ ${trackUrl}`.slice(0, 4500);
         });
       } catch (e: any) {
         const msg = e?.message || String(e);
-        await this.prisma.videoJob.update({
-          where: { id: job.id },
+        await this.prisma.videoJob.updateMany({
+          where: { id: job.id, workerLockedBy: this.workerId },
           data: { error: `Metadata failed: ${msg}` },
         });
-        this.logger.warn(`⚠️ Metadata failed job=${job.id} msg=${this.short(msg, 250)}`);
+        this.logger.warn(`Metadata failed job=${job.id} msg=${this.short(msg, 250)}`);
         await this.monitoring.warn({
           stage: 'PUBLISH',
           status: 'METADATA_FAILED',
@@ -479,7 +629,7 @@ ${trackUrl}`.slice(0, 4500);
       // STEP 3: Captions (best-effort; never causes re-upload)
       // -----------------------------
       try {
-        await this.youtube.uploadCaptions(youtubeId!, srt);
+        await this.youtube.uploadCaptions(youtubeId, srt);
         await this.monitoring.info({
           stage: 'PUBLISH',
           status: 'CAPTIONS_DONE',
@@ -492,11 +642,11 @@ ${trackUrl}`.slice(0, 4500);
         });
       } catch (e: any) {
         const msg = e?.message || String(e);
-        await this.prisma.videoJob.update({
-          where: { id: job.id },
+        await this.prisma.videoJob.updateMany({
+          where: { id: job.id, workerLockedBy: this.workerId },
           data: { error: `Captions failed: ${msg}` },
         });
-        this.logger.warn(`⚠️ Captions failed job=${job.id} msg=${this.short(msg, 250)}`);
+        this.logger.warn(`Captions failed job=${job.id} msg=${this.short(msg, 250)}`);
         await this.monitoring.warn({
           stage: 'PUBLISH',
           status: 'CAPTIONS_FAILED',
@@ -509,7 +659,7 @@ ${trackUrl}`.slice(0, 4500);
         });
       }
 
-      this.logger.log(`✅ Publish flow done job=${job.id} youtubeUrl=${youtubeUrl}`);
+      this.logger.log(`Publish flow done job=${job.id} youtubeId=${youtubeId}`);
       await this.monitoring.info({
         stage: 'PUBLISH',
         status: 'COMPLETED',
@@ -520,12 +670,15 @@ ${trackUrl}`.slice(0, 4500);
         provider: 'youtube',
         meta: { youtubeId, youtubeUrl },
       });
+      await this.releaseClaim(job.id, { status: 'COMPLETED', published: true });
     } catch (e: any) {
       const msg = e?.message || String(e);
+      const nextAttempts = Number(job.attempts ?? 0) + 1;
 
-      await this.prisma.videoJob.update({
-        where: { id: job.id },
-        data: { error: msg },
+      await this.releaseClaim(job.id, {
+        attempts: { increment: 1 },
+        error: msg,
+        ...(nextAttempts >= this.maxPublishAttempts ? { status: 'FAILED_PUBLISH' } : {}),
       });
 
       // Only mark FAILED in sheet if it never got uploaded.
@@ -545,17 +698,18 @@ ${trackUrl}`.slice(0, 4500);
           new Date(),
         ]);
       } catch (sheetErr: any) {
-        this.logger.warn(`⚠️ Sheets append failed job=${job.id} msg=${this.short(sheetErr?.message || String(sheetErr), 200)}`);
+        this.logger.warn(`Sheets append failed job=${job.id} msg=${this.short(sheetErr?.message || String(sheetErr), 200)}`);
       }
 
-      this.logger.warn(`❌ Publish failed job=${job.id} msg=${this.short(msg, 300)}`);
+      this.logger.warn(`Publish failed job=${job.id} msg=${this.short(msg, 300)}`);
       await this.monitoring.error({
         stage: 'PUBLISH',
-        status: 'FAILED',
+        status: nextAttempts >= this.maxPublishAttempts ? 'FAILED_PERMANENT' : 'FAILED',
         message: msg,
         jobId: job.id,
         scriptId: job.scriptId ?? null,
         provider: 'youtube',
+        meta: { attempts: nextAttempts, maxAttempts: this.maxPublishAttempts },
       });
     }
   }

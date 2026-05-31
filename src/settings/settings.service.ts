@@ -9,6 +9,14 @@ import { UpdateSettingsDto } from './dto/update-settings.dto';
 export class SettingsService {
   constructor(private prisma: PrismaService) {}
 
+  private validateTimezone(timezone: string) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
+    } catch {
+      throw new BadRequestException('timezone must be a valid IANA timezone');
+    }
+  }
+
   async getSettings() {
     const settings = await this.prisma.appSettings.upsert({
       where: { id: 'app' },
@@ -19,14 +27,26 @@ export class SettingsService {
   }
 
   async updateSettings(dto: UpdateSettingsDto) {
-    if (dto.runHours) {
+    if (dto.timezone != null) {
+      dto.timezone = String(dto.timezone).trim();
+      this.validateTimezone(dto.timezone);
+    }
+
+    if (dto.runHours != null) {
       // Basic guardrails
       const uniq = Array.from(new Set(dto.runHours.map((x) => Number(x))));
       if (uniq.some((h) => !Number.isInteger(h) || h < 0 || h > 23)) {
         throw new BadRequestException('runHours must be integers 0..23');
       }
       if (uniq.length < 1) throw new BadRequestException('runHours must not be empty');
-      dto.runHours = uniq;
+      dto.runHours = uniq.sort((a, b) => a - b);
+    }
+
+    if (dto.videosPerDay != null) {
+      dto.videosPerDay = Number(dto.videosPerDay);
+      if (!Number.isInteger(dto.videosPerDay) || dto.videosPerDay < 1 || dto.videosPerDay > 3) {
+        throw new BadRequestException('videosPerDay must be an integer from 1 to 3');
+      }
     }
 
     const updated = await this.prisma.appSettings.upsert({

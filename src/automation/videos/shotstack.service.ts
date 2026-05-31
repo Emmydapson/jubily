@@ -156,9 +156,9 @@ const sfxClips: any[] = [];
       const scene = scenes[i];
 
       let start = byName.get(`s${i + 1}`) ?? 0;
-      let next = byName.get(`s${i + 2}`) ?? end;
+      const next = byName.get(`s${i + 2}`) ?? end;
 
-      let length = Math.max(1.5, next - start);
+      const length = Math.max(1.5, next - start);
 
       // slight overlap for smooth flow
       if (i !== 0) start -= 0.25;
@@ -258,6 +258,7 @@ const sfxClips: any[] = [];
         'x-shotstack-stage': 'true',
         'Content-Type': 'application/json',
       },
+      timeout: 60000,
     });
 
     const renderId = res.data?.response?.id;

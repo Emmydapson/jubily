@@ -8,6 +8,8 @@ const SLOT_HOURS_ET: Record<Slot, number> = {
   EVENING: 18,
 };
 
+export const SLOT_ORDER: Slot[] = ['MORNING', 'AFTERNOON', 'EVENING'];
+
 // Convert "now" into the date parts in a target timezone
 function getTzParts(date: Date, timeZone: string) {
   const dtf = new Intl.DateTimeFormat('en-CA', {
@@ -32,6 +34,10 @@ function getTzParts(date: Date, timeZone: string) {
  */
 export function scheduledForSlot(slot: Slot, timeZone = 'America/New_York', now = new Date()) {
   const hour = SLOT_HOURS_ET[slot];
+  return scheduledForHour(hour, timeZone, now);
+}
+
+export function scheduledForHour(hour: number, timeZone = 'America/New_York', now = new Date()) {
   const { year, month, day } = getTzParts(now, timeZone);
 
   // Build a UTC date matching the timezone's YYYY-MM-DD at hour:00.
@@ -55,4 +61,14 @@ export function scheduledForSlot(slot: Slot, timeZone = 'America/New_York', now 
   // Normalize minutes/seconds/millis
   corrected.setUTCMinutes(0, 0, 0);
   return corrected;
+}
+
+export function localHour(date: Date, timeZone = 'America/New_York') {
+  const formatted = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    hour12: false,
+  }).format(date);
+
+  return Number(formatted);
 }

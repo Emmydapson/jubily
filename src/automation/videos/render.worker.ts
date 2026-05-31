@@ -2,11 +2,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GoogleSheetsService } from '../../common/google-sheets.service';
 import { ShotstackServeService } from './shotstack-serve.service';
 import { VideosService } from './videos.service';
 import { MonitoringService } from 'src/monitoring/monitoring.service';
+import { SettingsService } from '../../settings/settings.service';
 
 type RenderWorkerScript = {
   topicId: string | null;
@@ -30,6 +32,9 @@ type RenderWorkerJob = {
 export class RenderWorker implements OnModuleInit {
   private readonly logger = new Logger(RenderWorker.name);
   private running = false;
+  private automationPausedLogged = false;
+  private readonly workerId = `render-${process.pid}-${randomUUID()}`;
+  private readonly lockTtlMs = Number(process.env.WORKER_LOCK_TTL_MS || 30 * 60 * 1000);
   private readonly enabled =
     (process.env.WORKERS_ENABLED ??
       (process.env.NODE_ENV === 'test' ? 'false' : 'true')).toLowerCase() === 'true';
@@ -40,16 +45,132 @@ export class RenderWorker implements OnModuleInit {
     private serve: ShotstackServeService,
     private videos: VideosService,
     private monitoring: MonitoringService,
+    private settingsService: SettingsService,
   ) {}
 
-private async bumpAttempt(jobId: string, message: string) {
-  return this.prisma.videoJob.update({
-    where: { id: jobId },
+private lockCutoff() {
+  return new Date(Date.now() - this.lockTtlMs);
+}
+
+private availableLeaseWhere() {
+  return [
+    { workerLockedAt: null },
+    { workerLockedAt: { lt: this.lockCutoff() } },
+  ];
+}
+
+private async claimPendingRender(job: RenderWorkerJob) {
+  const claimed = await this.prisma.videoJob.updateMany({
+    where: {
+      id: job.id,
+      renderId: null,
+      published: false,
+      attempts: { lt: 6 },
+      status: { in: ['PENDING', 'FAILED'] },
+      script: { reviewStatus: 'APPROVED' },
+      OR: this.availableLeaseWhere(),
+    },
     data: {
-      attempts: { increment: 1 },
-      error: message,
+      workerLockedAt: new Date(),
+      workerLockedBy: this.workerId,
+      workerStage: 'RENDER_START',
+      error: null,
     },
   });
+
+  if (claimed.count === 1) {
+    this.logger.log(`[RenderClaim] claimed start job=${job.id}`);
+    return true;
+  }
+
+  this.logger.log(`[RenderClaim] skipped start job=${job.id}`);
+  return false;
+}
+
+private async claimRenderPoll(job: RenderWorkerJob) {
+  const claimed = await this.prisma.videoJob.updateMany({
+    where: {
+      id: job.id,
+      status: 'PROCESSING',
+      renderId: job.renderId,
+      attempts: { lt: 6 },
+      OR: this.availableLeaseWhere(),
+    },
+    data: {
+      workerLockedAt: new Date(),
+      workerLockedBy: this.workerId,
+      workerStage: 'RENDER_POLL',
+    },
+  });
+
+  if (claimed.count === 1) {
+    this.logger.log(`[RenderClaim] claimed poll job=${job.id}`);
+    return true;
+  }
+
+  this.logger.log(`[RenderClaim] skipped poll job=${job.id}`);
+  return false;
+}
+
+private async releaseClaim(jobId: string, data: Record<string, unknown> = {}) {
+  return this.prisma.videoJob.updateMany({
+    where: { id: jobId, workerLockedBy: this.workerId },
+    data: {
+      ...data,
+      workerLockedAt: null,
+      workerLockedBy: null,
+      workerStage: null,
+    },
+  });
+}
+
+private async bumpAttempt(jobId: string, message: string) {
+  return this.releaseClaim(jobId, {
+    status: 'FAILED',
+    attempts: { increment: 1 },
+    error: message,
+  });
+}
+
+private async recoverStaleClaims() {
+  const staleStarts = await this.prisma.videoJob.updateMany({
+    where: {
+      workerStage: 'RENDER_START',
+      workerLockedAt: { lt: this.lockCutoff() },
+      renderId: null,
+      attempts: { lt: 6 },
+    },
+    data: {
+      status: 'FAILED',
+      attempts: { increment: 1 },
+      error: 'Render claim expired before initialization',
+      workerLockedAt: null,
+      workerLockedBy: null,
+      workerStage: null,
+    },
+  });
+
+  if (staleStarts.count) {
+    this.logger.warn(`[RenderClaim] recovered stale start claims count=${staleStarts.count}`);
+  }
+
+  const stalePolls = await this.prisma.videoJob.updateMany({
+    where: {
+      workerStage: 'RENDER_POLL',
+      workerLockedAt: { lt: this.lockCutoff() },
+      status: 'PROCESSING',
+      renderId: { not: null },
+    },
+    data: {
+      workerLockedAt: null,
+      workerLockedBy: null,
+      workerStage: null,
+    },
+  });
+
+  if (stalePolls.count) {
+    this.logger.warn(`[RenderClaim] recovered stale poll claims count=${stalePolls.count}`);
+  }
 }
 
   onModuleInit() {
@@ -58,8 +179,8 @@ private async bumpAttempt(jobId: string, message: string) {
       return;
     }
 
-    this.logger.log('🎬 Render worker started');
-    this.loop();
+    this.logger.log('Render worker started');
+    void this.loop();
   }
 
   async loop() {
@@ -68,6 +189,8 @@ private async bumpAttempt(jobId: string, message: string) {
 
   while (true) {
     try {
+      await this.recoverStaleClaims();
+      const settings = await this.settingsService.getSettings();
       // 🧨 1. HARD STUCK JOB CLEANUP (no renderId after retries)
       const stuckJobs = await this.prisma.videoJob.findMany({
         where: {
@@ -88,6 +211,9 @@ private async bumpAttempt(jobId: string, message: string) {
           data: {
             status: 'FAILED_PERMANENT',
             error: 'Render never initialized (no renderId after retries)',
+            workerLockedAt: null,
+            workerLockedBy: null,
+            workerStage: null,
           },
         });
 
@@ -102,19 +228,30 @@ private async bumpAttempt(jobId: string, message: string) {
       }
 
       // 🔁 2. NORMAL RETRY JOBS
-      const pendingJobs = await this.prisma.videoJob.findMany({
-        where: {
-          renderId: null,
-          published: false,
-          attempts: { lt: 6 },
-          status: { in: ['PENDING', 'FAILED'] },
-        },
-        orderBy: { createdAt: 'asc' },
-        take: 25,
-      });
+      if (settings.automationEnabled) {
+        this.automationPausedLogged = false;
+        const pendingJobs = await this.prisma.videoJob.findMany({
+          where: {
+            renderId: null,
+            published: false,
+            attempts: { lt: 6 },
+            status: { in: ['PENDING', 'FAILED'] },
+            script: { reviewStatus: 'APPROVED' },
+          },
+          orderBy: { createdAt: 'asc' },
+          take: 25,
+        });
 
-      for (const job of pendingJobs) {
-        await this.startPendingRender(job);
+        for (const job of pendingJobs) {
+          if (await this.claimPendingRender(job)) {
+            await this.startPendingRender(job);
+          }
+        }
+      } else {
+        if (!this.automationPausedLogged) {
+          this.logger.warn('[RenderWorker] automationEnabled=false; new render starts paused');
+          this.automationPausedLogged = true;
+        }
       }
 
       // 🎬 3. ACTIVE RENDER POLLING
@@ -139,7 +276,9 @@ private async bumpAttempt(jobId: string, message: string) {
 });
 
       for (const job of jobs) {
-        await this.handle(job);
+        if (await this.claimRenderPoll(job)) {
+          await this.handle(job);
+        }
       }
     } catch (error: unknown) {
       this.logger.error(
@@ -154,7 +293,7 @@ private async bumpAttempt(jobId: string, message: string) {
 
   async startPendingRender(job: RenderWorkerJob) {
   try {
-    const started = await this.videos.startRenderForJob(job.id);
+    const started = await this.videos.startRenderForJob(job.id, this.workerId);
 
     if (!started?.renderId) {
       throw new Error('Render service did not return renderId');
@@ -192,6 +331,9 @@ private async bumpAttempt(jobId: string, message: string) {
         where: { id: job.id },
         data: {
           status: 'FAILED_PERMANENT',
+          workerLockedAt: null,
+          workerLockedBy: null,
+          workerStage: null,
         },
       });
 
@@ -212,7 +354,7 @@ private async bumpAttempt(jobId: string, message: string) {
       });
     }
 
-    this.logger.error(`[Render] failed job=${job.id}: ${message}`);
+    this.logger.error(`[Render] failed job=${job.id} msg=${message}`);
   }
 }
 
@@ -224,6 +366,9 @@ private async bumpAttempt(jobId: string, message: string) {
       data: {
         status: 'FAILED_PERMANENT',
         error: message,
+        workerLockedAt: null,
+        workerLockedBy: null,
+        workerStage: null,
       },
     });
 
@@ -258,14 +403,16 @@ private async bumpAttempt(jobId: string, message: string) {
 
   async handle(job: RenderWorkerJob) {
    if (job.provider === 'replicate') {
-  await this.prisma.videoJob.update({
-    where: { id: job.id },
-    data: {
+  const completed = await this.releaseClaim(job.id, {
       status: 'COMPLETED',
       videoUrl: job.renderId,
       error: null,
-    },
   });
+
+  if (completed.count !== 1) {
+    this.logger.log(`[RenderClaim] skipped replicate completion job=${job.id}`);
+    return;
+  }
 
   await this.sheets.append([
     job.id,
@@ -294,7 +441,10 @@ private async bumpAttempt(jobId: string, message: string) {
   return;
 }
     const renderId = String(job.renderId || '');
-    if (!renderId) return;
+    if (!renderId) {
+      await this.releaseClaim(job.id);
+      return;
+    }
 
     try {
       // 1) Poll render status (stage render API)
@@ -314,14 +464,16 @@ private async bumpAttempt(jobId: string, message: string) {
         try {
           const serveUrl = await this.serve.getReadyUrl(renderId);
 
-          await this.prisma.videoJob.update({
-            where: { id: job.id },
-            data: {
+          const completed = await this.releaseClaim(job.id, {
               status: 'COMPLETED',
               videoUrl: serveUrl,
               error: null,
-            },
           });
+
+          if (completed.count !== 1) {
+            this.logger.log(`[RenderClaim] skipped completion job=${job.id}`);
+            return;
+          }
 
           // ✅ Sheets: only log COMPLETED / FAILED, unified schema (10 cols)
           await this.sheets.append([
@@ -364,6 +516,7 @@ private async bumpAttempt(jobId: string, message: string) {
             provider: 'shotstack',
             meta: { renderId },
           });
+          await this.releaseClaim(job.id);
           return;
         }
       }
@@ -371,10 +524,7 @@ private async bumpAttempt(jobId: string, message: string) {
       if (status === 'failed') {
         const error = String(data.error || 'Unknown Shotstack error');
 
-        await this.prisma.videoJob.update({
-          where: { id: job.id },
-          data: { status: 'FAILED', error },
-        });
+        await this.releaseClaim(job.id, { status: 'FAILED', error });
 
         await this.sheets.append([
           job.id,
@@ -404,6 +554,7 @@ private async bumpAttempt(jobId: string, message: string) {
       }
 
       // still rendering → do nothing
+      await this.releaseClaim(job.id);
       return;
     } catch (error: unknown) {
       const message =
@@ -414,9 +565,9 @@ private async bumpAttempt(jobId: string, message: string) {
         (error instanceof Error ? error.message : undefined) ||
         'Worker error';
 
-      await this.prisma.videoJob.update({
-        where: { id: job.id },
-        data: { attempts: { increment: 1 }, error: message },
+      await this.releaseClaim(job.id, {
+        attempts: { increment: 1 },
+        error: message,
       });
 
       // ✅ No Sheets logging for retries

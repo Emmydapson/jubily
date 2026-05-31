@@ -6,6 +6,6 @@ import { MonitoringModule } from 'src/monitoring/monitoring.module';
 @Module({
   imports: [MonitoringModule],
   providers: [PublishingService],
-  controllers: [PublishingController]
+  controllers: [PublishingController],
 })
 export class PublishingModule {}

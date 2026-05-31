@@ -5,6 +5,7 @@ import { AutomationService } from './automation.service';
 import { ScriptService } from './script.service';
 import { VideosModule } from './videos/videos.module';
 import { AiService } from './ai/ai.service';
+import { ContentQualityService } from './content-quality.service';
 import { AutomationCron } from './automation.cron';
 import { OrchestratorService } from './orchestrator.service';
 import { WorkflowController } from './workflow.controller';
@@ -33,6 +34,7 @@ import { MonitoringModule } from 'src/monitoring/monitoring.module';
     AutomationService,
     ScriptService,
     AiService,
+    ContentQualityService,
     OrchestratorService,
     AutomationCron,
     WorkflowService,

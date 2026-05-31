@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import crypto from 'crypto';
+import type { ScriptQualityResult } from './content-quality.service';
 
 @Injectable()
 export class ScriptService {
@@ -23,6 +24,32 @@ export class ScriptService {
         promptVer: this.PROMPT_VERSION,
         content,
         outputHash: hash,
+      },
+    });
+  }
+
+  async createReviewed(topicId: string, promptVer: string, quality: ScriptQualityResult) {
+    const exists = await this.prisma.script.findFirst({
+      where: { outputHash: quality.outputHash },
+    });
+
+    if (exists) return exists;
+
+    return this.prisma.script.create({
+      data: {
+        topicId,
+        promptVer,
+        content: quality.content,
+        outputHash: quality.outputHash,
+        reviewStatus: quality.reviewStatus,
+        qualityScore: quality.qualityScore,
+        qualityReview: quality.qualityReview,
+        titleCandidates: quality.titleCandidates,
+        selectedTitle: quality.selectedTitle,
+        youtubeDescription: quality.youtubeDescription,
+        hashtags: quality.hashtags,
+        thumbnailPrompt: quality.thumbnailPrompt,
+        rewriteAttempts: quality.rewriteAttempts,
       },
     });
   }

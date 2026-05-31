@@ -11,6 +11,7 @@ import { ShotstackServeService } from './shotstack-serve.service';
 import { GoogleTtsService } from '../tts/google-tts.service';
 import { AiImageService } from '../ai/ai-image.service';
 import { MonitoringModule } from 'src/monitoring/monitoring.module';
+import { SettingsModule } from 'src/settings/settings.module';
 
 @Module({
   providers: [
@@ -26,6 +27,6 @@ import { MonitoringModule } from 'src/monitoring/monitoring.module';
   ],
   controllers: [VideosController],
   exports: [VideosService, YoutubeService,],
-  imports: [MonitoringModule],
+  imports: [MonitoringModule, SettingsModule],
 })
 export class VideosModule {}

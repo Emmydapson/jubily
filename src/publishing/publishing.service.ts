@@ -19,12 +19,14 @@ export class PublishingService {
       data: {
         published: dto.status === 'SUCCESS',
         status: dto.status === 'SUCCESS' ? 'COMPLETED' : 'FAILED',
-        youtubeVideoId: dto.platform === 'youtube' ? dto.platformPostId : undefined,
+        youtubeVideoId:
+          dto.platform === 'youtube' ? dto.platformPostId : undefined,
         youtubeUrl:
           dto.platform === 'youtube'
             ? `https://www.youtube.com/watch?v=${dto.platformPostId}`
             : undefined,
-        error: dto.status === 'FAILED' ? dto.errorMessage || 'Publish failed' : null,
+        error:
+          dto.status === 'FAILED' ? dto.errorMessage || 'Publish failed' : null,
       },
     });
 
@@ -32,7 +34,10 @@ export class PublishingService {
       stage: 'PUBLISH',
       severity: dto.status === 'SUCCESS' ? 'INFO' : 'ERROR',
       status: dto.status,
-      message: dto.status === 'SUCCESS' ? 'Publish result registered' : dto.errorMessage || 'Publish failed',
+      message:
+        dto.status === 'SUCCESS'
+          ? 'Publish result registered'
+          : dto.errorMessage || 'Publish failed',
       jobId,
       provider: dto.platform,
       meta: { platformPostId: dto.platformPostId },

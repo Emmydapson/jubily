@@ -1,11 +1,20 @@
 /* eslint-disable prettier/prettier */
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { AutomationService } from './automation.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { GoogleSheetsService } from '../common/google-sheets.service';
 import { TopicIngestionService } from './topic-ingest.service';
+import { Roles } from '../auth/roles.decorator';
+import { GenerateScriptDto } from './dto/generate-script.dto';
+import { GenerateAiScriptDto } from './dto/generate-ai-script.dto';
+import { LogsQueryDto } from './dto/logs-query.dto';
+import { UpdateScriptReviewStatusDto } from './dto/update-script-review-status.dto';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 
 @Controller('automation')
+@Roles('ADMIN')
+@ApiTags('Automation')
+@ApiBearerAuth('jwt')
 export class AutomationController {
   constructor(private readonly automationService: AutomationService, 
     private readonly sheets: GoogleSheetsService,
@@ -13,50 +22,103 @@ export class AutomationController {
   ) {}
 
   @Post('topics')
+  @ApiOperation({ summary: 'Create a topic', description: 'Requires a valid ADMIN bearer token.' })
+  @ApiBody({ type: CreateTopicDto })
+  @ApiOkResponse({ description: 'Created topic.', schema: { example: { id: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c', title: 'Morning habits for more energy', source: 'manual', score: 80, used: false } } })
   createTopic(@Body() dto: CreateTopicDto) {
     return this.automationService.createTopic(dto);
   }
 
   @Post('scripts')
-generateScript(@Body() body: { topicId: string; content: string }) {
+@ApiOperation({ summary: 'Create a script for a topic', description: 'Requires a valid ADMIN bearer token.' })
+@ApiBody({ type: GenerateScriptDto })
+@ApiOkResponse({ description: 'Created script.', schema: { example: { id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', topicId: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c', content: 'Script content...' } } })
+generateScript(@Body() body: GenerateScriptDto) {
   return this.automationService.generateScript(body);
-
-  
 }
 
 @Post('scripts/ai')
-generateWithAi(@Body() body: { topicId: string; topic: string }) {
+@ApiOperation({ summary: 'Generate a script with AI', description: 'Requires a valid ADMIN bearer token.' })
+@ApiBody({ type: GenerateAiScriptDto })
+@ApiOkResponse({ description: 'Generated script.', schema: { example: { id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', topicId: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c', content: 'AI-generated script content...' } } })
+generateWithAi(@Body() body: GenerateAiScriptDto) {
   return this.automationService.generateScriptWithAi(body.topicId, body.topic);
 }
 
 @Get('topics')
+@ApiOperation({ summary: 'List all topics', description: 'Requires a valid ADMIN bearer token.' })
+@ApiOkResponse({ description: 'Topic list.', schema: { example: [{ id: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c', title: 'Morning habits for more energy', used: false, score: 80 }] } })
 getTopics() {
   return this.automationService.getTopics();
 }
 
 @Get('topics/pending')
+@ApiOperation({ summary: 'List pending topics', description: 'Requires a valid ADMIN bearer token.' })
+@ApiOkResponse({ description: 'Pending topic list.', schema: { example: [{ id: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c', title: 'Morning habits for more energy', used: false }] } })
 getPending() {
   return this.automationService.getPendingTopics();
 }
 
 @Patch('topics/:id/used')
-markUsed(@Param('id') id: string) {
+@ApiOperation({ summary: 'Mark a topic as used', description: 'Requires a valid ADMIN bearer token.' })
+@ApiParam({ name: 'id', format: 'uuid', example: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c' })
+@ApiOkResponse({ description: 'Updated topic.', schema: { example: { id: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c', used: true } } })
+markUsed(@Param('id', ParseUUIDPipe) id: string) {
   return this.automationService.markTopicUsed(id);
 }
 
 @Get('scripts')
+@ApiOperation({ summary: 'List scripts', description: 'Requires a valid ADMIN bearer token.' })
+@ApiOkResponse({ description: 'Script list.', schema: { example: [{ id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', topicId: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c', content: 'Script content...' }] } })
 getAllScripts() {
   return this.automationService.getAllScripts();
 }
 
 @Get('scripts/:id')
-  getScriptById(@Param('id') id: string) {
+  @ApiOperation({ summary: 'Get a script by ID', description: 'Requires a valid ADMIN bearer token.' })
+  @ApiParam({ name: 'id', format: 'uuid', example: 'b6efa6b9-6113-40ab-97ac-f461356c4c70' })
+  @ApiOkResponse({ description: 'Script details.', schema: { example: { id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', topicId: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c', content: 'Script content...' } } })
+  getScriptById(@Param('id', ParseUUIDPipe) id: string) {
     return this.automationService.getScriptById(id);
   }
 
+@Get('scripts/:id/quality')
+  @ApiOperation({ summary: 'Get script quality metadata', description: 'Requires a valid ADMIN bearer token.' })
+  @ApiParam({ name: 'id', format: 'uuid', example: 'b6efa6b9-6113-40ab-97ac-f461356c4c70' })
+  @ApiOkResponse({ description: 'Script quality metadata.', schema: { example: { id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', reviewStatus: 'NEEDS_REVIEW', qualityScore: 72, selectedTitle: 'Simple hydration mistakes people make' } } })
+  getScriptQuality(@Param('id', ParseUUIDPipe) id: string) {
+    return this.automationService.getScriptQualityMetadata(id);
+  }
+
+  @Patch('scripts/:id/review-status')
+  @ApiOperation({ summary: 'Approve or reject a script review status', description: 'Requires a valid ADMIN bearer token. APPROVED is the manual override that allows render and publish.' })
+  @ApiParam({ name: 'id', format: 'uuid', example: 'b6efa6b9-6113-40ab-97ac-f461356c4c70' })
+  @ApiBody({ type: UpdateScriptReviewStatusDto })
+  @ApiOkResponse({ description: 'Updated script review metadata.', schema: { example: { id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', reviewStatus: 'APPROVED', qualityScore: 72 } } })
+  updateScriptReviewStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateScriptReviewStatusDto,
+  ) {
+    return this.automationService.updateScriptReviewStatus(
+      id,
+      body.reviewStatus ?? 'APPROVED',
+      body.note,
+    );
+  }
+
+  @Post('scripts/:id/review')
+  @ApiOperation({ summary: 'Regenerate quality metadata for a script', description: 'Requires a valid ADMIN bearer token. Re-runs content quality review and rewrite attempts; thumbnail image generation is not performed.' })
+  @ApiParam({ name: 'id', format: 'uuid', example: 'b6efa6b9-6113-40ab-97ac-f461356c4c70' })
+  @ApiOkResponse({ description: 'Updated script quality metadata.', schema: { example: { id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', reviewStatus: 'APPROVED', qualityScore: 84 } } })
+  reReviewScript(@Param('id', ParseUUIDPipe) id: string) {
+    return this.automationService.reReviewScript(id);
+  }
+
   @Get('logs')
-async getLogs(@Query('limit') limit?: string) {
-  const take = Math.min(Math.max(Number(limit ?? 20), 1), 200);
+  @ApiOperation({ summary: 'List automation logs', description: 'Requires a valid ADMIN bearer token.' })
+  @ApiOkResponse({ description: 'Automation log rows.', schema: { example: { items: [{ jobId: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c', scriptId: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', topicTitle: 'Morning habits for more energy', offerName: 'Wellness Offer', platform: 'youtube', status: 'COMPLETED', url: 'https://youtu.be/example', error: null, createdAt: '2026-05-30T14:00:00.000Z', loggedAt: '2026-05-30T14:10:00.000Z' }] } } })
+async getLogs(@Query() query: LogsQueryDto) {
+  const take = query.limit ?? 20;
 
   const rows = await this.sheets.getAutomationLogs(take);
 
@@ -76,18 +138,16 @@ async getLogs(@Query('limit') limit?: string) {
   return { items };
 }
 
-@Get('analytics/weekly')
-async getWeeklyAnalytics(@Query('days') days?: string) {
-  const take = Math.min(Math.max(Number(days ?? 7), 1), 30);
-  return this.sheets.getWeeklyAnalytics(take);
-}
-
 @Post('ingest')
+@ApiOperation({ summary: 'Ingest topics now', description: 'Requires a valid ADMIN bearer token.' })
+@ApiOkResponse({ description: 'Pending topic pool result.', schema: { example: { ok: true, created: 12 } } })
 async ingestNow() {
   return this.topicIngestion.ensurePendingPool();
 }
 
 @Post('topics/seed')
+@ApiOperation({ summary: 'Seed default topics', description: 'Requires a valid ADMIN bearer token.' })
+@ApiOkResponse({ description: 'Seed result.', schema: { example: { ok: true, created: 20 } } })
 async seedTopics() {
   const topics = [
     'Morning habits for more energy',

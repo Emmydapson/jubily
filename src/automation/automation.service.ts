@@ -1,9 +1,11 @@
 /* eslint-disable prettier/prettier */
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { ScriptService } from './script.service';
 import { AiService } from './ai/ai.service';
+import { ContentQualityService } from './content-quality.service';
+import type { ScriptReviewStatus } from './dto/update-script-review-status.dto';
 
 type OfferInput = {
   id: string;
@@ -19,10 +21,22 @@ export class AutomationService {
   constructor(private prisma: PrismaService,
     private scriptService: ScriptService,
     private aiService: AiService,
+    private contentQuality: ContentQualityService,
   ) {}
 
   async generateScript(body: { topicId: string; content: string }) {
-  return this.scriptService.generate(body.topicId, body.content);
+  const topic = await this.prisma.topic.findUnique({
+    where: { id: body.topicId },
+    select: { title: true },
+  });
+  if (!topic) throw new NotFoundException('Topic not found');
+
+  const quality = await this.contentQuality.prepareScript({
+    topic: topic.title,
+    content: body.content,
+  });
+
+  return this.scriptService.createReviewed(body.topicId, 'v1-reviewed', quality);
 }
 
   async createTopic(dto: CreateTopicDto) {
@@ -43,17 +57,12 @@ export class AutomationService {
 
  async generateScriptWithAi(topicId: string, topicTitle: string) {
   const content = await this.aiService.generateScript(topicTitle);
-
-  return this.prisma.script.create({
-    data: {
-      content,
-      promptVer: 'v2-ai',
-      outputHash: `hash_${Date.now()}`,
-      topic: {
-        connect: { id: topicId },
-      },
-    },
+  const quality = await this.contentQuality.prepareScript({
+    topic: topicTitle,
+    content,
   });
+
+  return this.scriptService.createReviewed(topicId, 'v2-ai-reviewed', quality);
 }
 
 
@@ -91,6 +100,15 @@ async getScriptById(id: string) {
         topicId: true,
         promptVer: true,
         content: true,
+        reviewStatus: true,
+        qualityScore: true,
+        qualityReview: true,
+        titleCandidates: true,
+        selectedTitle: true,
+        youtubeDescription: true,
+        hashtags: true,
+        thumbnailPrompt: true,
+        rewriteAttempts: true,
         createdAt: true,
       },
     });
@@ -99,20 +117,129 @@ async getScriptById(id: string) {
     return script;
   }
 
+async getScriptQualityMetadata(id: string) {
+    const script = await this.prisma.script.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        topicId: true,
+        reviewStatus: true,
+        qualityScore: true,
+        qualityReview: true,
+        titleCandidates: true,
+        selectedTitle: true,
+        youtubeDescription: true,
+        hashtags: true,
+        thumbnailPrompt: true,
+        rewriteAttempts: true,
+        createdAt: true,
+      },
+    });
+
+    if (!script) throw new NotFoundException('Script not found');
+    return script;
+  }
+
+async updateScriptReviewStatus(id: string, reviewStatus: ScriptReviewStatus, note?: string) {
+    const script = await this.prisma.script.findUnique({
+      where: { id },
+      select: { id: true, qualityReview: true },
+    });
+    if (!script) throw new NotFoundException('Script not found');
+
+    const qualityReview =
+      script.qualityReview && typeof script.qualityReview === 'object' && !Array.isArray(script.qualityReview)
+        ? script.qualityReview
+        : {};
+
+    return this.prisma.script.update({
+      where: { id },
+      data: {
+        reviewStatus,
+        qualityReview: {
+          ...qualityReview,
+          adminReview: {
+            status: reviewStatus,
+            note: note ?? null,
+            reviewedAt: new Date().toISOString(),
+          },
+        },
+      },
+      select: {
+        id: true,
+        reviewStatus: true,
+        qualityScore: true,
+        qualityReview: true,
+        selectedTitle: true,
+        hashtags: true,
+        youtubeDescription: true,
+        thumbnailPrompt: true,
+        rewriteAttempts: true,
+      },
+    });
+  }
+
+async reReviewScript(id: string) {
+    const script = await this.prisma.script.findUnique({
+      where: { id },
+      include: { topic: { select: { title: true } } },
+    });
+    if (!script) throw new NotFoundException('Script not found');
+    if (!script.topic?.title) throw new BadRequestException('Script topic is missing');
+
+    const quality = await this.contentQuality.prepareScript({
+      topic: script.topic.title,
+      content: script.content,
+    });
+
+    return this.prisma.script.update({
+      where: { id },
+      data: {
+        content: quality.content,
+        outputHash: quality.outputHash,
+        reviewStatus: quality.reviewStatus,
+        qualityScore: quality.qualityScore,
+        qualityReview: quality.qualityReview,
+        titleCandidates: quality.titleCandidates,
+        selectedTitle: quality.selectedTitle,
+        youtubeDescription: quality.youtubeDescription,
+        hashtags: quality.hashtags,
+        thumbnailPrompt: quality.thumbnailPrompt,
+        rewriteAttempts: quality.rewriteAttempts,
+      },
+      select: {
+        id: true,
+        topicId: true,
+        reviewStatus: true,
+        qualityScore: true,
+        qualityReview: true,
+        titleCandidates: true,
+        selectedTitle: true,
+        youtubeDescription: true,
+        hashtags: true,
+        thumbnailPrompt: true,
+        rewriteAttempts: true,
+        createdAt: true,
+      },
+    });
+  }
+
   async generateScriptWithAiOffer(topicId: string, topicTitle: string, offer: OfferInput) {
   const content = await this.aiService.generateScriptWithOffer(topicTitle, {
     name: offer.name,
     url: offer.hoplink, // ✅ map hoplink -> url for your AiService method
     bullets: offer.nicheTag ? [`Best for: ${offer.nicheTag}`] : [],
   });
-
-  return this.prisma.script.create({
-    data: {
-      content,
-      promptVer: `v2-ai-offer-${offer.network ?? 'offer'}`,
-      outputHash: `hash_${Date.now()}`,
-      topic: { connect: { id: topicId } },
-    },
+  const quality = await this.contentQuality.prepareScript({
+    topic: topicTitle,
+    content,
+    offerName: offer.name,
   });
+
+  return this.scriptService.createReviewed(
+    topicId,
+    `v2-ai-offer-${offer.network ?? 'offer'}-reviewed`,
+    quality,
+  );
 }
 }
