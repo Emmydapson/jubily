@@ -28,12 +28,21 @@ enum TopicStatus {
 }
 
 model Script {
-  id         String   @id @default(uuid())
-  topicId    String
-  promptVer  String
-  content    String
-  outputHash String
-  createdAt  DateTime @default(now())
+  id                 String   @id @default(uuid())
+  topicId            String
+  promptVer          String
+  content            String
+  outputHash         String
+  reviewStatus       String   @default("PENDING")
+  qualityScore       Int?
+  qualityReview      Json?
+  titleCandidates    Json?
+  selectedTitle      String?
+  youtubeDescription String?
+  hashtags           String[] @default([])
+  thumbnailPrompt    String?
+  rewriteAttempts    Int      @default(0)
+  createdAt          DateTime @default(now())
 
   topic     Topic      @relation(fields: [topicId], references: [id])
   videos    Video[]
@@ -101,6 +110,9 @@ model VideoJob {
   attempts     Int      @default(0)
   createdAt    DateTime @default(now())
   videoSrt     String?
+  workerLockedAt DateTime?
+  workerLockedBy String?
+  workerStage    String?
 
   script Script @relation(fields: [scriptId], references: [id])
   offer  Offer? @relation(fields: [offerId], references: [id]) // ✅ NEW relation
@@ -115,6 +127,7 @@ model VideoJob {
   @@index([scriptId])
   @@index([offerId])
   @@index([youtubeVideoId])
+  @@index([workerStage, workerLockedAt])
 }
 
 model Offer {
