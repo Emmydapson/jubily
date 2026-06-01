@@ -1,0 +1,25 @@
+[
+  {
+    "network": "digistore24",
+    "externalProductId": "DIGISTORE_PRODUCT_ID",
+    "name": "Example Digistore24 Sleep Offer",
+    "nicheTag": "sleep",
+    "hoplink": "https://www.digistore24.com/redir/example/product",
+    "active": true
+  },
+  {
+    "network": "clickbank",
+    "name": "Example ClickBank Focus Offer",
+    "nicheTag": "memory",
+    "hoplink": "https://example.hop.clickbank.net",
+    "active": true
+  },
+  {
+    "network": "digistore24",
+    "externalProductId": "DIGISTORE_JOINT_PRODUCT_ID",
+    "name": "Example Digistore24 Joint Health Offer",
+    "nicheTag": "joint-health",
+    "hoplink": "https://www.digistore24.com/redir/example/joint-product",
+    "active": true
+  }
+]

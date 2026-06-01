@@ -7,6 +7,38 @@ import { SettingsService } from '../settings/settings.service';
 
 type Slot = 'MORNING' | 'AFTERNOON' | 'EVENING';
 
+function hasKeyword(text: string, keyword: string) {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`).test(text);
+}
+
+export function topicToNicheCandidates(topicTitle: string): string[] {
+  const t = String(topicTitle || '').toLowerCase();
+
+  const map: Array<[string, string[]]> = [
+    ['sleep', ['sleep', 'insomnia', 'dream']],
+    ['weight-loss', ['weight', 'fat', 'burn', 'diet', 'slim']],
+    ['energy', ['energy', 'morning', 'fatigue']],
+    ['stress', ['stress', 'anxiety', 'calm']],
+    ['gut-health', ['gut', 'digestion', 'bloat']],
+    ['focus', ['focus', 'brain', 'memory', 'recall', 'concentration']],
+    ['fitness', ['fitness', 'workout', 'exercise', 'shape', 'body', 'tone', 'strength']],
+    ['hormones', ['hormone', 'hormonal', 'menopause', 'cycle', 'balance']],
+    ['memory', ['memory', 'brain', 'focus', 'recall', 'concentration']],
+    ['mens-health', ['prostate', 'men', 'male', 'testosterone', 'urinary']],
+    ['dental-health', ['teeth', 'dental', 'gum', 'oral', 'mouth', 'breath']],
+    ['joint-health', ['joint', 'knee', 'pain', 'mobility', 'cartilage']],
+    ['hearing-health', ['hearing', 'ear', 'tinnitus', 'sound']],
+  ];
+
+  const hits: string[] = [];
+  for (const [niche, keywords] of map) {
+    if (keywords.some((k) => hasKeyword(t, k))) hits.push(niche);
+  }
+
+  return [...new Set(hits)];
+}
+
 @Injectable()
 export class OrchestratorService {
   private logger = new Logger(OrchestratorService.name);
@@ -18,32 +50,8 @@ export class OrchestratorService {
     private settingsService: SettingsService,
   ) {}
 
-  private topicToNicheCandidates(topicTitle: string): string[] {
-  const t = String(topicTitle || '').toLowerCase();
-
-  // super simple mapping you can expand
-  const map: Array<[string, string[]]> = [
-    ['sleep', ['sleep', 'insomnia', 'dream']],
-    ['weight-loss', ['weight', 'fat', 'burn', 'diet', 'slim']],
-    ['fitness', ['fitness', 'workout', 'exercise', 'gym']],
-    ['dental', ['dental', 'teeth', 'gum', 'tooth']],
-    ['mens-health', ['prostate', 'testosterone', 'men']],
-    ['memory', ['brain', 'memory', 'focus']],
-    ['gut', ['gut', 'digestion', 'bloat']],
-    ['stress', ['stress', 'anxiety', 'calm']],
-  ];
-
-  const hits: string[] = [];
-  for (const [niche, keywords] of map) {
-    if (keywords.some((k) => t.includes(k))) hits.push(niche);
-  }
-
-  // always return at least empty list
-  return [...new Set(hits)];
-}
-
 private async pickOfferForTopic(topicTitle: string) {
-  const nicheCandidates = this.topicToNicheCandidates(topicTitle);
+  const nicheCandidates = topicToNicheCandidates(topicTitle);
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 

@@ -30,6 +30,23 @@ Login flow:
 3. Call `GET /auth/me` to hydrate the active admin profile.
 4. Send `Authorization: Bearer <token>` on all protected admin routes.
 
+First admin creation after a database reset:
+
+- Login never auto-creates admins.
+- Create the first active admin from the backend workspace with:
+
+```bash
+ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='change-me-now' npm run admin:create
+```
+
+- Or pass CLI args:
+
+```bash
+npm run admin:create -- --email admin@example.com --password 'change-me-now'
+```
+
+- `ADMIN_EMAIL` must be present in the comma-separated `ADMIN_EMAILS` allowlist, otherwise the script exits without creating/updating the admin.
+
 Protected route behavior:
 
 - Global JWT guard protects every route unless decorated with `@Public()`.
@@ -291,6 +308,154 @@ Array<{
 - Response: `{ ok: true }`
 - Frontend note: require confirmation before deleting.
 - Common errors: `400`, `401`, `403`
+
+### Offers
+
+Supported networks:
+
+```ts
+"digistore24" | "clickbank"
+```
+
+Supported niches:
+
+```ts
+"sleep" | "weight-loss" | "energy" | "stress" | "gut-health" | "focus" |
+"fitness" | "hormones" | "memory" | "mens-health" | "dental-health" |
+"joint-health" | "hearing-health"
+```
+
+#### `GET /offers`
+
+- Auth: required
+- Role: `ADMIN`
+- Query params:
+
+```ts
+{
+  page?: number;      // default 1
+  limit?: number;     // default 50, max 100
+  network?: "digistore24" | "clickbank";
+  nicheTag?: OfferNiche;
+  active?: boolean;
+  q?: string;
+}
+```
+
+- Response: `PaginatedResponse<OfferSummary>`
+- Frontend note: use for offer management and manual job creation selectors.
+- Common errors: `400`, `401`, `403`
+
+#### `GET /offers/:id`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Response: `OfferSummary`
+- Frontend note: show counts and raw affiliate metadata; do not expose publicly.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `POST /offers`
+
+- Auth: required
+- Role: `ADMIN`
+- Body:
+
+```ts
+{
+  network: "digistore24" | "clickbank";
+  name: string;
+  hoplink: string; // valid http(s) URL
+  nicheTag?: OfferNiche;
+  externalProductId?: string;
+  active?: boolean; // default true
+}
+```
+
+- Response: created offer.
+- Frontend note: Digistore24 should include `externalProductId` when available so webhooks can fall back from `product_id`.
+- Common errors: `400`, `401`, `403`
+
+#### `PATCH /offers/:id`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Body: partial create body; at least one field required.
+- Response: updated offer.
+- Frontend note: require confirmation before changing `network` or `hoplink` on an offer with history.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `POST /offers/:id/deactivate`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Response: updated offer with `active: false`.
+- Frontend note: deactivation preserves click/conversion/job history and removes the offer from future orchestration.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `POST /offers/:id/reactivate`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Response: updated offer with `active: true`.
+- Frontend note: reactivated offers can be selected by orchestration again.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `GET /offers/:id/performance`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Response:
+
+```ts
+{
+  offer: OfferSummary;
+  totals: {
+    clicks: number;
+    conversions: number;
+    videoJobs: number;
+    conversionRate: number;
+    revenueByCurrency: Array<{
+      currency: string;
+      conversions: number;
+      amount: number;
+    }>;
+  };
+  recent: {
+    lastClickAt: string | null;
+    lastConversionAt: string | null;
+  };
+}
+```
+
+- Frontend note: useful for offer detail, analytics cards, and deciding which offers to deactivate.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `POST /offers/:id/test-redirect`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Body: none
+- Response:
+
+```ts
+{
+  offerId: string;
+  network: "digistore24" | "clickbank" | string;
+  hoplink: string;
+  previewClickId: string;
+  redirectUrl: string;
+  createsClick: false;
+}
+```
+
+- Frontend note: this previews the affiliate URL with a synthetic click id. It does not call `GET /r/:offerId` and does not create a `Click`.
+- Common errors: `400`, `401`, `403`, `404`
 
 ### Automation Topics
 
@@ -1098,6 +1263,27 @@ Actions/buttons:
 
 - Save key, replace key, delete key.
 
+### Offers Page
+
+Endpoints:
+
+- `GET /offers`
+- `GET /offers/:id`
+- `POST /offers`
+- `PATCH /offers/:id`
+- `POST /offers/:id/deactivate`
+- `POST /offers/:id/reactivate`
+- `GET /offers/:id/performance`
+- `POST /offers/:id/test-redirect`
+
+UI states:
+
+- Empty after reset, loading, filtered by network/niche/active state, validation errors, inactive offer, performance loaded.
+
+Actions/buttons:
+
+- Create offer, edit offer, deactivate/reactivate, test redirect, open performance.
+
 ### YouTube Connection Page
 
 Endpoints:
@@ -1283,6 +1469,58 @@ export interface ApiKeySummary {
   createdAt?: string;
 }
 
+export type OfferNetwork = "digistore24" | "clickbank";
+export type OfferNiche =
+  | "sleep"
+  | "weight-loss"
+  | "energy"
+  | "stress"
+  | "gut-health"
+  | "focus"
+  | "fitness"
+  | "hormones"
+  | "memory"
+  | "mens-health"
+  | "dental-health"
+  | "joint-health"
+  | "hearing-health";
+
+export interface OfferSummary {
+  id: string;
+  network: OfferNetwork | string;
+  externalProductId: string | null;
+  name: string;
+  nicheTag: OfferNiche | string | null;
+  hoplink: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: {
+    clicks: number;
+    conversions: number;
+    videoJobs: number;
+  };
+}
+
+export interface OfferPerformance {
+  offer: OfferSummary;
+  totals: {
+    clicks: number;
+    conversions: number;
+    videoJobs: number;
+    conversionRate: number;
+    revenueByCurrency: Array<{
+      currency: string;
+      conversions: number;
+      amount: number;
+    }>;
+  };
+  recent: {
+    lastClickAt: string | null;
+    lastConversionAt: string | null;
+  };
+}
+
 export type VideoJobStatus =
   | "PENDING"
   | "PROCESSING"
@@ -1441,6 +1679,9 @@ Public endpoints not meant for dashboard API calls:
 Endpoints requiring manual confirmation:
 
 - `DELETE /settings/api-keys/:provider`
+- `PATCH /offers/:id` when changing `network` or `hoplink`
+- `POST /offers/:id/deactivate`
+- `POST /offers/:id/reactivate`
 - `PATCH /automation/scripts/:id/review-status`
 - `POST /automation/scripts/:id/review`
 - `POST /automation/scripts/:id/thumbnail`
@@ -1474,6 +1715,7 @@ Suggested polling intervals:
 
 Endpoints that should not be called frequently:
 
+- `POST /offers/:id/test-redirect`
 - `POST /automation/scripts/ai`
 - `POST /automation/scripts/:id/review`
 - `POST /automation/scripts/:id/thumbnail`
@@ -1502,7 +1744,8 @@ These would improve the frontend but are not currently implemented here:
 - Paginated scripts endpoint with filters by `reviewStatus`, topic, and date.
 - Paginated topics endpoint with filters by `status`, source, and score.
 - Dedicated YouTube connection status endpoint instead of reading `workers/status.youtube.tokenStorage`.
-- Dedicated offers CRUD/list endpoints for selecting `offerId` during manual video creation.
+- Offer-level date filters for performance reporting.
+- Endpoint to assign or override an offer on an existing video job.
 - Endpoint to clear or force-release stale worker leases.
 - Endpoint to pause/resume only render or only publish without changing broader settings.
 - Endpoint to preview generated video metadata before publish.

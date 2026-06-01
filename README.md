@@ -57,6 +57,46 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Reset Runbook Notes
+
+After a database reset, create the first admin explicitly. Login does not auto-create admins.
+
+```bash
+ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='change-me-now' npm run admin:create
+```
+
+`ADMIN_EMAIL` must be present in the comma-separated `ADMIN_EMAILS` allowlist.
+
+Seed affiliate offers before running orchestration. Copy the example file, replace placeholder links/product IDs with real approved affiliate links, then run:
+
+```bash
+npm run offers:seed -- --file=data/offers.seed.json
+```
+
+Offer seed shape:
+
+```json
+[
+  {
+    "network": "digistore24",
+    "externalProductId": "DIGISTORE_PRODUCT_ID",
+    "name": "Example Digistore24 Sleep Offer",
+    "nicheTag": "sleep",
+    "hoplink": "https://www.digistore24.com/redir/example/product",
+    "active": true
+  },
+  {
+    "network": "clickbank",
+    "name": "Example ClickBank Focus Offer",
+    "nicheTag": "memory",
+    "hoplink": "https://example.hop.clickbank.net",
+    "active": true
+  }
+]
+```
+
+Supported networks are `digistore24` and `clickbank`. Supported niches are `sleep`, `weight-loss`, `energy`, `stress`, `gut-health`, `focus`, `fitness`, `hormones`, `memory`, `mens-health`, `dental-health`, `joint-health`, and `hearing-health`.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

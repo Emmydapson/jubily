@@ -10,6 +10,7 @@ import { TrackingModule } from './tracking/tracking.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuthModule } from './auth/auth.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
+import { OffersModule } from './offers/offers.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { MonitoringModule } from './monitoring/monitoring.module';
     SettingsModule,
     AuthModule,
     MonitoringModule,
+    OffersModule,
   ],
 })
 export class AppModule {}

@@ -1,0 +1,87 @@
+import { BadRequestException } from '@nestjs/common';
+import { OFFER_NETWORKS, OFFER_NICHES, OfferNetwork } from './offer.constants';
+
+export type OfferSeedInput = {
+  network?: unknown;
+  externalProductId?: unknown;
+  name?: unknown;
+  nicheTag?: unknown;
+  hoplink?: unknown;
+  active?: unknown;
+};
+
+export type NormalizedOfferInput = {
+  network: OfferNetwork;
+  externalProductId?: string | null;
+  name: string;
+  nicheTag?: string | null;
+  hoplink: string;
+  active?: boolean;
+};
+
+function normalizeOptionalString(value: unknown): string | null | undefined {
+  if (value == null) return value as null | undefined;
+  const normalized = String(value).trim();
+  return normalized.length ? normalized : null;
+}
+
+export function normalizeAndValidateOfferInput(
+  input: OfferSeedInput,
+  options: { partial?: boolean } = {},
+): Partial<NormalizedOfferInput> {
+  const partial = options.partial === true;
+  const output: Partial<NormalizedOfferInput> = {};
+
+  if (!partial || input.network != null) {
+    const network = String(input.network ?? '').trim().toLowerCase();
+    if (!OFFER_NETWORKS.includes(network as OfferNetwork)) {
+      throw new BadRequestException(
+        `network must be one of: ${OFFER_NETWORKS.join(', ')}`,
+      );
+    }
+    output.network = network as OfferNetwork;
+  }
+
+  if (!partial || input.name != null) {
+    const name = String(input.name ?? '').trim();
+    if (!name) throw new BadRequestException('name is required');
+    output.name = name;
+  }
+
+  if (!partial || input.hoplink != null) {
+    const hoplink = String(input.hoplink ?? '').trim();
+    try {
+      const parsed = new URL(hoplink);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('invalid protocol');
+      }
+    } catch {
+      throw new BadRequestException('hoplink must be a valid http(s) URL');
+    }
+    output.hoplink = hoplink;
+  }
+
+  if (input.nicheTag !== undefined) {
+    const nicheTag = normalizeOptionalString(input.nicheTag);
+    if (nicheTag != null && !OFFER_NICHES.includes(nicheTag as never)) {
+      throw new BadRequestException(
+        `nicheTag must be one of: ${OFFER_NICHES.join(', ')}`,
+      );
+    }
+    output.nicheTag = nicheTag;
+  }
+
+  if (input.externalProductId !== undefined) {
+    output.externalProductId = normalizeOptionalString(input.externalProductId);
+  }
+
+  if (input.active !== undefined) {
+    if (typeof input.active !== 'boolean') {
+      throw new BadRequestException('active must be a boolean');
+    }
+    output.active = input.active;
+  }
+
+  return output;
+}
+
