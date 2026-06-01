@@ -21,6 +21,7 @@ import { JobsService } from './jobs/jobs.service';
 import { AiImageService } from './ai/ai-image.service';
 import { TopicIngestionService } from './topic-ingest.service';
 import { MonitoringModule } from 'src/monitoring/monitoring.module';
+import { ThumbnailService } from './thumbnail.service';
 
 @Module({
   controllers: [
@@ -42,7 +43,8 @@ import { MonitoringModule } from 'src/monitoring/monitoring.module';
     GoogleSheetsService,
     JobsService,
     AiImageService,
-    TopicIngestionService
+    TopicIngestionService,
+    ThumbnailService,
   ],
   imports: [VideosModule, SettingsModule, MonitoringModule],
 })

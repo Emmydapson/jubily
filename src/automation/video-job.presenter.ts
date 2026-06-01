@@ -21,6 +21,11 @@ type VideoJobWithRelations = {
   workerLockedAt?: Date | null;
   workerLockedBy?: string | null;
   workerStage?: string | null;
+  thumbnailPrompt?: string | null;
+  thumbnailImageUrl?: string | null;
+  thumbnailStatus?: string | null;
+  thumbnailError?: string | null;
+  thumbnailGeneratedAt?: Date | null;
   offer?: { id: string; name: string } | null;
   script?: { id: string; topic?: { id: string; title: string } | null } | null;
 };
@@ -51,6 +56,13 @@ export type VideoJobSummary = {
     lockedAt: Date | null;
     lockedBy: string | null;
     stage: string | null;
+  };
+  thumbnail: {
+    prompt: string | null;
+    imageUrl: string | null;
+    status: string;
+    error: string | null;
+    generatedAt: Date | null;
   };
 };
 
@@ -83,6 +95,13 @@ export function presentVideoJob(job: VideoJobWithRelations): VideoJobSummary {
       lockedAt: job.workerLockedAt ?? null,
       lockedBy: job.workerLockedBy ?? null,
       stage: job.workerStage ?? null,
+    },
+    thumbnail: {
+      prompt: job.thumbnailPrompt ?? null,
+      imageUrl: job.thumbnailImageUrl ?? null,
+      status: job.thumbnailStatus ?? 'PENDING',
+      error: job.thumbnailError ?? null,
+      generatedAt: job.thumbnailGeneratedAt ?? null,
     },
   };
 }

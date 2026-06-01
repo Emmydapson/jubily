@@ -9,6 +9,8 @@ import { GenerateScriptDto } from './dto/generate-script.dto';
 import { GenerateAiScriptDto } from './dto/generate-ai-script.dto';
 import { LogsQueryDto } from './dto/logs-query.dto';
 import { UpdateScriptReviewStatusDto } from './dto/update-script-review-status.dto';
+import { GenerateThumbnailDto } from './dto/generate-thumbnail.dto';
+import { ThumbnailService } from './thumbnail.service';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 
 @Controller('automation')
@@ -19,6 +21,7 @@ export class AutomationController {
   constructor(private readonly automationService: AutomationService, 
     private readonly sheets: GoogleSheetsService,
      private readonly topicIngestion: TopicIngestionService,
+     private readonly thumbnails: ThumbnailService,
   ) {}
 
   @Post('topics')
@@ -112,6 +115,38 @@ getAllScripts() {
   @ApiOkResponse({ description: 'Updated script quality metadata.', schema: { example: { id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', reviewStatus: 'APPROVED', qualityScore: 84 } } })
   reReviewScript(@Param('id', ParseUUIDPipe) id: string) {
     return this.automationService.reReviewScript(id);
+  }
+
+  @Get('scripts/:id/thumbnail')
+  @ApiOperation({ summary: 'Get script thumbnail metadata', description: 'Requires a valid ADMIN bearer token.' })
+  @ApiParam({ name: 'id', format: 'uuid', example: 'b6efa6b9-6113-40ab-97ac-f461356c4c70' })
+  @ApiOkResponse({ description: 'Script thumbnail metadata.', schema: { example: { target: 'script', id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', thumbnailStatus: 'READY', thumbnailImageUrl: 'https://res.cloudinary.com/example/image/upload/thumbnail.jpg' } } })
+  getScriptThumbnail(@Param('id', ParseUUIDPipe) id: string) {
+    return this.thumbnails.getScriptThumbnail(id);
+  }
+
+  @Post('scripts/:id/thumbnail')
+  @ApiOperation({ summary: 'Generate a script thumbnail', description: 'Requires a valid ADMIN bearer token. Generates and uploads a social-safe thumbnail image. Does not upload to YouTube.' })
+  @ApiParam({ name: 'id', format: 'uuid', example: 'b6efa6b9-6113-40ab-97ac-f461356c4c70' })
+  @ApiBody({ type: GenerateThumbnailDto, required: false })
+  @ApiOkResponse({ description: 'Generated thumbnail metadata.', schema: { example: { target: 'script', id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', thumbnailStatus: 'READY', thumbnailImageUrl: 'https://res.cloudinary.com/example/image/upload/thumbnail.jpg' } } })
+  generateScriptThumbnail(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: GenerateThumbnailDto,
+  ) {
+    return this.thumbnails.generateForScript(id, body?.prompt);
+  }
+
+  @Patch('scripts/:id/thumbnail')
+  @ApiOperation({ summary: 'Regenerate a script thumbnail', description: 'Requires a valid ADMIN bearer token. Replaces thumbnail metadata with the latest generated image. Does not upload to YouTube.' })
+  @ApiParam({ name: 'id', format: 'uuid', example: 'b6efa6b9-6113-40ab-97ac-f461356c4c70' })
+  @ApiBody({ type: GenerateThumbnailDto, required: false })
+  @ApiOkResponse({ description: 'Regenerated thumbnail metadata.', schema: { example: { target: 'script', id: 'b6efa6b9-6113-40ab-97ac-f461356c4c70', thumbnailStatus: 'READY', thumbnailImageUrl: 'https://res.cloudinary.com/example/image/upload/thumbnail.jpg' } } })
+  regenerateScriptThumbnail(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: GenerateThumbnailDto,
+  ) {
+    return this.thumbnails.generateForScript(id, body?.prompt);
   }
 
   @Get('logs')

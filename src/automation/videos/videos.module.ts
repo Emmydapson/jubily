@@ -12,6 +12,7 @@ import { GoogleTtsService } from '../tts/google-tts.service';
 import { AiImageService } from '../ai/ai-image.service';
 import { MonitoringModule } from 'src/monitoring/monitoring.module';
 import { SettingsModule } from 'src/settings/settings.module';
+import { ThumbnailService } from '../thumbnail.service';
 
 @Module({
   providers: [
@@ -24,6 +25,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     YoutubeService,    // ✅ add
     GoogleTtsService,
      AiImageService,
+     ThumbnailService,
   ],
   controllers: [VideosController],
   exports: [VideosService, YoutubeService,],

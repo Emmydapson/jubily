@@ -101,6 +101,13 @@ Video job summary:
     lockedBy: string | null;
     stage: string | null;
   };
+  thumbnail: {
+    prompt: string | null;
+    imageUrl: string | null;
+    status: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
+    error: string | null;
+    generatedAt: string | null;
+  };
 }
 ```
 
@@ -378,6 +385,10 @@ Script shape returned by list can include all Prisma `Script` fields:
   youtubeDescription: string | null;
   hashtags: string[];
   thumbnailPrompt: string | null;
+  thumbnailImageUrl: string | null;
+  thumbnailStatus: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
+  thumbnailError: string | null;
+  thumbnailGeneratedAt: string | null;
   rewriteAttempts: number;
   createdAt: string;
 }
@@ -456,6 +467,10 @@ Script shape returned by list can include all Prisma `Script` fields:
   youtubeDescription: string | null;
   hashtags: string[];
   thumbnailPrompt: string | null;
+  thumbnailImageUrl: string | null;
+  thumbnailStatus: string;
+  thumbnailError: string | null;
+  thumbnailGeneratedAt: string | null;
   rewriteAttempts: number;
   createdAt: string;
 }
@@ -488,8 +503,94 @@ Script shape returned by list can include all Prisma `Script` fields:
 - Role: `ADMIN`
 - Params: `id` UUID
 - Response: refreshed quality metadata.
-- Frontend note: re-runs script quality review and rewrite attempts. It does not generate thumbnail images.
+- Frontend note: re-runs script quality review and rewrite attempts. It updates the thumbnail prompt but does not generate the image.
 - Common errors: `400`, `401`, `403`, `404`, provider/config errors
+
+### Thumbnails
+
+Thumbnail metadata shape:
+
+```ts
+{
+  target: "script" | "job";
+  id: string;
+  scriptId: string | null;
+  jobId: string | null;
+  thumbnailPrompt: string | null;
+  thumbnailImageUrl: string | null;
+  thumbnailStatus: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
+  thumbnailError: string | null;
+  thumbnailGeneratedAt: string | null;
+}
+```
+
+Thumbnail generation body:
+
+```ts
+{
+  prompt?: string; // optional override, max 1500 chars
+}
+```
+
+The backend wraps prompts with safety constraints: vertical portrait composition, clear central subject, high contrast, no text, no logo, no watermark, no medical claim text, and not misleading.
+
+#### `GET /automation/scripts/:id/thumbnail`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Response: thumbnail metadata shape.
+- Frontend note: use on Script Review page to show prompt, status, image preview, and provider errors.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `POST /automation/scripts/:id/thumbnail`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Body: optional thumbnail generation body.
+- Response: thumbnail metadata shape.
+- Frontend note: manual image generation for a script. Does not upload the thumbnail to YouTube. If provider generation fails, the response can be `thumbnailStatus: "FAILED"` with `thumbnailError`.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `PATCH /automation/scripts/:id/thumbnail`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Body: optional thumbnail generation body.
+- Response: thumbnail metadata shape.
+- Frontend note: regenerate/replace script thumbnail metadata. Require confirmation if replacing a ready image.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `GET /automation/videos/:id/thumbnail`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Response: thumbnail metadata shape. Falls back to the linked script thumbnail metadata when job-level thumbnail fields are empty.
+- Frontend note: use on job/video detail pages.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `POST /automation/videos/:id/thumbnail`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Body: optional thumbnail generation body.
+- Response: thumbnail metadata shape.
+- Frontend note: manual job-specific thumbnail generation. Does not upload the thumbnail to YouTube and does not block publishing.
+- Common errors: `400`, `401`, `403`, `404`
+
+#### `PATCH /automation/videos/:id/thumbnail`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Body: optional thumbnail generation body.
+- Response: thumbnail metadata shape.
+- Frontend note: regenerate/replace job-specific thumbnail metadata. Require confirmation if replacing a ready image.
+- Common errors: `400`, `401`, `403`, `404`
 
 ### Orchestrator
 
@@ -1056,15 +1157,18 @@ Endpoints:
 - `GET /automation/scripts/:id/quality`
 - `PATCH /automation/scripts/:id/review-status`
 - `POST /automation/scripts/:id/review`
+- `GET /automation/scripts/:id/thumbnail`
+- `POST /automation/scripts/:id/thumbnail`
+- `PATCH /automation/scripts/:id/thumbnail`
 - `POST /automation/videos/:scriptId`
 
 UI states:
 
-- Needs review, rejected, approved, re-reviewing, render blocked, render started.
+- Needs review, rejected, approved, re-reviewing, thumbnail pending/generating/ready/failed, render blocked, render started.
 
 Actions/buttons:
 
-- Approve, reject, send back to needs review, regenerate/re-review, start render.
+- Approve, reject, send back to needs review, regenerate/re-review, generate/regenerate thumbnail, start render.
 
 ### Videos Page
 
@@ -1072,17 +1176,20 @@ Endpoints:
 
 - `GET /automation/videos`
 - `GET /automation/videos/:id/assets`
+- `GET /automation/videos/:id/thumbnail`
+- `POST /automation/videos/:id/thumbnail`
+- `PATCH /automation/videos/:id/thumbnail`
 - `POST /automation/videos`
 - `PATCH /automation/videos/:id/published`
 - `PATCH /automation/videos/:id/failed`
 
 UI states:
 
-- Rendered, unrendered, published, unpublished, failed.
+- Rendered, unrendered, published, unpublished, failed, thumbnail pending/generating/ready/failed.
 
 Actions/buttons:
 
-- Refresh, open assets, register video manually, mark published, mark failed.
+- Refresh, open assets, generate/regenerate thumbnail, register video manually, mark published, mark failed.
 
 ### Monitoring/Events Page
 
@@ -1236,8 +1343,24 @@ export interface ScriptQuality {
   youtubeDescription: string | null;
   hashtags: string[];
   thumbnailPrompt: string | null;
+  thumbnailImageUrl: string | null;
+  thumbnailStatus: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
+  thumbnailError: string | null;
+  thumbnailGeneratedAt: string | null;
   rewriteAttempts: number;
   createdAt: string;
+}
+
+export interface ThumbnailMetadata {
+  target: "script" | "job";
+  id: string;
+  scriptId: string | null;
+  jobId: string | null;
+  thumbnailPrompt: string | null;
+  thumbnailImageUrl: string | null;
+  thumbnailStatus: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
+  thumbnailError: string | null;
+  thumbnailGeneratedAt: string | null;
 }
 
 export interface PipelineEvent {
@@ -1320,7 +1443,11 @@ Endpoints requiring manual confirmation:
 - `DELETE /settings/api-keys/:provider`
 - `PATCH /automation/scripts/:id/review-status`
 - `POST /automation/scripts/:id/review`
+- `POST /automation/scripts/:id/thumbnail`
+- `PATCH /automation/scripts/:id/thumbnail`
 - `POST /automation/videos/:scriptId`
+- `POST /automation/videos/:id/thumbnail`
+- `PATCH /automation/videos/:id/thumbnail`
 - `PATCH /automation/videos/:id/published`
 - `PATCH /automation/videos/:id/failed`
 - `POST /automation/jobs/:id/retry`
@@ -1349,6 +1476,10 @@ Endpoints that should not be called frequently:
 
 - `POST /automation/scripts/ai`
 - `POST /automation/scripts/:id/review`
+- `POST /automation/scripts/:id/thumbnail`
+- `PATCH /automation/scripts/:id/thumbnail`
+- `POST /automation/videos/:id/thumbnail`
+- `PATCH /automation/videos/:id/thumbnail`
 - `POST /automation/orchestrator/run`
 - `POST /automation/orchestrator/run-now`
 - `POST /automation/jobs/run-slot`

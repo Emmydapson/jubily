@@ -146,11 +146,12 @@ export class AiImageService {
   // ------------------------
   private async generateWithOpenAI(
     prompt: string,
+    size: '1024x1024' | '1024x1536' | '1536x1024' | 'auto' = '1536x1024',
   ): Promise<Buffer> {
     const result = await this.openai.images.generate({
       model: 'gpt-image-1',
       prompt,
-      size: '1792x1024',
+      size,
     });
 
     const b64 = result.data?.[0]?.b64_json;
@@ -250,6 +251,101 @@ export class AiImageService {
         process.env.MOCK_SCENE_IMAGE_URL ||
         'https://via.placeholder.com/1280x720.png'
       );
+    }
+  }
+
+  private safeThumbnailPrompt(raw: string) {
+    const base = String(raw || '').replace(/\s+/g, ' ').trim();
+    const subject = base || 'clear central wellness subject, bright realistic lifestyle image';
+
+    return [
+      subject,
+      'YouTube Shorts thumbnail',
+      'portrait vertical composition',
+      'clear central subject',
+      'high contrast',
+      'bright natural lighting',
+      'realistic social media thumbnail',
+      'clean background',
+      'no text',
+      'no captions',
+      'no logo',
+      'no watermark',
+      'no medical claim text',
+      'not misleading',
+    ].join(', ');
+  }
+
+  async generateThumbnailImageUrl(
+    thumbnailPrompt: string,
+    publicId: string,
+    jobId?: string,
+  ): Promise<string> {
+    const prompt = this.safeThumbnailPrompt(thumbnailPrompt);
+    const hash = this.hashPrompt(`thumbnail:${prompt}`);
+
+    const existing = await this.prisma.generatedImage.findUnique({
+      where: { promptHash: hash },
+    });
+
+    if (existing) {
+      this.logger.log(`[THUMBNAIL CACHE HIT] ${publicId}`);
+      await this.emitImageEvent({
+        status: 'SUCCESS',
+        jobId,
+        model: 'cache-thumbnail',
+      });
+      return existing.imageUrl;
+    }
+
+    if (this.aiMode === 'mock') {
+      const fallback =
+        process.env.MOCK_THUMBNAIL_IMAGE_URL ||
+        process.env.MOCK_SCENE_IMAGE_URL ||
+        'https://via.placeholder.com/1024x1536.png';
+
+      this.logger.warn(`[MOCK THUMBNAIL USED] ${publicId}`);
+      await this.emitImageEvent({
+        status: 'SUCCESS',
+        jobId,
+        model: 'mock-thumbnail',
+      });
+      return fallback;
+    }
+
+    try {
+      this.logger.log(`[GEN THUMBNAIL] ${publicId}`);
+
+      const buffer = await this.generateWithOpenAI(prompt, '1024x1536');
+      const cloudUrl = await this.uploadBuffer(buffer, publicId);
+
+      await this.prisma.generatedImage.create({
+        data: {
+          promptHash: hash,
+          promptText: prompt,
+          imageUrl: cloudUrl,
+        },
+      });
+
+      await this.emitImageEvent({
+        status: 'SUCCESS',
+        jobId,
+        model: 'gpt-image-1-thumbnail',
+      });
+
+      return cloudUrl;
+    } catch (error: any) {
+      const msg = error?.message || String(error);
+      this.logger.error(`[THUMBNAIL FAILED] ${msg}`);
+
+      await this.emitImageEvent({
+        status: 'FAILED',
+        jobId,
+        model: 'gpt-image-1-thumbnail',
+        errorMessage: msg,
+      });
+
+      throw new Error(msg);
     }
   }
 
