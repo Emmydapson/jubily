@@ -5,7 +5,11 @@ import { decryptString } from './settings.crypto';
 describe('SettingsService', () => {
   const originalEnv = process.env;
   let prisma: {
-    appSettings: { upsert: jest.Mock };
+    appSettings: {
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      upsert: jest.Mock;
+    };
     integrationKey: {
       findMany: jest.Mock;
       upsert: jest.Mock;
@@ -20,7 +24,11 @@ describe('SettingsService', () => {
       SETTINGS_MASTER_KEY_BASE64: Buffer.alloc(32, 7).toString('base64'),
     };
     prisma = {
-      appSettings: { upsert: jest.fn() },
+      appSettings: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        upsert: jest.fn(),
+      },
       integrationKey: {
         findMany: jest.fn(),
         upsert: jest.fn(),
@@ -32,6 +40,35 @@ describe('SettingsService', () => {
 
   afterEach(() => {
     process.env = originalEnv;
+  });
+
+  it('creates singleton settings safely when concurrent startup calls race', async () => {
+    const created = {
+      id: 'app',
+      automationEnabled: true,
+      verticalEnabled: true,
+      autoPublish: true,
+      timezone: 'America/New_York',
+      videosPerDay: 3,
+      runHours: [9, 13, 18],
+      updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+    };
+
+    prisma.appSettings.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(created);
+    prisma.appSettings.create
+      .mockResolvedValueOnce(created)
+      .mockRejectedValueOnce({ code: 'P2002' });
+
+    await expect(Promise.all([service.getSettings(), service.getSettings()])).resolves.toEqual([
+      created,
+      created,
+    ]);
+
+    expect(prisma.appSettings.create).toHaveBeenCalledTimes(2);
+    expect(prisma.appSettings.findUnique).toHaveBeenCalledTimes(3);
   });
 
   it('normalizes scheduling settings before persistence', async () => {

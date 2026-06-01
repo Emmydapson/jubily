@@ -9,6 +9,15 @@ import { UpdateSettingsDto } from './dto/update-settings.dto';
 export class SettingsService {
   constructor(private prisma: PrismaService) {}
 
+  private isUniqueConstraintError(error: unknown) {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: string }).code === 'P2002'
+    );
+  }
+
   private validateTimezone(timezone: string) {
     try {
       new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
@@ -18,12 +27,25 @@ export class SettingsService {
   }
 
   async getSettings() {
-    const settings = await this.prisma.appSettings.upsert({
+    const existing = await this.prisma.appSettings.findUnique({
       where: { id: 'app' },
-      update: {},
-      create: { id: 'app' },
     });
-    return settings;
+    if (existing) return existing;
+
+    try {
+      return await this.prisma.appSettings.create({
+        data: { id: 'app' },
+      });
+    } catch (error: unknown) {
+      if (!this.isUniqueConstraintError(error)) throw error;
+
+      const settings = await this.prisma.appSettings.findUnique({
+        where: { id: 'app' },
+      });
+      if (settings) return settings;
+
+      throw error;
+    }
   }
 
   async updateSettings(dto: UpdateSettingsDto) {
