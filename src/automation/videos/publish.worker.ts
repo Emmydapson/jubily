@@ -146,6 +146,22 @@ export class PublishWorker implements OnModuleInit {
     return configured ? String(configured).replace(/\/+$/, '') : null;
   }
 
+  private buildTrackingUrl(apiBaseUrl: string, offerId: string, jobId: string, youtubeId: string) {
+    const url = new URL(`/r/${encodeURIComponent(offerId)}`, `${apiBaseUrl}/`);
+    url.searchParams.set('jobId', jobId);
+    url.searchParams.set('yt', youtubeId);
+    return url.toString();
+  }
+
+  private buildDescriptionWithOfferLink(baseDesc: string, trackUrl: string) {
+    return `${baseDesc}
+
+Recommended product:
+${trackUrl}
+
+Affiliate disclosure: We may earn a commission if you buy through this link.`.slice(0, 4500);
+  }
+
   private isPublishRateLimited(err: any): { hit: boolean; reason: string } {
   const reason =
     err?.response?.data?.error?.errors?.[0]?.reason ||
@@ -266,7 +282,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
     let idx = 1;
 
     for (const sc of scenes) {
-      const len = Number(sc.seconds || sc.duration || 0);
+      const len = Math.max(0, Number(sc.seconds || sc.duration || 0));
       const cap = String(sc.caption || sc.narration || '').trim();
       if (!len || !cap) {
         t += len || 0;
@@ -574,11 +590,8 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       if (fullJob.offerId && youtubeId) {
         const apiBaseUrl = this.publicApiBaseUrl();
         if (apiBaseUrl) {
-          const trackUrl = `${apiBaseUrl}/r/${fullJob.offerId}?jobId=${job.id}&yt=${youtubeId}`;
-          finalDesc = `${baseDesc}
-
-Recommended product:
-${trackUrl}`.slice(0, 4500);
+          const trackUrl = this.buildTrackingUrl(apiBaseUrl, fullJob.offerId, job.id, youtubeId);
+          finalDesc = this.buildDescriptionWithOfferLink(baseDesc, trackUrl);
         } else {
           this.logger.warn(`Tracking link skipped job=${job.id}; set PUBLIC_API_BASE_URL or JUBILY_API_BASE_URL`);
           await this.monitoring.warn({
@@ -630,6 +643,11 @@ ${trackUrl}`.slice(0, 4500);
       // -----------------------------
       try {
         await this.youtube.uploadCaptions(youtubeId, srt);
+        await this.prisma.videoJob.updateMany({
+          where: { id: job.id, workerLockedBy: this.workerId },
+          data: { publishStage: 'CAPTIONS_DONE' },
+        });
+        this.logger.log(`Captions uploaded job=${job.id} youtubeId=${youtubeId}`);
         await this.monitoring.info({
           stage: 'PUBLISH',
           status: 'CAPTIONS_DONE',
@@ -644,7 +662,7 @@ ${trackUrl}`.slice(0, 4500);
         const msg = e?.message || String(e);
         await this.prisma.videoJob.updateMany({
           where: { id: job.id, workerLockedBy: this.workerId },
-          data: { error: `Captions failed: ${msg}` },
+          data: { publishStage: 'CAPTIONS_FAILED', error: `Captions failed: ${msg}` },
         });
         this.logger.warn(`Captions failed job=${job.id} msg=${this.short(msg, 250)}`);
         await this.monitoring.warn({

@@ -80,6 +80,14 @@ describe('ShotstackService payload validation', () => {
     return payload.timeline.tracks.flatMap((track: any) => track.clips);
   }
 
+  function imageClips(payload: any) {
+    return allClips(payload).filter((clip: any) => clip.asset?.type === 'image');
+  }
+
+  function subtitleClips(payload: any) {
+    return allClips(payload).filter((clip: any) => clip.asset?.type === 'html');
+  }
+
   it('moves audio volume to the audio asset and removes clip-level volume', () => {
     const { payload, issues } = validateShotstackPayload({
       timeline: {
@@ -158,5 +166,80 @@ describe('ShotstackService payload validation', () => {
         .filter(Boolean)
         .every((effect: string) => sanitizeShotstackEffect(effect) === effect),
     ).toBe(true);
+  });
+
+  it('creates one timed image clip per scene using cumulative timing when TTS scene marks are missing', async () => {
+    tts.synthesizeWithMarksToCloudinaryMp3.mockResolvedValue({
+      url: 'https://cdn.example.com/voice.mp3',
+      timepoints: [{ markName: 'end', timeSeconds: 6 }],
+    });
+    aiImages.generateMultipleScenes.mockResolvedValue([
+      'https://cdn.example.com/image-1.jpg',
+      'https://cdn.example.com/image-2.jpg',
+      'https://cdn.example.com/image-3.jpg',
+    ]);
+
+    await service.renderVideo([
+      ...scenes,
+      {
+        index: 2,
+        narration: 'Finish with one repeatable action',
+        caption: 'Repeatable action',
+        duration: 2,
+        visualPrompt: 'habit tracker card',
+      },
+    ], 'job-1');
+
+    const images = imageClips(postedPayload());
+    expect(images).toHaveLength(3);
+    expect(images.map((clip: any) => clip.asset.src)).toEqual([
+      'https://cdn.example.com/image-1.jpg',
+      'https://cdn.example.com/image-2.jpg',
+      'https://cdn.example.com/image-3.jpg',
+    ]);
+    expect(images.map((clip: any) => clip.start)).toEqual([0, 2, 4]);
+    expect(images.map((clip: any) => clip.length)).toEqual([2, 2, 2]);
+  });
+
+  it('does not create a single full-timeline image clip when there are multiple scenes', async () => {
+    tts.synthesizeWithMarksToCloudinaryMp3.mockResolvedValue({
+      url: 'https://cdn.example.com/voice.mp3',
+      timepoints: [{ markName: 'end', timeSeconds: 4 }],
+    });
+
+    await service.renderVideo(scenes, 'job-1');
+
+    const payload = postedPayload();
+    const images = imageClips(payload);
+    const renderLength = payload.timeline.tracks
+      .flatMap((track: any) => track.clips)
+      .reduce((max: number, clip: any) => Math.max(max, clip.start + clip.length), 0);
+
+    expect(images).toHaveLength(2);
+    expect(images.every((clip: any) => clip.length < renderLength)).toBe(true);
+  });
+
+  it('includes visible top-track subtitle clips with valid timing', async () => {
+    await service.renderVideo(scenes, 'job-1');
+
+    const payload = postedPayload();
+    const topTrack = payload.timeline.tracks[0];
+    const subtitles = subtitleClips(payload);
+
+    expect(topTrack.clips.every((clip: any) => clip.asset.type === 'html')).toBe(true);
+    expect(subtitles.length).toBeGreaterThan(0);
+    expect(subtitles.every((clip: any) => clip.start >= 0 && clip.length > 0)).toBe(true);
+    expect(subtitles[0]).toEqual(
+      expect.objectContaining({
+        position: 'bottom',
+        asset: expect.objectContaining({
+          type: 'html',
+          css: expect.stringContaining('font-size: 52px'),
+          width: 960,
+          height: 220,
+        }),
+      }),
+    );
+    expect(subtitles.map((clip: any) => clip.asset.html).join(' ')).toContain('Focused');
   });
 });

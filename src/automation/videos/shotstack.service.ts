@@ -5,6 +5,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Scene } from './interfaces/scene.interface';
 import { GoogleTtsService } from '../tts/google-tts.service';
 import { AiImageService } from '../ai/ai-image.service';
+import * as fs from 'fs';
+import * as path from 'path';
 
 type ShotstackValidationIssue = {
   path: string;
@@ -44,6 +46,19 @@ function clonePayload<T>(payload: T): T {
 
 function clampStart(value: unknown): number {
   return Math.max(0, typeof value === 'number' && Number.isFinite(value) ? value : 0);
+}
+
+function safeLength(value: unknown, fallback = 1.5): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function escapeHtml(text: string) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 export function sanitizeShotstackEffect(effect: unknown): string | undefined {
@@ -161,41 +176,54 @@ export class ShotstackService {
       chunks.push(words.slice(i, i + chunkSize).join(' '));
     }
 
-    const perChunk = duration / chunks.length;
+    const perChunk = safeLength(duration / Math.max(chunks.length, 1), duration);
 
     const safeStart = clampStart(start);
 
     return chunks.map((chunk, i) => ({
       asset: {
         type: 'html',
-        html: `
-        <div style="
-          width:100%; height:100%;
-          display:flex;
-          align-items:flex-end;
-          justify-content:center;
-          padding:80px;
-          font-family:Arial;
-          font-size:58px;
-          font-weight:900;
-          color:white;
-          text-align:center;
-          text-shadow: 0 4px 18px rgba(0,0,0,0.95);
-        ">
-          <div style="
-            background: rgba(0,0,0,0.55);
-            padding:22px 32px;
-            border-radius:18px;
-            backdrop-filter: blur(6px);
-          ">
-            ${chunk}
-          </div>
-        </div>
-        `,
+        html: `<p>${escapeHtml(chunk)}</p>`,
+        css: 'p { color: #ffffff; font-size: 52px; font-family: Arial; font-weight: 900; text-align: center; background-color: #000000; padding: 22px; line-height: 62px; }',
+        width: 960,
+        height: 220,
       },
       start: clampStart(safeStart + i * perChunk),
       length: perChunk,
+      position: 'bottom',
+      offset: { x: 0, y: -0.06 },
     }));
+  }
+
+  private buildSceneTimings(scenes: Scene[], byName: Map<string, number>, end: number) {
+    let cursor = 0;
+    const fallbackStarts = scenes.map((scene) => {
+      const start = cursor;
+      cursor += safeLength(scene.duration || this.estimateSeconds(scene.narration));
+      return start;
+    });
+    const fallbackEnd = Math.max(cursor, end || 0);
+    const totalEnd = end && end > 0 ? end : fallbackEnd;
+
+    return scenes.map((scene, i) => {
+      const markedStart = byName.get(`s${i + 1}`);
+      const markedNext = byName.get(`s${i + 2}`);
+      const start = clampStart(typeof markedStart === 'number' ? markedStart : fallbackStarts[i]);
+      let next = typeof markedNext === 'number' ? clampStart(markedNext) : (fallbackStarts[i + 1] ?? totalEnd);
+
+      if (next <= start) {
+        next = start + safeLength(scene.duration || this.estimateSeconds(scene.narration));
+      }
+
+      if (i === scenes.length - 1 && totalEnd > start) {
+        next = Math.max(next, totalEnd);
+      }
+
+      return {
+        start,
+        length: safeLength(next - start),
+      };
+    });
   }
 
   private summarizePayloadIssues(issues: ShotstackValidationIssue[]) {
@@ -211,6 +239,23 @@ export class ShotstackService {
         code: issue.code,
       })),
     };
+  }
+
+  private maybeSaveDebugPayload(jobId: string | undefined, payload: any) {
+    if (process.env.DEBUG_SHOTSTACK_PAYLOAD !== 'true' && process.env.NODE_ENV !== 'development') {
+      return;
+    }
+
+    try {
+      const dir = path.resolve(process.cwd(), 'tmp', 'shotstack-payloads');
+      fs.mkdirSync(dir, { recursive: true });
+      const safeJobId = String(jobId || `job-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const file = path.join(dir, `${safeJobId}.json`);
+      fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+      this.logger.log(`[ShotstackPayloadDebug] saved=${file}`);
+    } catch (error) {
+      this.logger.warn(`[ShotstackPayloadDebug] save failed msg=${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   // ------------------------
@@ -261,21 +306,18 @@ export class ShotstackService {
       'slideRight',
       'slideUp',
     ];
+    const sceneTimings = this.buildSceneTimings(scenes, byName, end);
+    const renderEnd = Math.max(
+      end,
+      ...sceneTimings.map((timing) => timing.start + timing.length),
+    );
 
     // ------------------------
     // 🎬 BUILD SCENES
     // ------------------------
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
-
-      let start = byName.get(`s${i + 1}`) ?? 0;
-      const next = byName.get(`s${i + 2}`) ?? end;
-
-      const length = Math.max(1.5, next - start);
-
-      // slight overlap for smooth flow
-      if (i !== 0) start -= 0.25;
-      start = clampStart(start);
+      const { start, length } = sceneTimings[i];
 
       const effect = sanitizeShotstackEffect(motionEffects[i % motionEffects.length]);
 
@@ -293,7 +335,7 @@ export class ShotstackService {
       // 📝 SUBTITLES (GROUPED)
       // ------------------------
       const subtitleBlocks = this.buildGroupedSubtitles(
-        scene.narration,
+        scene.caption || scene.narration,
         start,
         length,
       );
@@ -320,8 +362,9 @@ export class ShotstackService {
     const payload = {
       timeline: {
         tracks: [
-          { clips: bgClips },
+          // Shotstack renders the first track on top, so subtitles must precede images.
           { clips: subtitleClips },
+          { clips: bgClips },
 
           // 🎙 voiceover
           {
@@ -329,7 +372,7 @@ export class ShotstackService {
               {
                 asset: { type: 'audio', src: voiceoverUrl },
                 start: 0,
-                length: Math.ceil(end),
+                length: Math.ceil(renderEnd),
               },
             ],
           },
@@ -344,7 +387,7 @@ export class ShotstackService {
                   volume: 0.08,
                 },
                 start: 0,
-                length: Math.ceil(end),
+                length: Math.ceil(renderEnd),
               },
             ],
           },
@@ -368,9 +411,10 @@ export class ShotstackService {
         `[ShotstackPayloadValidation] ${JSON.stringify(this.summarizePayloadIssues(validation.issues))}`,
       );
     }
+    this.maybeSaveDebugPayload(jobId, validation.payload);
 
     this.logger.log(
-      `[ShotstackRender] scenes=${scenes.length} duration=${Math.ceil(end)}`,
+      `[ShotstackRender] scenes=${scenes.length} duration=${Math.ceil(renderEnd)}`,
     );
 
     const res = await axios.post(`${this.baseUrl}/render`, validation.payload, {

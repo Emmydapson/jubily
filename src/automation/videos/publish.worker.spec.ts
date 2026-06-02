@@ -268,7 +268,7 @@ describe('PublishWorker', () => {
     });
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
       where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
-      data: { error: 'Captions failed: captions denied' },
+      data: { publishStage: 'CAPTIONS_FAILED', error: 'Captions failed: captions denied' },
     });
     expect(monitoring.warn).toHaveBeenCalledWith(
       expect.objectContaining({ stage: 'PUBLISH', status: 'METADATA_FAILED' }),
@@ -278,6 +278,32 @@ describe('PublishWorker', () => {
     );
     expect(monitoring.info).toHaveBeenCalledWith(
       expect.objectContaining({ stage: 'PUBLISH', status: 'COMPLETED' }),
+    );
+  });
+
+  it('formats the full raw tracking URL on its own line with affiliate disclosure', async () => {
+    await worker.publish(job);
+
+    const finalDescription = youtube.updateMetadata.mock.calls[0][2] as string;
+    const lines = finalDescription.split('\n');
+    const trackingUrl = 'https://api.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1';
+
+    expect(lines).toContain('Recommended product:');
+    expect(lines).toContain(trackingUrl);
+    expect(lines[lines.indexOf('Recommended product:') + 1]).toBe(trackingUrl);
+    expect(finalDescription).toContain('Affiliate disclosure:');
+    expect(finalDescription).not.toContain(`[${trackingUrl}]`);
+  });
+
+  it('stores caption upload success without changing the successful publish flow', async () => {
+    await worker.publish(job);
+
+    expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      data: { publishStage: 'CAPTIONS_DONE' },
+    });
+    expect(monitoring.info).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'PUBLISH', status: 'CAPTIONS_DONE' }),
     );
   });
 
@@ -389,7 +415,8 @@ describe('PublishWorker', () => {
     expect(srt).toContain('First line');
     expect(srt).toContain('00:00:01,250 --> 00:00:03,250');
     expect(srt).toContain('Second line');
-    expect(srt).toContain('00:00:06,250 --> 00:00:05,250');
+    expect(srt).not.toContain('00:00:06,250 --> 00:00:05,250');
+    expect(srt).not.toContain('Negative start is clamped');
   });
 
   it('pauses publishing on YouTube quota errors instead of retrying as a normal failure', async () => {
