@@ -6,6 +6,102 @@ import { Scene } from './interfaces/scene.interface';
 import { GoogleTtsService } from '../tts/google-tts.service';
 import { AiImageService } from '../ai/ai-image.service';
 
+type ShotstackValidationIssue = {
+  path: string;
+  code: 'CLIP_VOLUME_MOVED' | 'INVALID_EFFECT_REMOVED' | 'NEGATIVE_START_CLAMPED';
+  value?: unknown;
+};
+
+type ShotstackValidationResult = {
+  payload: any;
+  issues: ShotstackValidationIssue[];
+};
+
+const VALID_SHOTSTACK_EFFECTS = new Set([
+  'zoomIn',
+  'zoomInSlow',
+  'zoomInFast',
+  'zoomOut',
+  'zoomOutSlow',
+  'zoomOutFast',
+  'slideLeft',
+  'slideLeftSlow',
+  'slideLeftFast',
+  'slideRight',
+  'slideRightSlow',
+  'slideRightFast',
+  'slideUp',
+  'slideUpSlow',
+  'slideUpFast',
+  'slideDown',
+  'slideDownSlow',
+  'slideDownFast',
+]);
+
+function clonePayload<T>(payload: T): T {
+  return JSON.parse(JSON.stringify(payload)) as T;
+}
+
+function clampStart(value: unknown): number {
+  return Math.max(0, typeof value === 'number' && Number.isFinite(value) ? value : 0);
+}
+
+export function sanitizeShotstackEffect(effect: unknown): string | undefined {
+  if (typeof effect !== 'string') return undefined;
+  return VALID_SHOTSTACK_EFFECTS.has(effect) ? effect : undefined;
+}
+
+export function validateShotstackPayload(payload: any): ShotstackValidationResult {
+  const sanitized = clonePayload(payload);
+  const issues: ShotstackValidationIssue[] = [];
+  const tracks = sanitized?.timeline?.tracks;
+
+  if (!Array.isArray(tracks)) {
+    return { payload: sanitized, issues };
+  }
+
+  tracks.forEach((track: any, trackIndex: number) => {
+    if (!Array.isArray(track?.clips)) return;
+
+    track.clips.forEach((clip: any, clipIndex: number) => {
+      const path = `timeline.tracks[${trackIndex}].clips[${clipIndex}]`;
+
+      if (typeof clip?.start === 'number' && clip.start < 0) {
+        issues.push({
+          path: `${path}.start`,
+          code: 'NEGATIVE_START_CLAMPED',
+          value: clip.start,
+        });
+        clip.start = clampStart(clip.start);
+      }
+
+      if (clip?.effect && !sanitizeShotstackEffect(clip.effect)) {
+        issues.push({
+          path: `${path}.effect`,
+          code: 'INVALID_EFFECT_REMOVED',
+          value: clip.effect,
+        });
+        delete clip.effect;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(clip, 'volume')) {
+        const volume = clip.volume;
+        if (clip?.asset?.type === 'audio' && typeof volume === 'number' && Number.isFinite(volume)) {
+          clip.asset.volume = Math.max(0, Math.min(1, volume));
+        }
+        delete clip.volume;
+        issues.push({
+          path: `${path}.volume`,
+          code: 'CLIP_VOLUME_MOVED',
+          value: volume,
+        });
+      }
+    });
+  });
+
+  return { payload: sanitized, issues };
+}
+
 @Injectable()
 export class ShotstackService {
   private readonly logger = new Logger(ShotstackService.name);
@@ -67,6 +163,8 @@ export class ShotstackService {
 
     const perChunk = duration / chunks.length;
 
+    const safeStart = clampStart(start);
+
     return chunks.map((chunk, i) => ({
       asset: {
         type: 'html',
@@ -95,9 +193,24 @@ export class ShotstackService {
         </div>
         `,
       },
-      start: start + i * perChunk,
+      start: clampStart(safeStart + i * perChunk),
       length: perChunk,
     }));
+  }
+
+  private summarizePayloadIssues(issues: ShotstackValidationIssue[]) {
+    const counts = issues.reduce<Record<string, number>>((acc, issue) => {
+      acc[issue.code] = (acc[issue.code] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      counts,
+      paths: issues.slice(0, 8).map((issue) => ({
+        path: issue.path,
+        code: issue.code,
+      })),
+    };
   }
 
   // ------------------------
@@ -138,15 +251,15 @@ export class ShotstackService {
     );
 
     const bgClips: any[] = [];
-const subtitleClips: any[] = [];
-const sfxClips: any[] = [];
+    const subtitleClips: any[] = [];
+    const sfxClips: any[] = [];
 
     const motionEffects = [
       'zoomIn',
       'zoomOut',
-      'panLeft',
-      'panRight',
-      'fadeIn',
+      'slideLeft',
+      'slideRight',
+      'slideUp',
     ];
 
     // ------------------------
@@ -162,8 +275,9 @@ const sfxClips: any[] = [];
 
       // slight overlap for smooth flow
       if (i !== 0) start -= 0.25;
+      start = clampStart(start);
 
-      const effect = motionEffects[i % motionEffects.length];
+      const effect = sanitizeShotstackEffect(motionEffects[i % motionEffects.length]);
 
       // ------------------------
       // 🎥 BACKGROUND IMAGE
@@ -172,7 +286,7 @@ const sfxClips: any[] = [];
         asset: { type: 'image', src: images[i] },
         start,
         length,
-        effect,
+        ...(effect ? { effect } : {}),
       });
 
       // ------------------------
@@ -193,10 +307,10 @@ const sfxClips: any[] = [];
         asset: {
           type: 'audio',
           src: process.env.SFX_POP || '',
+          volume: 0.15,
         },
         start,
         length: 0.25,
-        volume: 0.15,
       });
     }
 
@@ -227,10 +341,10 @@ const sfxClips: any[] = [];
                 asset: {
                   type: 'audio',
                   src: this.pickMusic(scenes[0].narration) || '',
+                  volume: 0.08,
                 },
                 start: 0,
                 length: Math.ceil(end),
-                volume: 0.08,
               },
             ],
           },
@@ -248,11 +362,18 @@ const sfxClips: any[] = [];
       },
     };
 
+    const validation = validateShotstackPayload(payload);
+    if (validation.issues.length > 0) {
+      this.logger.warn(
+        `[ShotstackPayloadValidation] ${JSON.stringify(this.summarizePayloadIssues(validation.issues))}`,
+      );
+    }
+
     this.logger.log(
       `[ShotstackRender] scenes=${scenes.length} duration=${Math.ceil(end)}`,
     );
 
-    const res = await axios.post(`${this.baseUrl}/render`, payload, {
+    const res = await axios.post(`${this.baseUrl}/render`, validation.payload, {
       headers: {
         'x-api-key': this.apiKey(),
         'x-shotstack-stage': 'true',
