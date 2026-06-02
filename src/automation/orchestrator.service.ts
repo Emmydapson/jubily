@@ -4,8 +4,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AutomationService } from './automation.service';
 import { VideosService } from './videos/videos.service';
 import { SettingsService } from '../settings/settings.service';
+import { VideoJobStatus } from './video-job-status';
 
 type Slot = 'MORNING' | 'AFTERNOON' | 'EVENING';
+
+const FORCE_RERUN_STATUSES = [
+  VideoJobStatus.Failed,
+  VideoJobStatus.FailedPublish,
+  VideoJobStatus.FailedPermanent,
+  VideoJobStatus.Cancelled,
+];
 
 function hasKeyword(text: string, keyword: string) {
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -122,7 +130,7 @@ return offers[Math.floor(Math.random() * offers.length)];
 }
 
 
-  async runSlot(slot: Slot, scheduledFor = new Date()) {
+  async runSlot(slot: Slot, scheduledFor = new Date(), options: { force?: boolean } = {}) {
     // ✅ respect settings
     const settings = await this.settingsService.getSettings();
     if (!settings.automationEnabled) {
@@ -135,17 +143,49 @@ return offers[Math.floor(Math.random() * offers.length)];
     // ✅ idempotency: if a job exists for this slot+scheduledFor, stop
      const existing = await this.prisma.videoJob.findUnique({
     where: { slot_scheduledFor: { slot, scheduledFor: normalized } },
-    select: { id: true },
+    select: { id: true, status: true },
   }).catch(() => null);
 
     if (existing) {
+  if (options.force === true && FORCE_RERUN_STATUSES.includes(existing.status as VideoJobStatus)) {
+    await this.prisma.videoJob.update({
+      where: { id: existing.id },
+      data: {
+        status: VideoJobStatus.Pending,
+        provider: null,
+        renderId: null,
+        videoUrl: null,
+        youtubeVideoId: null,
+        youtubeUrl: null,
+        publishStage: null,
+        videoSrt: null,
+        published: false,
+        attempts: 0,
+        error: null,
+        workerLockedAt: null,
+        workerLockedBy: null,
+        workerStage: null,
+      },
+    });
+
+    const render = await this.videos.startRenderForJob(existing.id);
+    return {
+      ok: true,
+      forced: true,
+      reset: true,
+      slot,
+      scheduledFor: normalized,
+      ...render,
+    };
+  }
+
   this.logger.warn(
     `⏭️ Already ran slot=${slot} scheduledFor=${normalized.toISOString()} job=${existing.id}`,
   );
   return {
     ok: true,
     skipped: true,
-    reason: 'already-exists',
+    reason: options.force === true ? 'already-exists-active-or-successful' : 'already-exists',
     slot,
     scheduledFor: normalized, // ✅ normalize in response too
     jobId: existing.id,

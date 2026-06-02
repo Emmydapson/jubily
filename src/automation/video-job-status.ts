@@ -6,6 +6,7 @@ export enum VideoJobStatus {
   FailedPermanent = 'FAILED_PERMANENT',
   FailedQuota = 'FAILED_QUOTA',
   FailedPublish = 'FAILED_PUBLISH',
+  Cancelled = 'CANCELLED',
 }
 
 export const VIDEO_JOB_STATUSES = Object.values(VideoJobStatus);

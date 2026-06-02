@@ -1,4 +1,4 @@
-import { IsIn, IsISO8601, IsOptional } from 'class-validator';
+import { IsBoolean, IsIn, IsISO8601, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SLOT_ORDER } from './time.utils';
 import type { Slot } from './time.utils';
@@ -20,4 +20,12 @@ export class RunSlotDto {
   @IsOptional()
   @IsISO8601()
   scheduledFor?: string;
+
+  @ApiPropertyOptional({
+    example: false,
+    description: 'When true, failed terminal jobs for the same slot can be reset and rerun.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }

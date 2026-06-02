@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable prettier/prettier */
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OrchestratorService } from '../orchestrator.service';
 import { scheduledForHour, SLOT_ORDER } from '../time.utils';
@@ -13,6 +13,14 @@ import { presentVideoJob, VideoJobSummary } from '../video-job.presenter';
 import { VideoJobStatus } from '../video-job-status';
 
 type Slot = 'MORNING' | 'AFTERNOON' | 'EVENING';
+
+const RESETTABLE_JOB_STATUSES = [
+  VideoJobStatus.Failed,
+  VideoJobStatus.FailedPublish,
+  VideoJobStatus.FailedPermanent,
+  VideoJobStatus.FailedQuota,
+  VideoJobStatus.Cancelled,
+];
 
 @Injectable()
 export class JobsService {
@@ -121,18 +129,21 @@ export class JobsService {
     };
   }
 
-  async runSlot(slot: Slot) {
+  async runSlot(slot: Slot, scheduledForInput?: string, force = false) {
     // IMPORTANT: this must match cron/idempotency logic
     const settings = await this.settingsService.getSettings();
     const tz = settings.timezone || process.env.APP_TZ || 'America/New_York';
     const slotIndex = SLOT_ORDER.indexOf(slot);
     const configuredHour = slotIndex >= 0 ? settings.runHours?.[slotIndex] : undefined;
     const hour = Number.isInteger(configuredHour) ? Number(configuredHour) : new Date().getHours();
-    const scheduledFor = scheduledForHour(hour, tz);
+    const scheduledFor = scheduledForInput ? new Date(scheduledForInput) : scheduledForHour(hour, tz);
+    if (Number.isNaN(scheduledFor.getTime())) {
+      throw new BadRequestException('scheduledFor must be a valid ISO date-time');
+    }
 
     // ✅ fire-and-return (prevents nginx 504)
     void this.orchestrator
-      .runSlot(slot, scheduledFor)
+      .runSlot(slot, scheduledFor, { force })
       .then((res: any) => {
         this.logger.log(
           `✅ runSlot async done slot=${slot} scheduledFor=${scheduledFor.toISOString()} skipped=${res?.skipped ?? false}`,
@@ -151,8 +162,66 @@ export class JobsService {
       queued: true,
       slot,
       scheduledFor,
+      force,
       note: 'Triggered asynchronously. Check /automation/jobs for progress.',
     };
+  }
+
+  async cancelJob(
+    jobId: string,
+    status: VideoJobStatus.Cancelled | VideoJobStatus.FailedPermanent = VideoJobStatus.Cancelled,
+  ): Promise<ApiOkResponse> {
+    const job = await this.prisma.videoJob.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Job not found');
+
+    if ([VideoJobStatus.Completed, VideoJobStatus.Processing].includes(job.status as VideoJobStatus)) {
+      throw new ConflictException(`Cannot cancel job with status ${job.status}`);
+    }
+
+    await this.prisma.videoJob.update({
+      where: { id: jobId },
+      data: {
+        status,
+        error: status === VideoJobStatus.Cancelled ? 'Cancelled by admin' : (job.error ?? 'Marked failed permanently by admin'),
+        attempts: Math.max(job.attempts ?? 0, 6),
+        workerLockedAt: null,
+        workerLockedBy: null,
+        workerStage: null,
+      },
+    });
+
+    return { ok: true };
+  }
+
+  async resetRender(jobId: string): Promise<ApiOkResponse> {
+    const job = await this.prisma.videoJob.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Job not found');
+
+    if (!RESETTABLE_JOB_STATUSES.includes(job.status as VideoJobStatus)) {
+      throw new ConflictException(`reset-render is only allowed for failed jobs; current status is ${job.status}`);
+    }
+
+    await this.prisma.videoJob.update({
+      where: { id: jobId },
+      data: {
+        status: VideoJobStatus.Pending,
+        provider: null,
+        renderId: null,
+        videoUrl: null,
+        youtubeVideoId: null,
+        youtubeUrl: null,
+        publishStage: null,
+        videoSrt: null,
+        published: false,
+        attempts: 0,
+        error: null,
+        workerLockedAt: null,
+        workerLockedBy: null,
+        workerStage: null,
+      },
+    });
+
+    return { ok: true };
   }
 
   async retryJob(jobId: string): Promise<ApiOkResponse> {

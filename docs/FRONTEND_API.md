@@ -196,7 +196,22 @@ Video job summary:
 - Role: `ADMIN`
 - Response: `302` redirect to Google OAuth consent URL.
 - Side effects: sets `yt_oauth_state` and `yt_oauth_email` HTTP-only cookies scoped to `/auth/youtube/callback`.
-- Frontend note: open as a full-page navigation or popup, not `fetch`, because it redirects.
+- Frontend note: deprecated for browser dashboard navigation because full-page navigation cannot attach the bearer token. Prefer `POST /auth/youtube/connect`.
+- Common errors: `401`, `403`
+
+#### `POST /auth/youtube/connect`
+
+- Auth: required
+- Role: `ADMIN`
+- Body: none
+- Response:
+
+```ts
+{ url: string }
+```
+
+- Side effects: creates a short-lived pending OAuth state linked to the current admin. State expires after 10 minutes and is consumed once by the callback.
+- Frontend note: call with Axios/fetch using `Authorization: Bearer <token>`, then run `window.location.href = response.url` or open the URL in a popup.
 - Common errors: `401`, `403`
 
 #### `GET /auth/youtube/callback`
@@ -204,9 +219,9 @@ Video job summary:
 - Auth: public
 - Query params:
   - `code?: string` required by backend logic
-  - `state?: string` required to match state cookie
+  - `state?: string` required to match a pending OAuth state or legacy state cookie
 - Response: plain text: `YouTube connected. You can close this tab.`
-- Frontend note: callback page is for Google redirect only. The dashboard can show instructions and let user close popup.
+- Frontend note: callback page is for Google redirect only. Do not attach a bearer token. Invalid or expired state returns `401`.
 - Common errors: `400`, `401`
 
 ### Settings
@@ -765,6 +780,7 @@ Run slot body:
 {
   slot: "MORNING" | "AFTERNOON" | "EVENING";
   scheduledFor?: string; // ISO date-time
+  force?: boolean;       // jobs run-slot only
 }
 ```
 
@@ -908,7 +924,7 @@ Run slot body:
 
 - Auth: required
 - Role: `ADMIN`
-- Body: `{ slot: "MORNING" | "AFTERNOON" | "EVENING"; scheduledFor?: string }`
+- Body: `{ slot: "MORNING" | "AFTERNOON" | "EVENING"; scheduledFor?: string; force?: boolean }`
 - Response:
 
 ```ts
@@ -917,12 +933,33 @@ Run slot body:
   queued: true;
   slot: string;
   scheduledFor: string;
+  force: boolean;
   note: string;
 }
 ```
 
-- Frontend note: async fire-and-return. After success, poll jobs and worker status.
+- Frontend note: async fire-and-return. After success, poll jobs and worker status. Use `force: true` only from a confirmed admin recovery action. Force reruns reset an existing same-slot job only when its status is `FAILED`, `FAILED_PUBLISH`, `FAILED_PERMANENT`, or `CANCELLED`; successful, pending, and processing jobs are not duplicated.
 - Common errors: `400`, `401`, `403`
+
+#### `POST /automation/jobs/:id/cancel`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Body: optional `{ status?: "CANCELLED" | "FAILED_PERMANENT" }`; defaults to `CANCELLED`.
+- Response: `{ ok: true }`
+- Frontend note: expose on failed/stuck job detail views with confirmation. This clears worker lease fields and raises attempts so workers will not retry the job.
+- Common errors: `400`, `401`, `403`, `404`, `409`
+
+#### `POST /automation/jobs/:id/reset-render`
+
+- Auth: required
+- Role: `ADMIN`
+- Params: `id` UUID
+- Body: none
+- Response: `{ ok: true }`
+- Frontend note: expose on failed job detail views with confirmation. Allowed for `FAILED`, `FAILED_PUBLISH`, `FAILED_PERMANENT`, `FAILED_QUOTA`, and `CANCELLED`; it keeps the same script, offer, slot, and scheduledFor, but clears render/publish IDs, attempts, error, and worker lease fields before setting status to `PENDING`.
+- Common errors: `400`, `401`, `403`, `404`, `409`
 
 #### `POST /automation/jobs/:id/retry`
 
@@ -1289,8 +1326,15 @@ Actions/buttons:
 Endpoints:
 
 - `GET /auth/youtube`
+- `POST /auth/youtube/connect`
 - `GET /auth/youtube/callback` is handled by Google redirect.
 - `GET /automation/jobs/workers/status` for `youtube.tokenStorage`.
+
+Frontend flow:
+
+1. Call `POST /auth/youtube/connect` with the admin bearer token.
+2. Redirect the browser or popup to the returned `url`.
+3. Let Google return to `GET /auth/youtube/callback`; do not send a bearer token on the callback.
 
 UI states:
 
@@ -1528,7 +1572,8 @@ export type VideoJobStatus =
   | "FAILED"
   | "FAILED_PERMANENT"
   | "FAILED_QUOTA"
-  | "FAILED_PUBLISH";
+  | "FAILED_PUBLISH"
+  | "CANCELLED";
 
 export interface VideoJobSummary {
   id: string;

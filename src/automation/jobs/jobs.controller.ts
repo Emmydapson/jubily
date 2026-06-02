@@ -5,6 +5,8 @@ import { Roles } from '../../auth/roles.decorator';
 import { ListJobsQueryDto } from './dto/list-jobs-query.dto';
 import { RunSlotDto } from '../run-slot.dto';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { CancelJobDto } from './dto/cancel-job.dto';
+import { VideoJobStatus } from '../video-job-status';
 
 @Controller('automation/jobs')
 @Roles('ADMIN')
@@ -58,8 +60,25 @@ export class JobsController {
 @ApiOkResponse({ description: 'Manual slot run accepted.', schema: { example: { ok: true, slot: 'MORNING' } } })
 runSlot(@Body() body: RunSlotDto) {
   // should return fast (under 1s)
-  return this.jobs.runSlot(body.slot);
+  return this.jobs.runSlot(body.slot, body.scheduledFor, body.force === true);
 }
+
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancel a video job', description: 'Requires a valid ADMIN bearer token. Clears worker leases and prevents further retries.' })
+  @ApiParam({ name: 'id', format: 'uuid', example: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c' })
+  @ApiBody({ type: CancelJobDto, required: false })
+  @ApiOkResponse({ description: 'Cancel result.', schema: { example: { ok: true } } })
+  cancel(@Param('id', ParseUUIDPipe) id: string, @Body() body: CancelJobDto = {}) {
+    return this.jobs.cancelJob(id, body.status ?? VideoJobStatus.Cancelled);
+  }
+
+  @Post(':id/reset-render')
+  @ApiOperation({ summary: 'Reset a failed video job render', description: 'Requires a valid ADMIN bearer token. Only failed jobs can be reset.' })
+  @ApiParam({ name: 'id', format: 'uuid', example: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c' })
+  @ApiOkResponse({ description: 'Reset result.', schema: { example: { ok: true } } })
+  resetRender(@Param('id', ParseUUIDPipe) id: string) {
+    return this.jobs.resetRender(id);
+  }
 
   // optional: retry
   @Post(':id/retry')
