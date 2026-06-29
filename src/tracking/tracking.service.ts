@@ -21,7 +21,7 @@ export class TrackingService {
     // ensure offer exists
     const offer = await this.prisma.offer.findFirst({
       where: { id: data.offerId, active: true },
-      select: { id: true },
+      select: { id: true, workspaceId: true },
     });
     if (!offer) throw new Error(`Offer not found/disabled: ${data.offerId}`);
 
@@ -29,7 +29,7 @@ export class TrackingService {
     if (data.videoJobId) {
       const job = await this.prisma.videoJob.findUnique({
         where: { id: data.videoJobId },
-        select: { id: true, offerId: true },
+        select: { id: true, offerId: true, workspaceId: true },
       });
 
       if (!job) {
@@ -39,12 +39,16 @@ export class TrackingService {
       if (job.offerId && job.offerId !== data.offerId) {
         throw new Error(`Video job ${data.videoJobId} does not belong to offer ${data.offerId}`);
       }
+      if (job.workspaceId !== offer.workspaceId) {
+        throw new Error(`Video job ${data.videoJobId} does not belong to offer workspace`);
+      }
 
       videoJobId = job.id;
     }
 
     const created = await this.prisma.click.create({
       data: {
+        workspaceId: offer.workspaceId ?? null,
         offerId: data.offerId,
         videoJobId,
         youtubeId: data.youtubeId || null,

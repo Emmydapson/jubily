@@ -58,14 +58,16 @@ export class OrchestratorService {
     private settingsService: SettingsService,
   ) {}
 
-private async pickOfferForTopic(topicTitle: string) {
+private async pickOfferForTopic(topicTitle: string, workspaceId?: string | null) {
   const nicheCandidates = topicToNicheCandidates(topicTitle);
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const scoped = workspaceId !== undefined ? { workspaceId } : {};
 
   // Offers used in last 24h
   const recentOfferIds = await this.prisma.videoJob.findMany({
   where: {
+    ...scoped,
     scheduledFor: { gte: since },
     offerId: { not: null },
   },
@@ -80,6 +82,7 @@ private async pickOfferForTopic(topicTitle: string) {
   const findOffer = async (useNiche: boolean) => {
   const offers = await this.prisma.offer.findMany({
     where: {
+      ...scoped,
       active: true,
       ...(useNiche && nicheCandidates.length
         ? { nicheTag: { in: nicheCandidates } }
@@ -109,14 +112,14 @@ private async pickOfferForTopic(topicTitle: string) {
   // 3) If everything was used, fallback to niche match even if used
   if (nicheCandidates.length) {
   const offers = await this.prisma.offer.findMany({
-    where: { active: true, nicheTag: { in: nicheCandidates } },
+    where: { ...scoped, active: true, nicheTag: { in: nicheCandidates } },
     select: { id: true, name: true, hoplink: true, nicheTag: true, network: true },
   });
   if (offers.length) return offers[Math.floor(Math.random() * offers.length)];
 }
   // 4) Final fallback: any active offer
   const offers = await this.prisma.offer.findMany({
-  where: { active: true },
+  where: { ...scoped, active: true },
   select: { id: true, name: true, hoplink: true, nicheTag: true, network: true },
 });
 if (!offers.length) return null;
@@ -130,7 +133,7 @@ return offers[Math.floor(Math.random() * offers.length)];
 }
 
 
-  async runSlot(slot: Slot, scheduledFor = new Date(), options: { force?: boolean } = {}) {
+  async runSlot(slot: Slot, scheduledFor = new Date(), options: { force?: boolean; workspaceId?: string | null } = {}) {
     // ✅ respect settings
     const settings = await this.settingsService.getSettings();
     if (!settings.automationEnabled) {
@@ -141,8 +144,12 @@ return offers[Math.floor(Math.random() * offers.length)];
      const normalized = this.normalizeScheduledFor(scheduledFor);
 
     // ✅ idempotency: if a job exists for this slot+scheduledFor, stop
-     const existing = await this.prisma.videoJob.findUnique({
-    where: { slot_scheduledFor: { slot, scheduledFor: normalized } },
+     const existing = await this.prisma.videoJob.findFirst({
+    where: {
+      ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : { workspaceId: null }),
+      slot,
+      scheduledFor: normalized,
+    },
     select: { id: true, status: true },
   }).catch(() => null);
 
@@ -196,6 +203,7 @@ return offers[Math.floor(Math.random() * offers.length)];
     // 1) Pick best pending topic
     const topic = await this.prisma.topic.findFirst({
       where: {
+        ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
         status: 'PENDING',
         OR: [
           { scripts: { none: {} } },
@@ -220,7 +228,7 @@ return offers[Math.floor(Math.random() * offers.length)];
     }
 
     // 2) Pick an active offer (optional but recommended)
-   const offer = await this.pickOfferForTopic(topic.title);
+   const offer = await this.pickOfferForTopic(topic.title, options.workspaceId);
 
 if (!offer) {
   this.logger.warn(`No active offer (slot=${slot})`);
@@ -231,10 +239,11 @@ const script = await this.automation.generateScriptWithAiOffer(
   topic.id,
   topic.title,
   offer,
+  options.workspaceId,
 );
 
 // Only consume the topic after the downstream render job has been created successfully.
-const job = await this.videos.createVideoJob(script.id, offer.id, slot, normalized);
+const job = await this.videos.createVideoJob(script.id, offer.id, slot, normalized, options.workspaceId);
 
     
     this.logger.log(

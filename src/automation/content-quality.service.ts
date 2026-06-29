@@ -46,6 +46,25 @@ export type ScriptQualityResult = {
   outputHash: string;
 };
 
+function scriptTotalSeconds(content: string) {
+  try {
+    const parsed = JSON.parse(content) as { scenes?: Array<{ seconds?: unknown; narration?: string }> };
+    const scenes = Array.isArray(parsed.scenes) ? parsed.scenes : [];
+    return scenes.reduce((sum, scene) => sum + Number(scene.seconds || 0), 0);
+  } catch {
+    return 0;
+  }
+}
+
+function scriptSceneCount(content: string) {
+  try {
+    const parsed = JSON.parse(content) as { scenes?: unknown };
+    return Array.isArray(parsed.scenes) ? parsed.scenes.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 @Injectable()
 export class ContentQualityService {
   private readonly minApprovedScore = 80;
@@ -62,13 +81,18 @@ export class ContentQualityService {
     let review = this.scoreScript(params.topic, content);
     let rewriteAttempts = 0;
 
-    while (review.score < this.minApprovedScore && rewriteAttempts < this.maxRewriteAttempts) {
+    while (
+      (review.score < this.minApprovedScore ||
+        scriptTotalSeconds(content) < 60 ||
+        scriptSceneCount(content) < 8) &&
+      rewriteAttempts < this.maxRewriteAttempts
+    ) {
       try {
         content = await this.ai.rewriteScriptForQuality({
           topic: params.topic,
           script: content,
           issues: review.issues,
-          targetSeconds: 35,
+          targetSeconds: 75,
         });
         content = this.normalizeContent(params.topic, content);
         rewriteAttempts++;
@@ -98,8 +122,12 @@ export class ContentQualityService {
     });
 
     const finalReview = this.scoreScript(params.topic, enriched);
+    const finalTotalSeconds = scriptTotalSeconds(enriched);
+    const finalSceneCount = scriptSceneCount(enriched);
     const reviewStatus =
-      finalReview.score >= this.minApprovedScore
+      finalTotalSeconds < 60 || finalSceneCount < 8
+        ? 'REJECTED'
+        : finalReview.score >= this.minApprovedScore
         ? 'APPROVED'
         : finalReview.score >= 65
           ? 'NEEDS_REVIEW'
@@ -251,12 +279,12 @@ export class ContentQualityService {
       title: this.clean(String(parsed.title || topic)),
       hook: this.clean(String(parsed.hook || scenes[0]?.narration || topic)),
       cta: this.clean(String(parsed.cta || 'Save this and follow for more simple health tips.')),
-      scenes: scenes.map((scene) => ({
+      scenes: this.normalizeSceneDurations(scenes.map((scene) => ({
         narration: this.clean(String(scene.narration || '')),
         caption: this.clean(String(scene.caption || '')),
         visualPrompt: this.ensureVisualPrompt(String(scene.visualPrompt || scene.narration || topic)),
         seconds: Number(scene.seconds || 5),
-      })),
+      }))),
     };
 
     return JSON.stringify(normalized);
@@ -297,11 +325,11 @@ export class ContentQualityService {
 
   private structureScore(scenes: Scene[], issues: string[], strengths: string[]) {
     let score = 35;
-    if (scenes.length >= 5 && scenes.length <= 7) {
+    if (scenes.length >= 8 && scenes.length <= 12) {
       score += 45;
       strengths.push('scene count fits Shorts retention');
     } else {
-      issues.push('script should use 5-7 scenes');
+      issues.push('script should use 8-12 scenes');
     }
     if (scenes.every((scene) => scene.narration && scene.caption)) score += 20;
     else issues.push('every scene needs narration and caption');
@@ -313,13 +341,13 @@ export class ContentQualityService {
     const durations = scenes.map((scene) => Number(scene.seconds || this.estimatedSeconds(scene.narration || '')));
     const total = durations.reduce((sum, n) => sum + n, 0);
     let score = 30;
-    if (total >= 25 && total <= 40) {
+    if (total >= 60 && total <= 90) {
       score += 35;
       strengths.push('total length is retention-friendly');
     } else {
-      issues.push('target total length should be 25-40 seconds');
+      issues.push('target total length should be 60-90 seconds');
     }
-    const goodSceneLengths = durations.filter((seconds) => seconds >= 3 && seconds <= 7).length;
+    const goodSceneLengths = durations.filter((seconds) => seconds >= 6 && seconds <= 12).length;
     score += Math.round((goodSceneLengths / scenes.length) * 35);
     if (goodSceneLengths !== scenes.length) issues.push('some scenes are too short or too long');
     return Math.min(100, score);
@@ -440,7 +468,24 @@ export class ContentQualityService {
   }
 
   private estimatedSeconds(text: string) {
-    return Math.max(3, Math.min(7, this.wordCount(text) / 2.4));
+    return Math.max(6, Math.min(12, this.wordCount(text) / 2.4));
+  }
+
+  private normalizeSceneDurations(scenes: Scene[]) {
+    if (!scenes.length) return scenes;
+
+    const normalized = scenes.map((scene) => ({
+      ...scene,
+      seconds: Math.max(6, Math.min(12, Number(scene.seconds || this.estimatedSeconds(scene.narration || '')))),
+    }));
+    const total = normalized.reduce((sum, scene) => sum + Number(scene.seconds || 0), 0);
+    if (total >= 60 && total <= 90) return normalized;
+
+    const scale = total > 0 ? 75 / total : 1;
+    return normalized.map((scene) => ({
+      ...scene,
+      seconds: Number(Math.max(6, Math.min(12, Number(scene.seconds || 0) * scale)).toFixed(2)),
+    }));
   }
 
   private safeTitle(topic: string) {

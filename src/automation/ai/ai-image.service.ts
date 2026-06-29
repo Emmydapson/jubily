@@ -359,8 +359,8 @@ export class AiImageService {
       jobId?: string;
     }[],
   ): Promise<string[]> {
-    const results: string[] = [];
-    const queue = [...scenes];
+    const results: string[] = new Array(scenes.length);
+    const queue = scenes.map((scene, index) => ({ scene, index }));
 
     const workers = Array.from({
       length: this.MAX_PARALLEL,
@@ -370,12 +370,12 @@ export class AiImageService {
         if (!item) break;
 
         const url = await this.generateSceneImageUrl(
-          item.visualPrompt,
-          item.publicId,
-          item.jobId,
+          item.scene.visualPrompt,
+          item.scene.publicId,
+          item.scene.jobId,
         );
 
-        results.push(url);
+        results[item.index] = url;
       }
     });
 

@@ -56,7 +56,7 @@ describe('Digistore24Service', () => {
       },
       'passphrase',
     );
-    prisma.click.findUnique.mockResolvedValue({ id: 'click-1', offerId: 'offer-1', videoJobId: 'job-1' });
+    prisma.click.findUnique.mockResolvedValue({ id: 'click-1', workspaceId: 'workspace-1', offerId: 'offer-1', videoJobId: 'job-1' });
     prisma.videoJob.findUnique.mockResolvedValue({ id: 'job-1' });
     prisma.conversion.create.mockResolvedValue({ id: 'conversion-1' });
 
@@ -64,6 +64,7 @@ describe('Digistore24Service', () => {
 
     expect(prisma.conversion.create).toHaveBeenCalledWith({
       data: {
+        workspaceId: 'workspace-1',
         offerId: 'offer-1',
         clickId: 'click-1',
         videoJobId: 'job-1',
@@ -96,6 +97,7 @@ describe('Digistore24Service', () => {
     service = new Digistore24Service(prisma as never, monitoring as never);
     prisma.click.findUnique.mockResolvedValue(null);
     prisma.offer.findFirst.mockResolvedValue({ id: 'offer-from-product' });
+    prisma.offer.findUnique.mockResolvedValue({ workspaceId: 'workspace-1' });
     prisma.conversion.create.mockResolvedValue({ id: 'conversion-2' });
 
     await expect(
@@ -103,7 +105,7 @@ describe('Digistore24Service', () => {
     ).resolves.toBeUndefined();
     expect(prisma.conversion.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ offerId: 'offer-from-product' }),
+        data: expect.objectContaining({ workspaceId: 'workspace-1', offerId: 'offer-from-product' }),
       }),
     );
   });

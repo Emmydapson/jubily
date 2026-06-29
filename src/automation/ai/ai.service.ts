@@ -110,8 +110,11 @@ Return ONLY JSON:
 }
 
 STRICT RULES:
-- Prefer 25-40 seconds total.
-- Use 5-7 scenes.
+- Target 60-90 seconds total, with 75 seconds ideal.
+- Use 8-12 scenes; prefer 9 or 10 scenes for a 60-90 second video.
+- Each scene must have "seconds" between 6 and 12.
+- The sum of all scene "seconds" must be between 60 and 90.
+- Do not create 25-40 second scripts.
 - First scene must create curiosity in the first 2 seconds.
 - The top-level hook must work as the first line of a YouTube Shorts description.
 - Narration should be fast, plain, concrete, and non-repetitive.
@@ -157,35 +160,56 @@ STRICT RULES:
           caption: 'Stop doing this',
           visualPrompt:
             'person waking up tired in bed, slow zoom in, soft morning light, concerned mood, realistic, no text',
-          seconds: 5,
+          seconds: 9,
         },
         {
           narration: `Before coffee, your body may need a simpler signal first.`,
           caption: 'Start simpler',
           visualPrompt:
             'person drinking water in kitchen, close-up camera, bright natural lighting, fresh mood, realistic, no text',
-          seconds: 5,
+          seconds: 9,
         },
         {
           narration: `A short walk or stretch can help your brain feel more awake.`,
           caption: 'Move first',
           visualPrompt:
             'person stretching near window, slow pan right, sunrise lighting, optimistic mood, realistic, no text',
-          seconds: 5,
+          seconds: 9,
         },
         {
           narration: `Keep it easy enough that you can repeat it tomorrow.`,
           caption: 'Make it repeatable',
           visualPrompt:
             'person checking a simple morning routine list, overhead camera angle, clean bright lighting, calm mood, realistic, no text',
-          seconds: 5,
+          seconds: 9,
+        },
+        {
+          narration: `The second mistake is making the routine too big to repeat on a busy day.`,
+          caption: 'Keep it small',
+          visualPrompt:
+            'person choosing one simple habit card, close-up camera, bright kitchen lighting, focused mood, realistic, no text',
+          seconds: 9,
+        },
+        {
+          narration: `Pair the habit with something you already do, like brushing your teeth or filling your bottle.`,
+          caption: 'Stack the habit',
+          visualPrompt:
+            'person filling a water bottle beside bathroom sink, slow pan left, clean morning lighting, practical mood, realistic, no text',
+          seconds: 9,
+        },
+        {
+          narration: `If you miss a day, restart with the smallest version instead of quitting completely.`,
+          caption: 'Restart small',
+          visualPrompt:
+            'person resetting a simple checklist, overhead camera angle, soft daylight, calm determined mood, realistic, no text',
+          seconds: 9,
         },
         {
           narration: `Save this and try the first step tomorrow morning.`,
           caption: 'Try it tomorrow',
           visualPrompt:
             'person smiling with morning sunlight, slow push in, warm cinematic lighting, confident mood, realistic, no text',
-          seconds: 5,
+          seconds: 9,
         },
       ],
     };
@@ -224,16 +248,26 @@ async rewriteScriptForQuality(params: {
         caption: 'Start here',
         visualPrompt:
           'person making a simple healthy choice in kitchen, slow push in, bright natural light, optimistic mood, realistic, no text',
-        seconds: 5,
+        seconds: 9,
       },
       {
         narration: 'Do it consistently and your routine starts feeling easier.',
         caption: 'Consistency wins',
         visualPrompt:
           'person checking off a small daily habit, overhead camera angle, clean desk lighting, calm productive mood, realistic, no text',
-        seconds: 5,
+        seconds: 9,
       },
     ];
+    while (parsed.scenes.length < 8) {
+      parsed.scenes.push({
+        narration: 'Add one small repeatable step so the routine feels realistic on a busy day.',
+        caption: 'Keep it realistic',
+        visualPrompt:
+          'person choosing one simple wellness habit, slow push in, bright natural light, practical calm mood, realistic, no text',
+        seconds: 9,
+      });
+    }
+    parsed.scenes = parsed.scenes.map((scene) => ({ ...scene, seconds: Math.max(8, Number(scene.seconds || 9)) }));
     return JSON.stringify(parsed);
   }
 
@@ -261,7 +295,11 @@ Return ONLY valid JSON in this schema:
 
 Rules:
 - Improve first 2 seconds for retention.
-- Prefer 5-7 scenes and 25-40 seconds total.
+- Target 60-90 seconds total, with 75 seconds ideal.
+- Use 8-12 scenes; prefer 9 or 10 scenes for a 60-90 second video.
+- Each scene must have "seconds" between 6 and 12.
+- The sum of all scene "seconds" must be between 60 and 90.
+- Do not rewrite into a 25-40 second script.
 - Make every scene concrete and visually distinct.
 - Keep health claims cautious; no diagnosis, cure, guaranteed result, or fearmongering.
 - CTA must be soft and not include raw URLs.
@@ -274,7 +312,7 @@ Rules:
         content: JSON.stringify({
           topic: params.topic,
           issues: params.issues,
-          targetSeconds: params.targetSeconds ?? 35,
+          targetSeconds: params.targetSeconds ?? 75,
           script: JSON.parse(params.script),
         }),
       },

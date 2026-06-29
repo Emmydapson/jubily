@@ -1,8 +1,9 @@
 import 'reflect-metadata';
 import { UnauthorizedException } from '@nestjs/common';
-import { AuthController } from './auth.controller';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { AdminAuthController } from './admin-auth.controller';
+import { AdminGuard } from './admin.guard';
 import { IS_PUBLIC_KEY } from './public.decorator';
-import { ROLES_KEY } from './roles.decorator';
 
 describe('AuthController YouTube OAuth connect flow', () => {
   let auth: {
@@ -11,16 +12,22 @@ describe('AuthController YouTube OAuth connect flow', () => {
     ensureAdminEmailAllowed: jest.Mock;
   };
   let youtube: {
-    getAuthUrl: jest.Mock;
+    getAdminAuthUrl: jest.Mock;
     handleAuthCallback: jest.Mock;
+    getChannelDiagnostics: jest.Mock;
   };
-  let controller: AuthController;
+  let oauthStates: {
+    create: jest.Mock;
+    consume: jest.Mock;
+  };
+  let controller: AdminAuthController;
 
   const adminReq = {
     user: {
       adminId: 'admin-1',
       email: 'admin@example.com',
       role: 'ADMIN',
+      kind: 'admin',
     },
   };
 
@@ -31,11 +38,43 @@ describe('AuthController YouTube OAuth connect flow', () => {
       ensureAdminEmailAllowed: jest.fn((email: string) => email.toLowerCase()),
     };
     youtube = {
-      getAuthUrl: jest.fn((state: string) => `https://accounts.google.com/o/oauth2/v2/auth?state=${encodeURIComponent(state)}`),
+      getAdminAuthUrl: jest.fn((state: string) => `https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=${encodeURIComponent('https://api.example.com/admin/auth/youtube/callback')}&state=${encodeURIComponent(state)}`),
       handleAuthCallback: jest.fn().mockResolvedValue({ connected: true }),
+      getChannelDiagnostics: jest.fn().mockResolvedValue({
+        connected: true,
+        channelId: 'UC123',
+        title: 'Jubily Channel',
+        customUrl: '@jubily',
+        subscriberCount: '50',
+        videoCount: '12',
+        statistics: {
+          viewCount: '1000',
+          subscriberCount: '50',
+          hiddenSubscriberCount: false,
+          videoCount: '12',
+        },
+        targetChannelId: 'UC123',
+        channelMatchesTarget: true,
+        scope: 'https://www.googleapis.com/auth/youtube.upload',
+        tokenStorage: {
+          encryptedDbConfigured: true,
+          encryptedDbUpdatedAt: new Date('2026-06-03T10:00:00.000Z'),
+          legacyFilePresent: false,
+          legacyFileWriteFallbackEnabled: false,
+        },
+        error: null,
+      }),
+    };
+    oauthStates = {
+      create: jest.fn().mockResolvedValue('state-1'),
+      consume: jest.fn().mockResolvedValue({
+        purpose: 'admin_youtube',
+        adminId: 'admin-1',
+        adminEmail: 'admin@example.com',
+      }),
     };
 
-    controller = new AuthController(auth as never, youtube as never);
+    controller = new AdminAuthController(auth as never, youtube as never, oauthStates as never);
   });
 
   function extractState(url: string) {
@@ -52,22 +91,59 @@ describe('AuthController YouTube OAuth connect flow', () => {
   }
 
   it('connect requires ADMIN auth and is not public', () => {
-    expect(Reflect.getMetadata(IS_PUBLIC_KEY, AuthController.prototype.youtubeConnect)).toBeUndefined();
-    expect(Reflect.getMetadata(ROLES_KEY, AuthController)).toEqual(['ADMIN']);
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, AdminAuthController.prototype.youtubeConnect)).toBeUndefined();
+    expect(Reflect.getMetadata(GUARDS_METADATA, AdminAuthController.prototype.youtubeConnect)).toContain(AdminGuard);
   });
 
-  it('connect returns a Google OAuth URL with a pending state', () => {
-    const result = controller.youtubeConnect(adminReq as never);
+  it('channel diagnostics requires ADMIN auth and returns connected channel metadata', async () => {
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, AdminAuthController.prototype.youtubeChannel)).toBeUndefined();
+    expect(Reflect.getMetadata(GUARDS_METADATA, AdminAuthController.prototype.youtubeChannel)).toContain(AdminGuard);
+
+    await expect(controller.youtubeChannel()).resolves.toEqual({
+      connected: true,
+      channelId: 'UC123',
+      title: 'Jubily Channel',
+      customUrl: '@jubily',
+      subscriberCount: '50',
+      videoCount: '12',
+      statistics: {
+        viewCount: '1000',
+        subscriberCount: '50',
+        hiddenSubscriberCount: false,
+        videoCount: '12',
+      },
+      targetChannelId: 'UC123',
+      channelMatchesTarget: true,
+      scope: 'https://www.googleapis.com/auth/youtube.upload',
+      tokenStorage: {
+        encryptedDbConfigured: true,
+        encryptedDbUpdatedAt: new Date('2026-06-03T10:00:00.000Z'),
+        legacyFilePresent: false,
+        legacyFileWriteFallbackEnabled: false,
+      },
+      error: null,
+    });
+    expect(youtube.getChannelDiagnostics).toHaveBeenCalledTimes(1);
+  });
+
+  it('connect returns a Google OAuth URL with a pending state', async () => {
+    const result = await controller.youtubeConnect(adminReq as never);
     const state = extractState(result.url);
 
     expect(result.url).toContain('https://accounts.google.com/o/oauth2/v2/auth');
-    expect(state).toMatch(/^[a-f0-9]{48}\.[a-f0-9]{64}$/);
-    expect(youtube.getAuthUrl).toHaveBeenCalledWith(state);
+    expect(result.url).toContain(encodeURIComponent('https://api.example.com/admin/auth/youtube/callback'));
+    expect(state).toBe('state-1');
+    expect(youtube.getAdminAuthUrl).toHaveBeenCalledWith(state);
+    expect(oauthStates.create).toHaveBeenCalledWith(expect.objectContaining({
+      purpose: 'admin_youtube',
+      adminId: 'admin-1',
+      adminEmail: 'admin@example.com',
+    }));
     expect(auth.ensureAdminEmailAllowed).toHaveBeenCalledWith('admin@example.com');
   });
 
   it('callback validates pending state before storing credentials', async () => {
-    const { url } = controller.youtubeConnect(adminReq as never);
+    const { url } = await controller.youtubeConnect(adminReq as never);
     const state = extractState(url);
     const res = responseMock();
 
@@ -80,18 +156,19 @@ describe('AuthController YouTube OAuth connect flow', () => {
 
   it('callback rejects invalid state', async () => {
     const res = responseMock();
+    oauthStates.consume.mockResolvedValueOnce(null);
 
     await expect(
       controller.youtubeCallback({ headers: {} } as never, res as never, 'code-1', 'bad-state'),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(oauthStates.consume).toHaveBeenCalledWith('admin_youtube', 'bad-state');
     expect(youtube.handleAuthCallback).not.toHaveBeenCalled();
   });
 
   it('callback rejects expired state', async () => {
-    const { url } = controller.youtubeConnect(adminReq as never);
+    const { url } = await controller.youtubeConnect(adminReq as never);
     const state = extractState(url);
-    const pending = (controller as any).pendingYoutubeOAuthStates.get(state);
-    pending.expiresAt = Date.now() - 1;
+    oauthStates.consume.mockResolvedValueOnce(null);
     const res = responseMock();
 
     await expect(

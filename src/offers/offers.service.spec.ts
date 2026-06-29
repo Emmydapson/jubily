@@ -185,4 +185,24 @@ describe('OffersService', () => {
         'https://vendor.example/?tid=00000000-0000-4000-8000-000000000000',
     });
   });
+
+  it('filters offers and rejects cross-workspace access', async () => {
+    prisma.offer.findMany.mockResolvedValue([]);
+    prisma.offer.count.mockResolvedValue(0);
+
+    await service.list({}, 'workspace-1');
+
+    expect(prisma.offer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId: 'workspace-1' },
+      }),
+    );
+
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 'offer-2',
+      workspaceId: 'workspace-2',
+    });
+
+    await expect(service.getOne('offer-2', 'workspace-1')).rejects.toThrow('Offer not found');
+  });
 });

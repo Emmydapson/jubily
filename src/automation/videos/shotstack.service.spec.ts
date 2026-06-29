@@ -1,4 +1,6 @@
 import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   sanitizeShotstackEffect,
   ShotstackService,
@@ -45,6 +47,7 @@ describe('ShotstackService payload validation', () => {
       SHOTSTACK_API_KEY: 'test-shotstack-key',
       MUSIC_DEFAULT: 'https://cdn.example.com/music.mp3',
       SFX_POP: 'https://cdn.example.com/pop.mp3',
+      DEBUG_SHOTSTACK_PAYLOAD: 'false',
     };
 
     tts = {
@@ -168,6 +171,126 @@ describe('ShotstackService payload validation', () => {
     ).toBe(true);
   });
 
+  it('saves the sanitized Shotstack payload JSON only when debug payloads are enabled', async () => {
+    process.env.DEBUG_SHOTSTACK_PAYLOAD = 'true';
+    const jobId = `debug-test-${Date.now()}`;
+
+    const result = await service.renderVideo(scenes, jobId);
+
+    const dir = path.resolve(process.cwd(), 'tmp', 'shotstack-payloads');
+    const file = fs.readdirSync(dir).find((name) => name.startsWith(`${jobId}-`) && name.endsWith('.json'));
+    expect(file).toBeDefined();
+    expect(result.shotstackPayloadDebugPath).toBe(path.join(dir, file || ''));
+    const payload = JSON.parse(fs.readFileSync(path.join(dir, file || ''), 'utf8'));
+    expect(payload.timeline.tracks).toBeDefined();
+    expect(payload.output).toEqual(expect.objectContaining({ format: 'mp4' }));
+  });
+
+  it('returns QA metadata without writing a debug payload by default', async () => {
+    const result = await service.renderVideo(scenes, 'job-qa');
+
+    expect(result).toEqual({
+      renderId: 'render-1',
+      durationSeconds: 75,
+      sceneCount: 2,
+      hasBurnedSubtitles: true,
+      shotstackPayloadDebugPath: null,
+    });
+  });
+
+  it('rejects multi-scene renders when scene image URLs collapse to one unique URL', async () => {
+    aiImages.generateMultipleScenes.mockResolvedValue([
+      'https://cdn.example.com/same.jpg',
+      'https://cdn.example.com/same.jpg',
+    ]);
+
+    await expect(service.renderVideo(scenes, 'job-1')).rejects.toThrow(
+      'one unique URL for 2 scenes',
+    );
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('allows multi-scene renders when scene image URLs are unique', async () => {
+    await service.renderVideo(scenes, 'job-1');
+
+    const images = imageClips(postedPayload());
+    expect(new Set(images.map((clip: any) => clip.asset.src)).size).toBe(2);
+  });
+
+  it('creates image clips with unique start and duration pairs', async () => {
+    await service.renderVideo(scenes, 'job-1');
+
+    const images = imageClips(postedPayload());
+    const timingKeys = images.map((clip: any) => `${clip.start}:${clip.length}`);
+    expect(new Set(timingKeys).size).toBe(images.length);
+  });
+
+  it('rejects duplicate image clip start and duration pairs before posting', () => {
+    expect(() =>
+      (service as never as { verifyImageClipTiming: (clips: any[], jobId?: string) => void }).verifyImageClipTiming([
+        { start: 0, length: 10 },
+        { start: 0, length: 10 },
+      ], 'job-1'),
+    ).toThrow('Image clips must have unique start/duration pairs');
+  });
+
+  it('rejects image clips with timeline gaps or overlaps before posting', () => {
+    expect(() =>
+      (service as never as { verifyImageClipsSequential: (clips: any[], jobId?: string) => void }).verifyImageClipsSequential([
+        { start: 0, length: 10 },
+        { start: 12, length: 10 },
+      ], 'job-1'),
+    ).toThrow('Image clips must be sequential');
+  });
+
+  it('does not create any image clip that covers the full timeline when there are multiple scenes', async () => {
+    await service.renderVideo(scenes, 'job-1');
+
+    const images = imageClips(postedPayload());
+    const renderEnd = images.reduce((max: number, clip: any) => Math.max(max, clip.start + clip.length), 0);
+    expect(images.every((clip: any) => !(clip.start === 0 && clip.length >= renderEnd))).toBe(true);
+  });
+
+  it('rejects full-timeline image clips before posting when multiple image clips exist', () => {
+    expect(() =>
+      (service as never as { verifyNoFullTimelineImageClip: (clips: any[], renderEnd: number, jobId?: string) => void }).verifyNoFullTimelineImageClip([
+        { start: 0, length: 75 },
+        { start: 25, length: 25 },
+      ], 75, 'job-1'),
+    ).toThrow('Image clips must not cover the full timeline');
+  });
+
+  it('renders explicit high quality vertical 1080p Shorts output', async () => {
+    await service.renderVideo(scenes, 'job-1');
+
+    expect(postedPayload().output).toEqual({
+      format: 'mp4',
+      resolution: '1080',
+      aspectRatio: '9:16',
+      fps: 30,
+      quality: 'high',
+    });
+  });
+
+  it('forces render timing to the 60-90 second target even when source scene durations are short', async () => {
+    tts.synthesizeWithMarksToCloudinaryMp3.mockResolvedValue({
+      url: 'https://cdn.example.com/voice.mp3',
+      timepoints: [],
+    });
+
+    await service.renderVideo(scenes, 'job-1');
+
+    const images = imageClips(postedPayload());
+    const total = images.reduce((sum: number, clip: any) => sum + clip.length, 0);
+    expect(total).toBe(75);
+    expect(images.map((clip: any) => clip.length)).toEqual([37.5, 37.5]);
+    expect(tts.synthesizeWithMarksToCloudinaryMp3).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(String),
+      [37.5, 37.5],
+    );
+  });
+
   it('creates one timed image clip per scene using cumulative timing when TTS scene marks are missing', async () => {
     tts.synthesizeWithMarksToCloudinaryMp3.mockResolvedValue({
       url: 'https://cdn.example.com/voice.mp3',
@@ -197,8 +320,13 @@ describe('ShotstackService payload validation', () => {
       'https://cdn.example.com/image-2.jpg',
       'https://cdn.example.com/image-3.jpg',
     ]);
-    expect(images.map((clip: any) => clip.start)).toEqual([0, 2, 4]);
-    expect(images.map((clip: any) => clip.length)).toEqual([2, 2, 2]);
+    expect(images.map((clip: any) => clip.start)).toEqual([0, 25, 50]);
+    expect(images.map((clip: any) => clip.length)).toEqual([25, 25, 25]);
+    expect(tts.synthesizeWithMarksToCloudinaryMp3).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(String),
+      [25, 25, 25],
+    );
   });
 
   it('does not create a single full-timeline image clip when there are multiple scenes', async () => {
@@ -219,6 +347,24 @@ describe('ShotstackService payload validation', () => {
     expect(images.every((clip: any) => clip.length < renderLength)).toBe(true);
   });
 
+  it('ignores duplicate TTS scene marks so image clips do not all overlap at the same start', async () => {
+    tts.synthesizeWithMarksToCloudinaryMp3.mockResolvedValue({
+      url: 'https://cdn.example.com/voice.mp3',
+      timepoints: [
+        { markName: 's1', timeSeconds: 0 },
+        { markName: 's2', timeSeconds: 0 },
+        { markName: 'end', timeSeconds: 4 },
+      ],
+    });
+
+    await service.renderVideo(scenes, 'job-1');
+
+    const images = imageClips(postedPayload());
+    expect(images.map((clip: any) => clip.start)).toEqual([0, 37.5]);
+    expect(images.map((clip: any) => clip.asset.fit)).toEqual(['cover', 'cover']);
+    expect(images.map((clip: any) => clip.position)).toEqual(['center', 'center']);
+  });
+
   it('includes visible top-track subtitle clips with valid timing', async () => {
     await service.renderVideo(scenes, 'job-1');
 
@@ -234,10 +380,12 @@ describe('ShotstackService payload validation', () => {
         position: 'bottom',
         asset: expect.objectContaining({
           type: 'html',
-          css: expect.stringContaining('font-size: 52px'),
+          css: expect.stringContaining('font-size: 48px'),
           width: 960,
           height: 220,
+          background: 'rgba(0,0,0,0.72)',
         }),
+        offset: { x: 0, y: 0.1 },
       }),
     );
     expect(subtitles.map((clip: any) => clip.asset.html).join(' ')).toContain('Focused');

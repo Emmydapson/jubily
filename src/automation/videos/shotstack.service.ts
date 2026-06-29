@@ -19,6 +19,14 @@ type ShotstackValidationResult = {
   issues: ShotstackValidationIssue[];
 };
 
+export type ShotstackRenderResult = {
+  renderId: string;
+  durationSeconds: number;
+  sceneCount: number;
+  hasBurnedSubtitles: boolean;
+  shotstackPayloadDebugPath: string | null;
+};
+
 const VALID_SHOTSTACK_EFFECTS = new Set([
   'zoomIn',
   'zoomInSlow',
@@ -121,6 +129,8 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
 export class ShotstackService {
   private readonly logger = new Logger(ShotstackService.name);
   private readonly baseUrl = 'https://api.shotstack.io/stage';
+  private readonly targetVideoSeconds = Number(process.env.VIDEO_TARGET_SECONDS || 75);
+  private payloadDebugSequence = 0;
 
   constructor(
     private readonly tts: GoogleTtsService,
@@ -138,7 +148,24 @@ export class ShotstackService {
   // ------------------------
   private estimateSeconds(narration: string) {
     const words = narration.trim().split(/\s+/).filter(Boolean).length;
-    return Math.max(3, Math.min(9, words / 2.2));
+    return Math.max(6, Math.min(12, words / 2.2));
+  }
+
+  private normalizeRenderScenes(scenes: Scene[]) {
+    const measured = scenes.map((scene) => ({
+      ...scene,
+      duration: safeLength(scene.duration || this.estimateSeconds(scene.narration)),
+    }));
+    const total = measured.reduce((sum, scene) => sum + scene.duration, 0);
+    const target = this.targetVideoSeconds >= 60 && this.targetVideoSeconds <= 90
+      ? this.targetVideoSeconds
+      : 75;
+    const scale = total > 0 ? target / total : 1;
+
+    return measured.map((scene) => ({
+      ...scene,
+      duration: Number((scene.duration * scale).toFixed(2)),
+    }));
   }
 
   // ------------------------
@@ -183,15 +210,16 @@ export class ShotstackService {
     return chunks.map((chunk, i) => ({
       asset: {
         type: 'html',
-        html: `<p>${escapeHtml(chunk)}</p>`,
-        css: 'p { color: #ffffff; font-size: 52px; font-family: Arial; font-weight: 900; text-align: center; background-color: #000000; padding: 22px; line-height: 62px; }',
+        html: `<p data-html-type="text">${escapeHtml(chunk)}</p>`,
+        css: 'p { color: #ffffff; font-size: 48px; line-height: 1.12; font-weight: 800; font-family: Arial, sans-serif; text-align: center; text-shadow: 0 3px 8px rgba(0,0,0,0.95); padding: 18px 26px; border-radius: 18px; }',
         width: 960,
         height: 220,
+        background: 'rgba(0,0,0,0.72)',
       },
       start: clampStart(safeStart + i * perChunk),
       length: perChunk,
       position: 'bottom',
-      offset: { x: 0, y: -0.06 },
+      offset: { x: 0, y: 0.1 },
     }));
   }
 
@@ -226,6 +254,32 @@ export class ShotstackService {
     });
   }
 
+  private usableSceneMarks(scenes: Scene[], byName: Map<string, number>) {
+    const marks = scenes.map((_, i) => byName.get(`s${i + 1}`));
+    if (marks.some((mark) => typeof mark !== 'number' || !Number.isFinite(mark))) {
+      return new Map<string, number>();
+    }
+
+    for (let i = 1; i < marks.length; i++) {
+      if ((marks[i] as number) <= (marks[i - 1] as number)) {
+        this.logger.warn('[ShotstackTiming] ignoring non-monotonic TTS scene marks');
+        return new Map<string, number>();
+      }
+      const markedLength = (marks[i] as number) - (marks[i - 1] as number);
+      if (markedLength < scenes[i - 1].duration * 0.5) {
+        this.logger.warn('[ShotstackTiming] ignoring compressed TTS scene marks');
+        return new Map<string, number>();
+      }
+    }
+
+    if ((marks[0] as number) < 0) {
+      this.logger.warn('[ShotstackTiming] ignoring negative TTS scene marks');
+      return new Map<string, number>();
+    }
+
+    return byName;
+  }
+
   private summarizePayloadIssues(issues: ShotstackValidationIssue[]) {
     const counts = issues.reduce<Record<string, number>>((acc, issue) => {
       acc[issue.code] = (acc[issue.code] ?? 0) + 1;
@@ -241,37 +295,135 @@ export class ShotstackService {
     };
   }
 
-  private maybeSaveDebugPayload(jobId: string | undefined, payload: any) {
-    if (process.env.DEBUG_SHOTSTACK_PAYLOAD !== 'true' && process.env.NODE_ENV !== 'development') {
-      return;
-    }
+  private maybeSaveDebugPayload(jobId: string | undefined, payload: any): string | null {
+    if (process.env.DEBUG_SHOTSTACK_PAYLOAD !== 'true') return null;
 
     try {
       const dir = path.resolve(process.cwd(), 'tmp', 'shotstack-payloads');
       fs.mkdirSync(dir, { recursive: true });
       const safeJobId = String(jobId || `job-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const file = path.join(dir, `${safeJobId}.json`);
+      const file = path.join(dir, `${safeJobId}-${Date.now()}-${++this.payloadDebugSequence}.json`);
       fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
       this.logger.log(`[ShotstackPayloadDebug] saved=${file}`);
+      return file;
     } catch (error) {
       this.logger.warn(`[ShotstackPayloadDebug] save failed msg=${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  }
+
+  private verifySceneImageUrls(images: string[], sceneCount: number, jobId?: string) {
+    const validImages = images.filter((url) => typeof url === 'string' && url.trim());
+    const uniqueImages = new Set(validImages);
+
+    this.logger.log(
+      `[ShotstackImages] job=${jobId || 'unknown'} scenes=${sceneCount} urls=${validImages.length} uniqueUrls=${uniqueImages.size}`,
+    );
+
+    if (validImages.length !== sceneCount) {
+      throw new Error(`Scene image generation returned ${validImages.length}/${sceneCount} usable URLs`);
+    }
+
+    if (sceneCount > 1 && uniqueImages.size <= 1) {
+      throw new Error(`Scene image generation returned one unique URL for ${sceneCount} scenes`);
+    }
+  }
+
+  private verifyImageClipTiming(bgClips: any[], jobId?: string) {
+    const timingKeys = bgClips.map((clip) => `${Number(clip.start).toFixed(3)}:${Number(clip.length).toFixed(3)}`);
+    const uniqueTimingKeys = new Set(timingKeys);
+
+    this.logger.log(
+      `[ShotstackImageTiming] job=${jobId || 'unknown'} clips=${bgClips.length} uniqueTimings=${uniqueTimingKeys.size}`,
+    );
+
+    if (bgClips.length > 1 && uniqueTimingKeys.size !== bgClips.length) {
+      throw new Error(`Image clips must have unique start/duration pairs (${uniqueTimingKeys.size}/${bgClips.length})`);
+    }
+  }
+
+  private verifyImageClipsSequential(bgClips: any[], jobId?: string) {
+    const sorted = [...bgClips].sort((a, b) => Number(a.start || 0) - Number(b.start || 0));
+    let issues = 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const clip = sorted[i];
+      const start = Number(clip.start || 0);
+      const length = Number(clip.length || 0);
+      const end = start + length;
+
+      if (length <= 0) issues++;
+      if (i === 0 && Math.abs(start) > 0.001) issues++;
+
+      const next = sorted[i + 1];
+      if (next) {
+        const nextStart = Number(next.start || 0);
+        if (Math.abs(nextStart - end) > 0.05) issues++;
+      }
+    }
+
+    this.logger.log(
+      `[ShotstackImageSequence] job=${jobId || 'unknown'} clips=${bgClips.length} issues=${issues}`,
+    );
+
+    if (issues > 0) {
+      throw new Error(`Image clips must be sequential with no timing gaps or overlaps (issues=${issues})`);
+    }
+  }
+
+  private verifyNoFullTimelineImageClip(bgClips: any[], renderEnd: number, jobId?: string) {
+    const fullTimelineClips = bgClips.filter((clip) => {
+      const start = Number(clip.start || 0);
+      const length = Number(clip.length || 0);
+      return start <= 0.001 && length >= renderEnd - 0.001;
+    });
+
+    this.logger.log(
+      `[ShotstackImageCoverage] job=${jobId || 'unknown'} clips=${bgClips.length} fullTimelineClips=${fullTimelineClips.length}`,
+    );
+
+    if (bgClips.length > 1 && fullTimelineClips.length > 0) {
+      throw new Error(`Image clips must not cover the full timeline (${fullTimelineClips.length}/${bgClips.length})`);
+    }
+  }
+
+  private verifySubtitleTrackAboveImages(tracks: any[], jobId?: string) {
+    const subtitleTrackIndex = tracks.findIndex((track) =>
+      Array.isArray(track?.clips) && track.clips.some((clip: any) => clip.asset?.type === 'html'),
+    );
+    const imageTrackIndex = tracks.findIndex((track) =>
+      Array.isArray(track?.clips) && track.clips.some((clip: any) => clip.asset?.type === 'image'),
+    );
+
+    this.logger.log(
+      `[ShotstackTrackOrder] job=${jobId || 'unknown'} subtitleTrack=${subtitleTrackIndex} imageTrack=${imageTrackIndex}`,
+    );
+
+    if (subtitleTrackIndex < 0 || imageTrackIndex < 0) {
+      throw new Error('Shotstack payload must include subtitle and image tracks');
+    }
+
+    if (subtitleTrackIndex >= imageTrackIndex) {
+      throw new Error(`Subtitle track must be above image track (${subtitleTrackIndex} >= ${imageTrackIndex})`);
     }
   }
 
   // ------------------------
   // 🚀 MAIN RENDER FUNCTION
   // ------------------------
-  async renderVideo(scenes: Scene[], jobId?: string): Promise<string> {
+  async renderVideo(scenes: Scene[], jobId?: string): Promise<ShotstackRenderResult> {
     if (!Array.isArray(scenes) || scenes.length === 0) {
       throw new Error('renderVideo: scenes empty');
     }
 
+    const renderScenes = this.normalizeRenderScenes(scenes);
     const jobKey = `job-${Date.now()}`;
-    const narrations = scenes.map((s) => s.narration);
+    const narrations = renderScenes.map((s) => s.narration);
+    const sceneDurations = renderScenes.map((s) => s.duration);
 
     // 🎙️ TTS generation
     const { url: voiceoverUrl, timepoints } =
-      await this.tts.synthesizeWithMarksToCloudinaryMp3(narrations, jobKey);
+      await this.tts.synthesizeWithMarksToCloudinaryMp3(narrations, jobKey, sceneDurations);
 
     const byName = new Map<string, number>();
     for (const tp of timepoints || []) {
@@ -283,17 +435,18 @@ export class ShotstackService {
     let end = byName.get('end');
 
     if (!end) {
-      end = narrations.reduce((t, n) => t + this.estimateSeconds(n), 0);
+      end = sceneDurations.reduce((t, n) => t + n, 0);
     }
 
     // 🎨 AI images (parallel)
     const images = await this.aiImages.generateMultipleScenes(
-      scenes.map((s, i) => ({
+      renderScenes.map((s, i) => ({
         visualPrompt: s.visualPrompt,
         publicId: `${jobKey}-scene-${i}`,
         jobId,
       })),
     );
+    this.verifySceneImageUrls(images, renderScenes.length, jobId);
 
     const bgClips: any[] = [];
     const subtitleClips: any[] = [];
@@ -306,7 +459,8 @@ export class ShotstackService {
       'slideRight',
       'slideUp',
     ];
-    const sceneTimings = this.buildSceneTimings(scenes, byName, end);
+    const timingMarks = this.usableSceneMarks(renderScenes, byName);
+    const sceneTimings = this.buildSceneTimings(renderScenes, timingMarks, end);
     const renderEnd = Math.max(
       end,
       ...sceneTimings.map((timing) => timing.start + timing.length),
@@ -315,8 +469,8 @@ export class ShotstackService {
     // ------------------------
     // 🎬 BUILD SCENES
     // ------------------------
-    for (let i = 0; i < scenes.length; i++) {
-      const scene = scenes[i];
+    for (let i = 0; i < renderScenes.length; i++) {
+      const scene = renderScenes[i];
       const { start, length } = sceneTimings[i];
 
       const effect = sanitizeShotstackEffect(motionEffects[i % motionEffects.length]);
@@ -325,9 +479,10 @@ export class ShotstackService {
       // 🎥 BACKGROUND IMAGE
       // ------------------------
       bgClips.push({
-        asset: { type: 'image', src: images[i] },
+        asset: { type: 'image', src: images[i], fit: 'cover' },
         start,
         length,
+        position: 'center',
         ...(effect ? { effect } : {}),
       });
 
@@ -355,6 +510,9 @@ export class ShotstackService {
         length: 0.25,
       });
     }
+    this.verifyImageClipTiming(bgClips, jobId);
+    this.verifyImageClipsSequential(bgClips, jobId);
+    this.verifyNoFullTimelineImageClip(bgClips, renderEnd, jobId);
 
     // ------------------------
     // 🎞️ FINAL PAYLOAD
@@ -383,7 +541,7 @@ export class ShotstackService {
               {
                 asset: {
                   type: 'audio',
-                  src: this.pickMusic(scenes[0].narration) || '',
+                  src: this.pickMusic(renderScenes[0].narration) || '',
                   volume: 0.08,
                 },
                 start: 0,
@@ -401,7 +559,10 @@ export class ShotstackService {
 
       output: {
         format: 'mp4',
-        resolution: 'hd',
+        resolution: '1080',
+        aspectRatio: '9:16',
+        fps: 30,
+        quality: 'high',
       },
     };
 
@@ -411,10 +572,10 @@ export class ShotstackService {
         `[ShotstackPayloadValidation] ${JSON.stringify(this.summarizePayloadIssues(validation.issues))}`,
       );
     }
-    this.maybeSaveDebugPayload(jobId, validation.payload);
+    const shotstackPayloadDebugPath = this.maybeSaveDebugPayload(jobId, validation.payload);
 
     this.logger.log(
-      `[ShotstackRender] scenes=${scenes.length} duration=${Math.ceil(renderEnd)}`,
+      `[ShotstackRender] scenes=${renderScenes.length} duration=${Math.ceil(renderEnd)}`,
     );
 
     const res = await axios.post(`${this.baseUrl}/render`, validation.payload, {
@@ -434,6 +595,12 @@ export class ShotstackService {
 
     this.logger.log(`[ShotstackRenderCreated] id=${renderId}`);
 
-    return renderId;
+    return {
+      renderId,
+      durationSeconds: Number(renderEnd.toFixed(2)),
+      sceneCount: renderScenes.length,
+      hasBurnedSubtitles: subtitleClips.length > 0,
+      shotstackPayloadDebugPath,
+    };
   }
 }

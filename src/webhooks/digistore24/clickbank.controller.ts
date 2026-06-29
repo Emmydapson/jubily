@@ -69,7 +69,7 @@ export class ClickbankWebhookController {
 
     const click = await this.prisma.click.findUnique({
       where: { id: tid },
-      select: { id: true, offerId: true, videoJobId: true },
+      select: { id: true, workspaceId: true, offerId: true, videoJobId: true },
     });
     if (!click) {
       await this.monitoring.error({
@@ -84,6 +84,7 @@ export class ClickbankWebhookController {
 
     const conversion = await this.prisma.conversion.create({
       data: {
+        workspaceId: click.workspaceId ?? null,
         offerId: click.offerId,
         clickId: click.id,
         videoJobId: click.videoJobId || null,

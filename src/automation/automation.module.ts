@@ -1,6 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { Module } from '@nestjs/common';
 import { AutomationController } from './automation.controller';
+import { AdminAutomationController } from './admin-automation.controller';
 import { AutomationService } from './automation.service';
 import { ScriptService } from './script.service';
 import { VideosModule } from './videos/videos.module';
@@ -22,10 +23,15 @@ import { AiImageService } from './ai/ai-image.service';
 import { TopicIngestionService } from './topic-ingest.service';
 import { MonitoringModule } from 'src/monitoring/monitoring.module';
 import { ThumbnailService } from './thumbnail.service';
+import { WorkspacesModule } from '../workspaces/workspaces.module';
+import { BillingModule } from '../billing/billing.module';
+import { AuditModule } from '../audit/audit.module';
+import { AdminGuard } from '../auth/admin.guard';
 
 @Module({
   controllers: [
     AutomationController,
+    AdminAutomationController,
     WorkflowController,
     AnalyticsController,
     OrchestratorController,
@@ -45,7 +51,8 @@ import { ThumbnailService } from './thumbnail.service';
     AiImageService,
     TopicIngestionService,
     ThumbnailService,
+    AdminGuard,
   ],
-  imports: [VideosModule, SettingsModule, MonitoringModule],
+  imports: [VideosModule, SettingsModule, MonitoringModule, WorkspacesModule, BillingModule, AuditModule],
 })
 export class AutomationModule {}

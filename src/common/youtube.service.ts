@@ -15,32 +15,104 @@ type YoutubeTokens = {
   expiry_date?: number | null;
 };
 
+type GoogleCredentials = {
+  access_token?: string;
+  refresh_token?: string;
+  scope?: string;
+  expiry_date?: number;
+};
+
+type YoutubeChannelDiagnostics = {
+  connected: boolean;
+  channelId: string | null;
+  title: string | null;
+  customUrl: string | null;
+  subscriberCount: string | null;
+  videoCount: string | null;
+  statistics: {
+    viewCount: string | null;
+    subscriberCount: string | null;
+    hiddenSubscriberCount: boolean | null;
+    videoCount: string | null;
+  } | null;
+  targetChannelId: string | null;
+  channelMatchesTarget: boolean | null;
+  scope: string | null;
+  tokenStorage: {
+    encryptedDbConfigured: boolean;
+    encryptedDbUpdatedAt: Date | null;
+    legacyFilePresent: boolean;
+    legacyFileWriteFallbackEnabled: boolean;
+  };
+  error: string | null;
+};
+
+type ConnectedYoutubeChannel = {
+  channelId: string | null;
+  title: string | null;
+  customUrl: string | null;
+  statistics: {
+    viewCount: string | null;
+    subscriberCount: string | null;
+    hiddenSubscriberCount: boolean | null;
+    videoCount: string | null;
+  } | null;
+};
+
 @Injectable()
 export class YoutubeService {
   private readonly logger = new Logger(YoutubeService.name);
-  private oauth;
-  private tokensLoaded = false;
   private activeFileTokenPath: string | null = null;
-  private currentTokens: YoutubeTokens = {};
 
-  constructor(private prisma: PrismaService) {
-    this.oauth = new google.auth.OAuth2(
+  constructor(private prisma: PrismaService) {}
+
+  private youtubeRedirectUri(kind: 'admin' | 'customer') {
+    const specific =
+      kind === 'admin'
+        ? process.env.YOUTUBE_ADMIN_REDIRECT_URI
+        : process.env.YOUTUBE_CUSTOMER_REDIRECT_URI;
+    const legacy = process.env.NODE_ENV === 'production' ? '' : process.env.YOUTUBE_REDIRECT;
+    const redirectUri = String(specific || legacy || '').trim();
+    if (!redirectUri) {
+      throw new Error(
+        kind === 'admin'
+          ? 'YOUTUBE_ADMIN_REDIRECT_URI is required'
+          : 'YOUTUBE_CUSTOMER_REDIRECT_URI is required',
+      );
+    }
+    return redirectUri;
+  }
+
+  private createOAuthClient(persistWorkspaceId?: string, redirectKind: 'admin' | 'customer' = persistWorkspaceId ? 'customer' : 'admin') {
+    const oauth = new google.auth.OAuth2(
       process.env.YOUTUBE_CLIENT_ID,
       process.env.YOUTUBE_CLIENT_SECRET,
-      process.env.YOUTUBE_REDIRECT,
+      this.youtubeRedirectUri(redirectKind),
     );
 
-    this.oauth.on('tokens', (newTokens: YoutubeTokens) => {
-      this.currentTokens = {
-        ...this.currentTokens,
-        ...newTokens,
-        refresh_token: newTokens.refresh_token || this.currentTokens.refresh_token,
-      };
+    oauth.on('tokens', (newTokens: YoutubeTokens) => {
+      const persist = (async () => {
+        const existing = persistWorkspaceId
+          ? await this.readWorkspaceTokens(persistWorkspaceId)
+          : await this.readDbTokens().catch(() => null);
+        const merged = {
+          ...(existing ?? {}),
+          ...newTokens,
+          refresh_token: newTokens.refresh_token || existing?.refresh_token,
+        };
+        if (persistWorkspaceId) {
+          await this.persistWorkspaceTokens(persistWorkspaceId, merged);
+        } else {
+          await this.persistTokens(merged);
+        }
+      })();
 
-      void this.persistTokens(this.currentTokens).catch((error: unknown) => {
+      void persist.catch((error: unknown) => {
         this.logger.warn(`[YouTube] token refresh persistence failed msg=${error instanceof Error ? error.message : String(error)}`);
       });
     });
+
+    return oauth;
   }
 
   private tokenCandidates() {
@@ -58,6 +130,51 @@ export class YoutubeService {
       return new URL(url).host;
     } catch {
       return 'invalid-url';
+    }
+  }
+
+  private targetChannelId() {
+    return String(process.env.YOUTUBE_TARGET_CHANNEL_ID || process.env.YOUTUBE_CHANNEL_ID || '').trim() || null;
+  }
+
+  private channelMatchesTarget(channelId: string | null) {
+    const targetChannelId = this.targetChannelId();
+    if (!targetChannelId) return null;
+    return Boolean(channelId) && channelId === targetChannelId;
+  }
+
+  private async fetchConnectedChannel(auth: any): Promise<ConnectedYoutubeChannel> {
+    const youtube = google.youtube({ version: 'v3', auth });
+    const res = await youtube.channels.list({
+      mine: true,
+      part: ['snippet', 'statistics'],
+    });
+    const channel = res.data?.items?.[0];
+
+    return {
+      channelId: channel?.id ?? null,
+      title: channel?.snippet?.title ?? null,
+      customUrl: channel?.snippet?.customUrl ?? null,
+      statistics: channel?.statistics
+        ? {
+            viewCount: channel.statistics.viewCount ?? null,
+            subscriberCount: channel.statistics.subscriberCount ?? null,
+            hiddenSubscriberCount: channel.statistics.hiddenSubscriberCount ?? null,
+            videoCount: channel.statistics.videoCount ?? null,
+          }
+        : null,
+    };
+  }
+
+  private async assertTargetChannel(auth: any, operation: string) {
+    const targetChannelId = this.targetChannelId();
+    if (!targetChannelId) return;
+
+    const channel = await this.fetchConnectedChannel(auth);
+    if (channel.channelId !== targetChannelId) {
+      throw new Error(
+        `YouTube ${operation} blocked: connected channel ${channel.channelId || 'unknown'} (${channel.title || 'untitled'}) does not match target channel ${targetChannelId}`,
+      );
     }
   }
 
@@ -103,24 +220,47 @@ export class YoutubeService {
     }
   }
 
-  async tokenStorageStatus() {
-    const dbToken = await this.prisma.integrationKey.findUnique({
-      where: { provider: 'YOUTUBE' },
-      select: { updatedAt: true },
+  private async readWorkspaceTokens(workspaceId: string): Promise<YoutubeTokens | null> {
+    const row = await this.prisma.workspaceYoutubeConnection.findUnique({
+      where: { workspaceId },
+      select: { encrypted: true },
     });
-    const legacyFilePath = this.tokenCandidates().find((p) => fs.existsSync(p));
-
-    return {
-      encryptedDbConfigured: Boolean(dbToken),
-      encryptedDbUpdatedAt: dbToken?.updatedAt ?? null,
-      legacyFilePresent: Boolean(legacyFilePath),
-      legacyFileWriteFallbackEnabled: process.env.YOUTUBE_ALLOW_FILE_TOKEN_FALLBACK === 'true',
-    };
+    if (!row?.encrypted) return null;
+    return JSON.parse(decryptString(row.encrypted)) as YoutubeTokens;
   }
 
-  private async ensureTokensLoaded() {
-    if (this.tokensLoaded) return;
+  private async persistWorkspaceTokens(
+    workspaceId: string,
+    tokens: YoutubeTokens,
+    channel?: ConnectedYoutubeChannel,
+  ) {
+    if (!tokens.refresh_token && !tokens.access_token) return;
+    const { encrypted, last4 } = encryptString(JSON.stringify(tokens));
 
+    await this.prisma.workspaceYoutubeConnection.upsert({
+      where: { workspaceId },
+      update: {
+        encrypted,
+        last4,
+        channelId: channel?.channelId ?? undefined,
+        channelTitle: channel?.title ?? undefined,
+        channelCustomUrl: channel?.customUrl ?? undefined,
+        scope: tokens.scope ?? undefined,
+        connectedAt: new Date(),
+      },
+      create: {
+        workspaceId,
+        encrypted,
+        last4,
+        channelId: channel?.channelId ?? null,
+        channelTitle: channel?.title ?? null,
+        channelCustomUrl: channel?.customUrl ?? null,
+        scope: tokens.scope ?? null,
+      },
+    });
+  }
+
+  private async loadGlobalTokens(): Promise<YoutubeTokens | null> {
     let tokens: YoutubeTokens | null = null;
     try {
       tokens = await this.readDbTokens();
@@ -143,19 +283,51 @@ export class YoutubeService {
 
     if (!tokens) {
       this.logger.warn('[YouTube] no OAuth token configured; connect YouTube before publishing');
-      this.tokensLoaded = true;
-      return;
     }
 
-    this.currentTokens = tokens;
-    this.oauth.setCredentials(tokens);
-    this.tokensLoaded = true;
+    return tokens;
   }
 
-  getAuthUrl(state?: string) {
-    return this.oauth.generateAuthUrl({
+  private async clientWithTokens(workspaceId?: string) {
+    const oauth = this.createOAuthClient(workspaceId);
+    const tokens = workspaceId ? await this.readWorkspaceTokens(workspaceId) : await this.loadGlobalTokens();
+    if (!tokens?.refresh_token && !tokens?.access_token) {
+      throw new Error(workspaceId ? 'Workspace YouTube OAuth token is not configured' : 'YouTube OAuth token is not configured');
+    }
+    oauth.setCredentials(this.googleCredentials(tokens));
+    return { oauth, tokens };
+  }
+
+  private googleCredentials(tokens: YoutubeTokens): GoogleCredentials {
+    return {
+      access_token: tokens.access_token ?? undefined,
+      refresh_token: tokens.refresh_token ?? undefined,
+      scope: tokens.scope ?? undefined,
+      expiry_date: tokens.expiry_date ?? undefined,
+    };
+  }
+
+  async tokenStorageStatus() {
+    const dbToken = await this.prisma.integrationKey.findUnique({
+      where: { provider: 'YOUTUBE' },
+      select: { updatedAt: true },
+    });
+    const legacyFilePath = this.tokenCandidates().find((p) => fs.existsSync(p));
+
+    return {
+      encryptedDbConfigured: Boolean(dbToken),
+      encryptedDbUpdatedAt: dbToken?.updatedAt ?? null,
+      legacyFilePresent: Boolean(legacyFilePath),
+      legacyFileWriteFallbackEnabled: process.env.YOUTUBE_ALLOW_FILE_TOKEN_FALLBACK === 'true',
+    };
+  }
+
+  private getAuthUrl(kind: 'admin' | 'customer', state?: string) {
+    const oauth = this.createOAuthClient(undefined, kind);
+    return oauth.generateAuthUrl({
       access_type: 'offline',
-      prompt: 'consent',
+      // Force account selection so admins can switch away from a wrong cached Google account.
+      prompt: 'consent select_account',
       scope: [
         'https://www.googleapis.com/auth/youtube.upload',
         'https://www.googleapis.com/auth/youtube.force-ssl',
@@ -166,8 +338,17 @@ export class YoutubeService {
     });
   }
 
+  getAdminAuthUrl(state?: string) {
+    return this.getAuthUrl('admin', state);
+  }
+
+  getCustomerAuthUrl(state?: string) {
+    return this.getAuthUrl('customer', state);
+  }
+
   async handleAuthCallback(code: string) {
-    const { tokens } = await this.oauth.getToken(code);
+    const oauth = this.createOAuthClient();
+    const { tokens } = await oauth.getToken(code);
 
     if (!tokens.refresh_token) {
       throw new Error('No refresh token received. Try again.');
@@ -180,12 +361,181 @@ export class YoutubeService {
       expiry_date: tokens.expiry_date,
     };
 
-    this.currentTokens = merged;
-    this.oauth.setCredentials(merged);
+    oauth.setCredentials(this.googleCredentials(merged));
+    try {
+      await this.assertTargetChannel(oauth, 'connection');
+    } catch (error) {
+      throw error;
+    }
     await this.persistTokens(merged);
-    this.tokensLoaded = true;
 
     return { connected: true, scope: merged.scope, expiry_date: merged.expiry_date };
+  }
+
+  async getChannelDiagnostics(): Promise<YoutubeChannelDiagnostics> {
+    const tokenStorage = await this.tokenStorageStatus();
+    const tokens = await this.loadGlobalTokens();
+    if (!tokens?.refresh_token && !tokens?.access_token) {
+      return {
+        connected: false,
+        channelId: null,
+        title: null,
+        customUrl: null,
+        subscriberCount: null,
+        videoCount: null,
+        statistics: null,
+        targetChannelId: this.targetChannelId(),
+        channelMatchesTarget: this.channelMatchesTarget(null),
+        scope: null,
+        tokenStorage,
+        error: 'YouTube OAuth token is not configured',
+      };
+    }
+
+    try {
+      const oauth = this.createOAuthClient();
+      oauth.setCredentials(this.googleCredentials(tokens));
+      const channel = await this.fetchConnectedChannel(oauth);
+      const matchesTarget = this.channelMatchesTarget(channel.channelId);
+
+      return {
+        connected: Boolean(channel.channelId),
+        channelId: channel.channelId,
+        title: channel.title,
+        customUrl: channel.customUrl,
+        subscriberCount: channel.statistics?.subscriberCount ?? null,
+        videoCount: channel.statistics?.videoCount ?? null,
+        statistics: channel.statistics,
+        targetChannelId: this.targetChannelId(),
+        channelMatchesTarget: matchesTarget,
+        scope: tokens.scope ?? null,
+        tokenStorage,
+        error: channel.channelId
+          ? matchesTarget === false
+            ? `Connected YouTube channel does not match target channel ${this.targetChannelId()}`
+            : null
+          : 'No YouTube channel was returned for the stored OAuth token',
+      };
+    } catch (error: unknown) {
+      return {
+        connected: false,
+        channelId: null,
+        title: null,
+        customUrl: null,
+        subscriberCount: null,
+        videoCount: null,
+        statistics: null,
+        targetChannelId: this.targetChannelId(),
+        channelMatchesTarget: this.channelMatchesTarget(null),
+        scope: tokens.scope ?? null,
+        tokenStorage,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async getWorkspaceChannelDiagnostics(workspaceId: string): Promise<YoutubeChannelDiagnostics> {
+    const row = await this.prisma.workspaceYoutubeConnection.findUnique({
+      where: { workspaceId },
+      select: {
+        updatedAt: true,
+        channelId: true,
+        channelTitle: true,
+        channelCustomUrl: true,
+        scope: true,
+      },
+    });
+
+    const tokenStorage = {
+      encryptedDbConfigured: Boolean(row),
+      encryptedDbUpdatedAt: row?.updatedAt ?? null,
+      legacyFilePresent: false,
+      legacyFileWriteFallbackEnabled: false,
+    };
+
+    if (!row) {
+      return {
+        connected: false,
+        channelId: null,
+        title: null,
+        customUrl: null,
+        subscriberCount: null,
+        videoCount: null,
+        statistics: null,
+        targetChannelId: null,
+        channelMatchesTarget: null,
+        scope: null,
+        tokenStorage,
+        error: 'Workspace YouTube OAuth token is not configured',
+      };
+    }
+
+    try {
+      const { oauth, tokens } = await this.clientWithTokens(workspaceId);
+      const channel = await this.fetchConnectedChannel(oauth);
+      return {
+        connected: Boolean(channel.channelId),
+        channelId: channel.channelId,
+        title: channel.title,
+        customUrl: channel.customUrl,
+        subscriberCount: channel.statistics?.subscriberCount ?? null,
+        videoCount: channel.statistics?.videoCount ?? null,
+        statistics: channel.statistics,
+        targetChannelId: null,
+        channelMatchesTarget: null,
+        scope: tokens.scope ?? row.scope ?? null,
+        tokenStorage,
+        error: channel.channelId ? null : 'No YouTube channel was returned for the workspace OAuth token',
+      };
+    } catch (error: unknown) {
+      return {
+        connected: false,
+        channelId: row.channelId,
+        title: row.channelTitle,
+        customUrl: row.channelCustomUrl,
+        subscriberCount: null,
+        videoCount: null,
+        statistics: null,
+        targetChannelId: null,
+        channelMatchesTarget: null,
+        scope: row.scope,
+        tokenStorage,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async handleWorkspaceAuthCallback(workspaceId: string, code: string) {
+    const oauth = this.createOAuthClient(workspaceId);
+    const { tokens } = await oauth.getToken(code);
+    if (!tokens.refresh_token) {
+      throw new Error('No refresh token received. Try reconnecting YouTube for this workspace.');
+    }
+
+    const merged: YoutubeTokens = {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      scope: tokens.scope,
+      expiry_date: tokens.expiry_date,
+    };
+
+    oauth.setCredentials(this.googleCredentials(merged));
+    const channel = await this.fetchConnectedChannel(oauth);
+    await this.persistWorkspaceTokens(workspaceId, merged, channel);
+
+    return {
+      connected: true,
+      channelId: channel.channelId,
+      title: channel.title,
+      customUrl: channel.customUrl,
+      scope: merged.scope,
+      expiry_date: merged.expiry_date,
+    };
+  }
+
+  async disconnectWorkspace(workspaceId: string) {
+    await this.prisma.workspaceYoutubeConnection.deleteMany({ where: { workspaceId } });
+    return { connected: false };
   }
 
   async upload(
@@ -193,14 +543,13 @@ export class YoutubeService {
     description: string,
     videoUrl: string,
     tags: string[] = [],
+    workspaceId?: string,
   ): Promise<string>  {
     if (!videoUrl) throw new Error('Missing videoUrl for upload');
-    await this.ensureTokensLoaded();
-    if (!this.currentTokens.refresh_token && !this.currentTokens.access_token) {
-      throw new Error('YouTube OAuth token is not configured');
-    }
+    const { oauth } = await this.clientWithTokens(workspaceId);
+    if (!workspaceId) await this.assertTargetChannel(oauth, 'upload');
 
-    const youtube = google.youtube({ version: 'v3', auth: this.oauth });
+    const youtube = google.youtube({ version: 'v3', auth: oauth });
     const host = this.shortHost(videoUrl);
 
     let videoStreamRes;
@@ -259,15 +608,13 @@ export class YoutubeService {
     }
   }
 
-  async uploadCaptions(videoId: string, srtText: string) {
+  async uploadCaptions(videoId: string, srtText: string, workspaceId?: string) {
     if (!videoId) throw new Error('Missing videoId for captions');
     if (!srtText?.trim()) return;
-    await this.ensureTokensLoaded();
-    if (!this.currentTokens.refresh_token && !this.currentTokens.access_token) {
-      throw new Error('YouTube OAuth token is not configured');
-    }
+    const { oauth } = await this.clientWithTokens(workspaceId);
+    if (!workspaceId) await this.assertTargetChannel(oauth, 'caption upload');
 
-    const youtube = google.youtube({ version: 'v3', auth: this.oauth });
+    const youtube = google.youtube({ version: 'v3', auth: oauth });
 
     const tmpPath = path.resolve(process.cwd(), 'tmp', `${videoId}.srt`);
     fs.mkdirSync(path.dirname(tmpPath), { recursive: true });
@@ -294,12 +641,10 @@ export class YoutubeService {
     }
   }
 
-  async updateMetadata(videoId: string, title: string, description: string, tags: string[] = []) {
-    await this.ensureTokensLoaded();
-    if (!this.currentTokens.refresh_token && !this.currentTokens.access_token) {
-      throw new Error('YouTube OAuth token is not configured');
-    }
-    const youtube = google.youtube({ version: 'v3', auth: this.oauth });
+  async updateMetadata(videoId: string, title: string, description: string, tags: string[] = [], workspaceId?: string) {
+    const { oauth } = await this.clientWithTokens(workspaceId);
+    if (!workspaceId) await this.assertTargetChannel(oauth, 'metadata update');
+    const youtube = google.youtube({ version: 'v3', auth: oauth });
 
     await youtube.videos.update({
       part: ['snippet'],

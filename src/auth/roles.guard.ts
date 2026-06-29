@@ -7,8 +7,11 @@ import { ROLES_KEY } from './roles.decorator';
 type AuthenticatedRequest = {
   user?: {
     role?: string;
+    kind?: 'admin' | 'user';
   };
 };
+
+const ADMIN_ROLES = new Set(['SUPER_ADMIN', 'ADMIN', 'SUPPORT']);
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -32,6 +35,8 @@ export class RolesGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const userRole = String(req.user?.role || '');
 
+    if (req.user?.kind === 'admin' && roles.includes('ADMIN') && ADMIN_ROLES.has(userRole)) return true;
+    if (req.user?.kind === 'user' && roles.includes('USER') && userRole === 'USER') return true;
     if (roles.includes(userRole)) return true;
 
     throw new ForbiddenException('Insufficient role');

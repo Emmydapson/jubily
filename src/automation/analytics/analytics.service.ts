@@ -30,7 +30,7 @@ export class AnalyticsService {
     return fmt.format(date); // Mon, Tue...
   }
 
-  async weekly(opts: { days?: number; timeZone?: string }) {
+  async weekly(opts: { days?: number; timeZone?: string; workspaceId?: string | null }) {
     const days = this.clampDays(opts.days ?? 7);
     const timeZone = opts.timeZone || 'America/New_York';
 
@@ -38,13 +38,15 @@ export class AnalyticsService {
     const from = new Date(now.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
     // (we aggregate by timezone dayKey; range filter is rough UTC window, good enough for dashboard)
 
+    const scoped = opts.workspaceId !== undefined ? { workspaceId: opts.workspaceId } : {};
+
     const [clicks, conversions] = await Promise.all([
       this.prisma.click.findMany({
-        where: { createdAt: { gte: from, lte: now } },
+        where: { createdAt: { gte: from, lte: now }, ...scoped },
         select: { createdAt: true },
       }),
       this.prisma.conversion.findMany({
-        where: { createdAt: { gte: from, lte: now } },
+        where: { createdAt: { gte: from, lte: now }, ...scoped },
         select: { createdAt: true, amount: true, currency: true },
       }),
     ]);

@@ -1,11 +1,25 @@
 /* eslint-disable prettier/prettier */
 import { Scene } from './videos/interfaces/scene.interface';
 
+const TARGET_SECONDS = 75;
+const MIN_SCENE_SECONDS = 6;
+const MAX_SCENE_SECONDS = 12;
+
 function estimateSecondsFromText(text: string, wps = 2.3) {
   // ~2.2–2.6 words/sec is typical for short VO
   const words = String(text || '').trim().split(/\s+/).filter(Boolean).length;
   const raw = words / wps;
-  return Math.max(2.8, Math.min(8.0, raw)); // clamp per scene
+  return Math.max(MIN_SCENE_SECONDS, Math.min(MAX_SCENE_SECONDS, raw)); // clamp per scene
+}
+
+function normalizeSceneDurations(scenes: Scene[]) {
+  const total = scenes.reduce((a, s) => a + s.duration, 0);
+  const scale = total > 0 ? TARGET_SECONDS / total : 1;
+
+  return scenes.map((s) => ({
+    ...s,
+    duration: Math.max(MIN_SCENE_SECONDS, Math.min(MAX_SCENE_SECONDS, Number((s.duration * scale).toFixed(2)))),
+  }));
 }
 
 export function extractScenes(script: string): Scene[] {
@@ -21,8 +35,9 @@ export function extractScenes(script: string): Scene[] {
         const visualPrompt = String(s.visualPrompt ?? '').trim();
         if (!narration || !caption) return null;
 
-        // prefer narration-based timing (fixes early audio)
-        const dur = estimateSecondsFromText(narration);
+        // Prefer explicit reviewed timing, with narration-based timing as fallback.
+        const requestedSeconds = Number(s.seconds || s.duration || 0);
+        const dur = requestedSeconds > 0 ? requestedSeconds : estimateSecondsFromText(narration);
 
         return {
           index: i + 1,
@@ -34,21 +49,11 @@ export function extractScenes(script: string): Scene[] {
       })
       .filter(Boolean) as Scene[];
 
-    // scale to ~58s target (keeps Shorts length consistent)
-    const total = mapped.reduce((a, s) => a + s.duration, 0);
-    const target = 58;
-    const scale = total > 0 ? target / total : 1;
-
-    mapped = mapped.map((s) => ({
-      ...s,
-      duration: Math.max(2.8, Math.min(8.0, Number((s.duration * scale).toFixed(2)))),
-    }));
-
-    return mapped;
+    return normalizeSceneDurations(mapped);
   } catch {
     // plain text fallback
     const lines = script.split('\n').filter(Boolean);
-    return lines.map((line, i) => {
+    return normalizeSceneDurations(lines.map((line, i) => {
       const narration = line.trim();
       return {
         index: i + 1,
@@ -57,6 +62,6 @@ export function extractScenes(script: string): Scene[] {
         visualPrompt: narration,
         duration: estimateSecondsFromText(narration),
       };
-    });
+    }));
   }
 }

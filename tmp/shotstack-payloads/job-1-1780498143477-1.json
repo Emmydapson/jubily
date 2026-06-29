@@ -1,0 +1,124 @@
+{
+  "timeline": {
+    "tracks": [
+      {
+        "clips": [
+          {
+            "asset": {
+              "type": "html",
+              "html": "<p data-html-type=\"text\">Focused habit</p>",
+              "css": "p { color: #ffffff; font-size: 54px; font-family: Arial; text-align: center; }",
+              "width": 960,
+              "height": 220,
+              "background": "#000000"
+            },
+            "start": 0,
+            "length": 37.5,
+            "position": "bottom",
+            "offset": {
+              "x": 0,
+              "y": 0.08
+            }
+          },
+          {
+            "asset": {
+              "type": "html",
+              "html": "<p data-html-type=\"text\">Small step</p>",
+              "css": "p { color: #ffffff; font-size: 54px; font-family: Arial; text-align: center; }",
+              "width": 960,
+              "height": 220,
+              "background": "#000000"
+            },
+            "start": 37.5,
+            "length": 37.5,
+            "position": "bottom",
+            "offset": {
+              "x": 0,
+              "y": 0.08
+            }
+          }
+        ]
+      },
+      {
+        "clips": [
+          {
+            "asset": {
+              "type": "image",
+              "src": "https://cdn.example.com/image-1.jpg",
+              "fit": "cover"
+            },
+            "start": 0,
+            "length": 37.5,
+            "position": "center",
+            "effect": "zoomIn"
+          },
+          {
+            "asset": {
+              "type": "image",
+              "src": "https://cdn.example.com/image-2.jpg",
+              "fit": "cover"
+            },
+            "start": 37.5,
+            "length": 37.5,
+            "position": "center",
+            "effect": "zoomOut"
+          }
+        ]
+      },
+      {
+        "clips": [
+          {
+            "asset": {
+              "type": "audio",
+              "src": "https://cdn.example.com/voice.mp3"
+            },
+            "start": 0,
+            "length": 75
+          }
+        ]
+      },
+      {
+        "clips": [
+          {
+            "asset": {
+              "type": "audio",
+              "src": "https://cdn.example.com/music.mp3",
+              "volume": 0.08
+            },
+            "start": 0,
+            "length": 75
+          }
+        ]
+      },
+      {
+        "clips": [
+          {
+            "asset": {
+              "type": "audio",
+              "src": "https://cdn.example.com/pop.mp3",
+              "volume": 0.15
+            },
+            "start": 0,
+            "length": 0.25
+          },
+          {
+            "asset": {
+              "type": "audio",
+              "src": "https://cdn.example.com/pop.mp3",
+              "volume": 0.15
+            },
+            "start": 37.5,
+            "length": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "format": "mp4",
+    "resolution": "1080",
+    "aspectRatio": "9:16",
+    "fps": 30,
+    "quality": "high"
+  }
+}

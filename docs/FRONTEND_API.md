@@ -1,1520 +1,497 @@
 # Frontend API Contract
 
-Generated from the current NestJS controllers, DTOs, guards, Swagger decorators, and service response shapes. This file is frontend-facing and should be treated as the practical contract for the admin UI.
+Source of truth for the customer app and admin console after the customer/admin split. Generated from the current NestJS controllers, DTOs, guards, services, and Prisma schema.
 
-## Base API Behavior
+## API Base Rules
 
-Base URL placeholder:
+Base URL:
 
 ```ts
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 ```
 
-Swagger, when the server is reachable:
+Swagger:
 
-- UI: `GET /api`
-- JSON: `GET /api-json`
-- YAML: `GET /api-yaml`
+- `GET /api`
+- `GET /api-json`
+- `GET /api-yaml`
 
-Auth header for protected routes:
+Standard JSON headers:
 
 ```http
-Authorization: Bearer <accessToken>
 Content-Type: application/json
+Authorization: Bearer <accessToken>
 ```
 
-Login flow:
+Customer JWT vs admin JWT:
 
-1. Call `POST /auth/login` with admin email/password.
-2. Store `accessToken` in the frontend auth store.
-3. Call `GET /auth/me` to hydrate the active admin profile.
-4. Send `Authorization: Bearer <token>` on all protected admin routes.
+- Customer tokens come from `/auth/signup`, `/auth/login`, and `/auth/refresh`.
+- Customer JWT payloads use `kind: "user"` and `role: "USER"`.
+- Admin tokens come from `/admin/auth/login`.
+- Admin JWT payloads use `kind: "admin"` and `role: "SUPER_ADMIN" | "ADMIN" | "SUPPORT"`.
+- Customer JWTs do not satisfy admin routes.
+- Admin JWTs do not satisfy customer workspace routes.
+- Keep customer and admin sessions in separate frontend stores.
 
-First admin creation after a database reset:
+Workspace route rules:
 
-- Login never auto-creates admins.
-- Create the first active admin from the backend workspace with:
+- Send `x-workspace-id: <workspaceId>` on workspace-scoped customer routes without a `:workspaceId` path param.
+- Routes with `:workspaceId` can use the route param alone.
+- If both route param and `x-workspace-id` are present, they must match.
+- Mismatch returns `403` with message `Workspace header does not match route workspace`.
+- Workspace routes require customer JWT, verified email, active workspace, and membership.
+- `OWNER` and `ADMIN` can mutate; `MEMBER` is read-only unless noted otherwise.
 
-```bash
-ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='change-me-now' npm run admin:create
-```
-
-- Or pass CLI args:
-
-```bash
-npm run admin:create -- --email admin@example.com --password 'change-me-now'
-```
-
-- `ADMIN_EMAIL` must be present in the comma-separated `ADMIN_EMAILS` allowlist, otherwise the script exits without creating/updating the admin.
-
-Protected route behavior:
-
-- Global JWT guard protects every route unless decorated with `@Public()`.
-- Global roles guard checks `@Roles("ADMIN")` where present.
-- Current dashboard routes are ADMIN-only except public tracking/webhook/OAuth callback endpoints.
-
-Common errors:
-
-| Status | Meaning | Frontend handling |
-| --- | --- | --- |
-| `400` | Validation failure, missing OAuth code, invalid settings | Show field or action error. |
-| `401` | Missing/invalid token, invalid credentials, invalid OAuth state | Clear session and route to login, except public callback pages. |
-| `403` | Authenticated but insufficient role | Show access denied. |
-| `404` | Entity not found | Show not-found state. |
-| `409` | Quality gate conflict, duplicate schedule slot, or render blocked | Show manual review/action-required state. |
-| `429` | Login throttled | Show retry later. |
-| `500` | Server or provider failure | Show retry/support state. |
-
-Validation behavior:
-
-- Request bodies and query params are validated with `whitelist`, `transform`, and `forbidNonWhitelisted`.
-- Unknown body/query fields can fail validation. Send only documented fields.
-
-Role requirements:
-
-- Protected admin routes require role `ADMIN`.
-- Public routes require no Jubily bearer token.
-
-## Shared Shapes
-
-Paginated list:
+Common Nest error shape:
 
 ```ts
 {
-  items: T[];
-  page: number;
-  limit: number;
-  total: number;
+  statusCode: number;
+  message: string | string[];
+  error?: string;
 }
 ```
 
-Video job summary:
+Validation:
+
+- Global validation uses `whitelist`, `transform`, and `forbidNonWhitelisted`.
+- Do not send undocumented fields.
+- UUID params are validated where controllers use `ParseUUIDPipe`.
+
+Backend staging/sandbox configuration required for these routes:
+
+```env
+YOUTUBE_ADMIN_REDIRECT_URI=https://<api-host>/admin/auth/youtube/callback
+YOUTUBE_CUSTOMER_REDIRECT_URI=https://<api-host>/workspaces/youtube/callback
+
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=<resend sandbox/live api key>
+FROM_EMAIL=<verified sender email>
+FROM_NAME=Jubily
+
+STRIPE_ENABLED=true|false
+STRIPE_SECRET_KEY=<stripe sandbox secret key>
+STRIPE_WEBHOOK_SECRET=<stripe sandbox webhook signing secret>
+STRIPE_PRO_MONTHLY_PRICE_ID=<stripe price id>
+STRIPE_PRO_YEARLY_PRICE_ID=<stripe price id>
+STRIPE_PREMIUM_MONTHLY_PRICE_ID=<stripe price id>
+STRIPE_PREMIUM_YEARLY_PRICE_ID=<stripe price id>
+
+PAYSTACK_ENABLED=true|false
+PAYSTACK_SECRET_KEY=<paystack sandbox secret key>
+PAYSTACK_WEBHOOK_SECRET=<paystack sandbox webhook signing secret>
+PAYSTACK_PRO_MONTHLY_PLAN_CODE=<paystack plan code>
+PAYSTACK_PRO_YEARLY_PLAN_CODE=<paystack plan code>
+PAYSTACK_PREMIUM_MONTHLY_PLAN_CODE=<paystack plan code>
+PAYSTACK_PREMIUM_YEARLY_PLAN_CODE=<paystack plan code>
+
+BILLING_RETURN_BASE_URL=https://<frontend-host>
+PUBLIC_API_BASE_URL=https://<api-host>
+```
+
+Notes:
+
+- Production/staging requires the split YouTube redirect vars. Legacy `YOUTUBE_REDIRECT` is only a local/dev fallback.
+- Enable only configured billing providers. If `STRIPE_ENABLED=true`, all Stripe keys and price IDs above are required. If `PAYSTACK_ENABLED=true`, Paystack secret and all plan codes above are required.
+- Paystack webhook verification uses `PAYSTACK_WEBHOOK_SECRET` when set, otherwise `PAYSTACK_SECRET_KEY`.
+- Billing checkout success/cancel URLs are built from `BILLING_RETURN_BASE_URL || PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL`.
+
+Common statuses:
+
+| Status | Meaning |
+| --- | --- |
+| `400` | Invalid body/query/param, invalid OAuth code, unsupported provider |
+| `401` | Missing/invalid token, invalid credentials, invalid/expired verification/reset/OAuth token |
+| `403` | Wrong JWT kind, insufficient role, unverified email, suspended workspace |
+| `404` | Entity not found or not in active workspace |
+| `409` | Duplicate resource, script gate, plan limit, render/publish precondition |
+| `429` | Throttled endpoint |
+| `500` | Server/provider failure |
+
+Shared enums:
 
 ```ts
-{
-  id: string;
-  scriptId: string;
-  topicId: string | null;
-  topicTitle: string | null;
-  title: string;
-  offerId: string | null;
-  offerName: string | null;
-  status: string;
-  provider: string | null;
-  published: boolean;
-  platform: "youtube" | null;
-  slot: "MORNING" | "AFTERNOON" | "EVENING";
-  scheduledFor: string;
-  createdAt: string;
-  attempts: number;
-  error: string | null;
-  renderId: string | null;
-  videoUrl: string | null;
-  youtubeUrl: string | null;
-  youtubeVideoId: string | null;
-  hasCaptions: boolean;
-  worker: {
-    lockedAt: string | null;
-    lockedBy: string | null;
-    stage: string | null;
-  };
-  thumbnail: {
-    prompt: string | null;
-    imageUrl: string | null;
-    status: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
-    error: string | null;
-    generatedAt: string | null;
-  };
-}
+type AdminRole = "SUPER_ADMIN" | "ADMIN" | "SUPPORT";
+type WorkspaceRole = "OWNER" | "ADMIN" | "MEMBER";
+type Plan = "FREE" | "PRO" | "PREMIUM";
+type SubscriptionStatus = "ACTIVE" | "TRIALING" | "PAST_DUE" | "CANCELED" | "EXPIRED";
+type BillingProvider = "PAYSTACK" | "STRIPE";
+type BillingInterval = "monthly" | "yearly";
+type RunSlot = "MORNING" | "AFTERNOON" | "EVENING";
+type VideoJobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "FAILED_PERMANENT" | "FAILED_QUOTA" | "FAILED_PUBLISH" | "CANCELLED";
+type ScriptReviewStatus = "PENDING" | "APPROVED" | "NEEDS_REVIEW" | "REJECTED";
+type ThumbnailStatus = "PENDING" | "GENERATING" | "READY" | "FAILED";
 ```
 
-## Endpoints
-
-### App
-
-#### `GET /`
-
-- Auth: required
-- Role: `ADMIN`
-- Params/query/body: none
-- Response: plain string, usually `"Hello World!"`
-- Frontend note: health/debug only; not useful for normal dashboard UI.
-- Common errors: `401`, `403`
-
-### Auth
-
-#### `POST /auth/login`
-
-- Auth: public
-- Role: none
-- Body:
+Paginated response:
 
 ```ts
-{
-  email: string;    // valid email, must be allowed by ADMIN_EMAILS
-  password: string; // min length 6
-}
+{ items: T[]; page: number; limit: number; total: number }
 ```
 
-- Response:
+## Customer Auth
+
+### `POST /auth/signup`
+
+Auth: public. Throttled at 5/min.
+
+Request:
+
+```ts
+{ email: string; password: string; name?: string } // password min length 8
+```
+
+Response:
 
 ```ts
 {
   accessToken: string;
-  admin: { id: string; email: string; role: "ADMIN" | string };
+  refreshToken: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    emailVerified: false;
+    emailVerifiedAt: null;
+  };
 }
 ```
 
-- Frontend note: throttle is enabled: 5 attempts per 60 seconds. Store token after success.
-- Common errors: `400`, `401`, `429`
+Notes: sends verification email; workspace creation is blocked until verification. Duplicate email returns `409`.
 
-#### `GET /auth/me`
+### `POST /auth/login`
 
-- Auth: required
-- Role: `ADMIN`
-- Response:
+Auth: public. Throttled at 5/min plus failed-login backoff.
+
+Request:
+
+```ts
+{ email: string; password: string } // password min length 6
+```
+
+Response:
+
+```ts
+{
+  accessToken: string;
+  refreshToken: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    emailVerified: boolean;
+    emailVerifiedAt: string | null;
+  };
+}
+```
+
+Notes: customer credentials only. Admins use `/admin/auth/login`.
+
+### `GET /auth/me`
+
+Auth: customer JWT.
+
+Response:
+
+```ts
+{
+  kind: "user";
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    active: boolean;
+    emailVerified: boolean;
+    emailVerifiedAt: string | null;
+    passwordChangedAt: string | null;
+    lastLoginAt: string | null;
+    createdAt: string;
+    memberships: Array<{
+      role: WorkspaceRole;
+      workspace: { id: string; name: string; slug: string | null };
+    }>;
+  };
+} | null
+```
+
+### `POST /auth/verify-email`
+
+Auth: public. Throttled at 10/min.
+
+Request: `{ token: string }`
+
+Response: `{ verified: true }`
+
+### `POST /auth/resend-verification`
+
+Auth: public. Throttled at 5/min.
+
+Request: `{ email: string }`
+
+Response: `{ ok: true }`
+
+Note: returns `{ ok: true }` even when no email is sent.
+
+### `POST /auth/forgot-password`
+
+Auth: public. Throttled at 5/min.
+
+Request: `{ email: string }`
+
+Response: `{ ok: true }`
+
+Note: returns `{ ok: true }` even when no active user exists.
+
+### `POST /auth/reset-password`
+
+Auth: public. Throttled at 5/min.
+
+Request:
+
+```ts
+{ token: string; password: string } // password min length 8
+```
+
+Response: `{ ok: true }`
+
+Note: revokes all customer refresh sessions.
+
+### `POST /auth/refresh`
+
+Auth: public. Throttled at 30/min.
+
+Request: `{ refreshToken: string }`
+
+Response:
+
+```ts
+{
+  accessToken: string;
+  refreshToken: string; // rotated; replace the old one
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    emailVerified: boolean;
+    emailVerifiedAt: string | null;
+  };
+}
+```
+
+### `POST /auth/logout`
+
+Auth: customer JWT.
+
+Request: `{ refreshToken: string }`
+
+Response: `{ ok: true }`
+
+### `POST /auth/logout-all`
+
+Auth: customer JWT.
+
+Request: none.
+
+Response: `{ ok: true }`
+
+## Admin Auth
+
+### `POST /admin/auth/login`
+
+Auth: public. Throttled at 5/min plus failed-login backoff.
+
+Request:
+
+```ts
+{ email: string; password: string } // password min length 6
+```
+
+Response:
+
+```ts
+{
+  accessToken: string;
+  admin: { id: string; email: string; role: AdminRole };
+}
+```
+
+Admin JWT behavior:
+
+- JWT payload has `kind: "admin"`.
+- No admin refresh endpoint exists.
+- If `ADMIN_EMAILS` is configured, the email must be allowlisted.
+- Admin must exist in `AdminUser` and be active.
+
+### `GET /admin/auth/me`
+
+Auth: admin JWT.
+
+Response:
+
+```ts
+{
+  kind: "admin";
+  admin: {
+    id: string;
+    email: string;
+    role: AdminRole;
+    active: boolean;
+    lastLoginAt: string | null;
+    createdAt: string;
+  };
+} | null
+```
+
+## Customer Workspaces
+
+### `POST /workspaces`
+
+Auth: customer JWT. Email must be verified.
+
+Request:
+
+```ts
+{ name: string; slug?: string } // name min length 2
+```
+
+Response:
 
 ```ts
 {
   id: string;
-  email: string;
-  role: string;
-  active: boolean;
-  lastLoginAt: string | null;
+  name: string;
+  slug: string | null;
+  ownerId: string;
+  suspended: boolean;
+  suspendedAt: string | null;
+  suspensionReason: string | null;
   createdAt: string;
-} | null
-```
-
-- Frontend note: use on app boot to validate session.
-- Common errors: `401`, `403`
-
-### YouTube OAuth
-
-#### `GET /auth/youtube`
-
-- Auth: required
-- Role: `ADMIN`
-- Response: `302` redirect to Google OAuth consent URL.
-- Side effects: sets `yt_oauth_state` and `yt_oauth_email` HTTP-only cookies scoped to `/auth/youtube/callback`.
-- Frontend note: deprecated for browser dashboard navigation because full-page navigation cannot attach the bearer token. Prefer `POST /auth/youtube/connect`.
-- Common errors: `401`, `403`
-
-#### `POST /auth/youtube/connect`
-
-- Auth: required
-- Role: `ADMIN`
-- Body: none
-- Response:
-
-```ts
-{ url: string }
-```
-
-- Side effects: creates a short-lived pending OAuth state linked to the current admin. State expires after 10 minutes and is consumed once by the callback.
-- Frontend note: call with Axios/fetch using `Authorization: Bearer <token>`, then run `window.location.href = response.url` or open the URL in a popup.
-- Common errors: `401`, `403`
-
-#### `GET /auth/youtube/callback`
-
-- Auth: public
-- Query params:
-  - `code?: string` required by backend logic
-  - `state?: string` required to match a pending OAuth state or legacy state cookie
-- Response: plain text: `YouTube connected. You can close this tab.`
-- Frontend note: callback page is for Google redirect only. Do not attach a bearer token. Invalid or expired state returns `401`.
-- Common errors: `400`, `401`
-
-### Settings
-
-#### `GET /settings`
-
-- Auth: required
-- Role: `ADMIN`
-- Response:
-
-```ts
-{
-  id: "app";
-  automationEnabled: boolean;
-  verticalEnabled: boolean;
-  autoPublish: boolean;
-  timezone: string;
-  videosPerDay: number;
-  runHours: number[];
   updatedAt: string;
+  members: Array<{ role: "OWNER" }>;
 }
 ```
 
-- Frontend note: load once on Settings page and refresh after save.
-- Common errors: `401`, `403`
+Notes: `slug` is normalized to lowercase kebab-case, max 80 chars.
 
-#### `PATCH /settings`
+### `GET /workspaces`
 
-- Auth: required
-- Role: `ADMIN`
-- Body: all fields optional
+Auth: customer JWT.
 
-```ts
-{
-  automationEnabled?: boolean;
-  verticalEnabled?: boolean;
-  autoPublish?: boolean;
-  timezone?: string;   // valid IANA timezone
-  videosPerDay?: 1 | 2 | 3;
-  runHours?: number[]; // integers 0..23, non-empty
-}
-```
-
-- Response: updated settings object.
-- Frontend note: validate timezone and hour range client-side before submit.
-- Common errors: `400`, `401`, `403`
-
-### API Keys
-
-`provider` is Prisma `IntegrationProvider`:
-
-```ts
-"GOOGLE" | "OPENAI" | "DIGISTORE" | "CLICKBANK" | "YOUTUBE" | "SHOTSTACK"
-```
-
-#### `GET /settings/api-keys`
-
-- Auth: required
-- Role: `ADMIN`
-- Response:
+Response:
 
 ```ts
 Array<{
-  provider: string;
-  masked: string;
-  updatedAt: string;
+  id: string;
+  name: string;
+  slug: string | null;
   createdAt: string;
+  updatedAt: string;
+  role: WorkspaceRole;
 }>
 ```
 
-- Frontend note: secrets are never returned.
-- Common errors: `401`, `403`
+### `GET /workspaces/:workspaceId`
 
-#### `PUT /settings/api-keys/:provider`
+Auth: customer JWT and workspace membership.
 
-- Auth: required
-- Role: `ADMIN`
-- Params: `provider`
-- Body:
+Response: `{ id: string; role: WorkspaceRole }`
 
-```ts
-{ key: string } // min length 6
-```
+### `GET /workspaces/:workspaceId/dashboard`
 
-- Response:
+Auth: customer JWT and workspace membership.
+
+Response:
 
 ```ts
-{ provider: string; masked: string; updatedAt: string }
+{
+  workspace: { id: string; name: string; slug: string | null };
+  counts: {
+    offers: number;
+    topics: number;
+    scripts: number;
+    videoJobs: number;
+    published: number;
+  };
+  youtube: YoutubeDiagnostics;
+}
 ```
 
-- Frontend note: clear the plaintext input after success.
-- Common errors: `400`, `401`, `403`
+### `GET /workspaces/:workspaceId/youtube`
 
-#### `DELETE /settings/api-keys/:provider`
+Auth: customer JWT and workspace membership.
 
-- Auth: required
-- Role: `ADMIN`
-- Params: `provider`
-- Response: `{ ok: true }`
-- Frontend note: require confirmation before deleting.
-- Common errors: `400`, `401`, `403`
+Response:
 
-### Offers
+```ts
+type YoutubeDiagnostics = {
+  connected: boolean;
+  channelId: string | null;
+  title: string | null;
+  customUrl: string | null;
+  subscriberCount: string | null;
+  videoCount: string | null;
+  statistics: {
+    viewCount: string | null;
+    subscriberCount: string | null;
+    hiddenSubscriberCount: boolean | null;
+    videoCount: string | null;
+  } | null;
+  targetChannelId: string | null;
+  channelMatchesTarget: boolean | null;
+  scope: string | null;
+  tokenStorage: {
+    encryptedDbConfigured: boolean;
+    encryptedDbUpdatedAt: string | null;
+    legacyFilePresent: boolean;
+    legacyFileWriteFallbackEnabled: boolean;
+  };
+  error: string | null;
+}
+```
+
+Workspace YouTube diagnostics always return `targetChannelId: null`, `channelMatchesTarget: null`, `legacyFilePresent: false`, and `legacyFileWriteFallbackEnabled: false`.
+
+### `POST /workspaces/:workspaceId/youtube/connect`
+
+Auth: customer JWT and workspace `OWNER` or `ADMIN`. Throttled at 10/min.
+
+Request: none.
+
+Response: `{ url: string }`
+
+Frontend flow: call with customer bearer token, navigate/popup to `url`, then Google redirects to `/workspaces/youtube/callback`.
+
+### `DELETE /workspaces/:workspaceId/youtube`
+
+Auth: customer JWT and workspace `OWNER` or `ADMIN`.
+
+Response: `{ connected: false }`
+
+### `GET /workspaces/youtube/callback`
+
+Auth: public. Throttled at 30/min.
+
+Query: `{ code: string; state: string }`
+
+Response: plain text `YouTube connected. You can close this tab.`
+
+Notes: state expires after 10 minutes and validates that the original user still has workspace `OWNER` or `ADMIN`.
+
+## Customer Product / Offer API
+
+All `/offers` routes require customer JWT, verified email, workspace membership, and `x-workspace-id`.
 
 Supported networks:
 
 ```ts
-"digistore24" | "clickbank"
+type OfferNetwork = "digistore24" | "clickbank";
 ```
 
-Supported niches:
+Supported niches/categories:
 
 ```ts
-"sleep" | "weight-loss" | "energy" | "stress" | "gut-health" | "focus" |
-"fitness" | "hormones" | "memory" | "mens-health" | "dental-health" |
-"joint-health" | "hearing-health"
-```
-
-#### `GET /offers`
-
-- Auth: required
-- Role: `ADMIN`
-- Query params:
-
-```ts
-{
-  page?: number;      // default 1
-  limit?: number;     // default 50, max 100
-  network?: "digistore24" | "clickbank";
-  nicheTag?: OfferNiche;
-  active?: boolean;
-  q?: string;
-}
-```
-
-- Response: `PaginatedResponse<OfferSummary>`
-- Frontend note: use for offer management and manual job creation selectors.
-- Common errors: `400`, `401`, `403`
-
-#### `GET /offers/:id`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: `OfferSummary`
-- Frontend note: show counts and raw affiliate metadata; do not expose publicly.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /offers`
-
-- Auth: required
-- Role: `ADMIN`
-- Body:
-
-```ts
-{
-  network: "digistore24" | "clickbank";
-  name: string;
-  hoplink: string; // valid http(s) URL
-  nicheTag?: OfferNiche;
-  externalProductId?: string;
-  active?: boolean; // default true
-}
-```
-
-- Response: created offer.
-- Frontend note: Digistore24 should include `externalProductId` when available so webhooks can fall back from `product_id`.
-- Common errors: `400`, `401`, `403`
-
-#### `PATCH /offers/:id`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Body: partial create body; at least one field required.
-- Response: updated offer.
-- Frontend note: require confirmation before changing `network` or `hoplink` on an offer with history.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /offers/:id/deactivate`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: updated offer with `active: false`.
-- Frontend note: deactivation preserves click/conversion/job history and removes the offer from future orchestration.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /offers/:id/reactivate`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: updated offer with `active: true`.
-- Frontend note: reactivated offers can be selected by orchestration again.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `GET /offers/:id/performance`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response:
-
-```ts
-{
-  offer: OfferSummary;
-  totals: {
-    clicks: number;
-    conversions: number;
-    videoJobs: number;
-    conversionRate: number;
-    revenueByCurrency: Array<{
-      currency: string;
-      conversions: number;
-      amount: number;
-    }>;
-  };
-  recent: {
-    lastClickAt: string | null;
-    lastConversionAt: string | null;
-  };
-}
-```
-
-- Frontend note: useful for offer detail, analytics cards, and deciding which offers to deactivate.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /offers/:id/test-redirect`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Body: none
-- Response:
-
-```ts
-{
-  offerId: string;
-  network: "digistore24" | "clickbank" | string;
-  hoplink: string;
-  previewClickId: string;
-  redirectUrl: string;
-  createsClick: false;
-}
-```
-
-- Frontend note: this previews the affiliate URL with a synthetic click id. It does not call `GET /r/:offerId` and does not create a `Click`.
-- Common errors: `400`, `401`, `403`, `404`
-
-### Automation Topics
-
-#### `POST /automation/topics`
-
-- Auth: required
-- Role: `ADMIN`
-- Body:
-
-```ts
-{
-  title: string;
-  source?: string; // default "manual"
-  score?: number;  // 0..100, default 50
-}
-```
-
-- Response: `Topic`
-
-```ts
-{
-  id: string;
-  title: string;
-  source: string;
-  score: number;
-  status: "PENDING" | "USED" | "REJECTED";
-  createdAt: string;
-  updatedAt: string;
-}
-```
-
-- Frontend note: duplicate titles return the existing topic.
-- Common errors: `400`, `401`, `403`
-
-#### `GET /automation/topics`
-
-- Auth: required
-- Role: `ADMIN`
-- Response: `Topic[]`, newest first.
-- Frontend note: no pagination currently; avoid frequent polling if topic count grows.
-- Common errors: `401`, `403`
-
-#### `GET /automation/topics/pending`
-
-- Auth: required
-- Role: `ADMIN`
-- Response: up to 5 pending topics.
-- Frontend note: useful for dashboard queue widgets.
-- Common errors: `401`, `403`
-
-#### `PATCH /automation/topics/:id/used`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: updated topic with `status: "USED"`.
-- Frontend note: manual operation; confirm if topic state matters to scheduling.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /automation/ingest`
-
-- Auth: required
-- Role: `ADMIN`
-- Response: implementation-dependent, usually `{ ok: true, created: number }`.
-- Frontend note: manual operation to fill pending topic pool; confirm before triggering.
-- Common errors: `401`, `403`, provider/config errors
-
-#### `POST /automation/topics/seed`
-
-- Auth: required
-- Role: `ADMIN`
-- Response: `{ ok: true; created: number }`
-- Frontend note: development/admin bootstrap action; require confirmation.
-- Common errors: `401`, `403`
-
-### Scripts
-
-Script shape returned by list can include all Prisma `Script` fields:
-
-```ts
-{
-  id: string;
-  topicId: string;
-  promptVer: string;
-  content: string;
-  outputHash: string;
-  reviewStatus: "PENDING" | "APPROVED" | "NEEDS_REVIEW" | "REJECTED" | string;
-  qualityScore: number | null;
-  qualityReview: unknown | null;
-  titleCandidates: unknown | null;
-  selectedTitle: string | null;
-  youtubeDescription: string | null;
-  hashtags: string[];
-  thumbnailPrompt: string | null;
-  thumbnailImageUrl: string | null;
-  thumbnailStatus: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
-  thumbnailError: string | null;
-  thumbnailGeneratedAt: string | null;
-  rewriteAttempts: number;
-  createdAt: string;
-}
-```
-
-#### `POST /automation/scripts`
-
-- Auth: required
-- Role: `ADMIN`
-- Body:
-
-```ts
-{ topicId: string; content: string }
-```
-
-- Response: created/reused reviewed script.
-- Frontend note: backend runs content-quality review and may rewrite content before persisting.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /automation/scripts/ai`
-
-- Auth: required
-- Role: `ADMIN`
-- Body:
-
-```ts
-{ topicId: string; topic: string }
-```
-
-- Response: created/reused AI-generated reviewed script.
-- Frontend note: long-running provider call; show loading state and do not double-submit.
-- Common errors: `400`, `401`, `403`, provider/config errors
-
-#### `GET /automation/scripts`
-
-- Auth: required
-- Role: `ADMIN`
-- Response: `Script[]`, newest first.
-- Frontend note: no pagination; use sparingly or add pagination later.
-- Common errors: `401`, `403`
-
-#### `GET /automation/scripts/:id`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: selected script fields including quality metadata.
-- Frontend note: use for script detail/review screen.
-- Common errors: `400`, `401`, `403`, `404`
-
-### Script Quality Review
-
-#### `GET /automation/scripts/:id/quality`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response:
-
-```ts
-{
-  id: string;
-  topicId: string;
-  reviewStatus: "APPROVED" | "NEEDS_REVIEW" | "REJECTED" | "PENDING" | string;
-  qualityScore: number | null;
-  qualityReview: {
-    score?: number;
-    issues?: string[];
-    strengths?: string[];
-    dimensions?: Record<string, number>;
-    adminReview?: { status: string; note: string | null; reviewedAt: string };
-    [key: string]: unknown;
-  } | null;
-  titleCandidates: unknown | null;
-  selectedTitle: string | null;
-  youtubeDescription: string | null;
-  hashtags: string[];
-  thumbnailPrompt: string | null;
-  thumbnailImageUrl: string | null;
-  thumbnailStatus: string;
-  thumbnailError: string | null;
-  thumbnailGeneratedAt: string | null;
-  rewriteAttempts: number;
-  createdAt: string;
-}
-```
-
-- Frontend note: display score, issues, strengths, metadata, and current gate status.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `PATCH /automation/scripts/:id/review-status`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Body:
-
-```ts
-{
-  reviewStatus?: "APPROVED" | "NEEDS_REVIEW" | "REJECTED"; // defaults to APPROVED if omitted
-  note?: string; // max 1000 chars
-}
-```
-
-- Response: updated review metadata.
-- Frontend note: this is the manual override. `APPROVED` allows automatic render and publish. Require confirmation for approve/reject.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /automation/scripts/:id/review`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: refreshed quality metadata.
-- Frontend note: re-runs script quality review and rewrite attempts. It updates the thumbnail prompt but does not generate the image.
-- Common errors: `400`, `401`, `403`, `404`, provider/config errors
-
-### Thumbnails
-
-Thumbnail metadata shape:
-
-```ts
-{
-  target: "script" | "job";
-  id: string;
-  scriptId: string | null;
-  jobId: string | null;
-  thumbnailPrompt: string | null;
-  thumbnailImageUrl: string | null;
-  thumbnailStatus: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
-  thumbnailError: string | null;
-  thumbnailGeneratedAt: string | null;
-}
-```
-
-Thumbnail generation body:
-
-```ts
-{
-  prompt?: string; // optional override, max 1500 chars
-}
-```
-
-The backend wraps prompts with safety constraints: vertical portrait composition, clear central subject, high contrast, no text, no logo, no watermark, no medical claim text, and not misleading.
-
-#### `GET /automation/scripts/:id/thumbnail`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: thumbnail metadata shape.
-- Frontend note: use on Script Review page to show prompt, status, image preview, and provider errors.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /automation/scripts/:id/thumbnail`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Body: optional thumbnail generation body.
-- Response: thumbnail metadata shape.
-- Frontend note: manual image generation for a script. Does not upload the thumbnail to YouTube. If provider generation fails, the response can be `thumbnailStatus: "FAILED"` with `thumbnailError`.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `PATCH /automation/scripts/:id/thumbnail`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Body: optional thumbnail generation body.
-- Response: thumbnail metadata shape.
-- Frontend note: regenerate/replace script thumbnail metadata. Require confirmation if replacing a ready image.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `GET /automation/videos/:id/thumbnail`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: thumbnail metadata shape. Falls back to the linked script thumbnail metadata when job-level thumbnail fields are empty.
-- Frontend note: use on job/video detail pages.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /automation/videos/:id/thumbnail`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Body: optional thumbnail generation body.
-- Response: thumbnail metadata shape.
-- Frontend note: manual job-specific thumbnail generation. Does not upload the thumbnail to YouTube and does not block publishing.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `PATCH /automation/videos/:id/thumbnail`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Body: optional thumbnail generation body.
-- Response: thumbnail metadata shape.
-- Frontend note: regenerate/replace job-specific thumbnail metadata. Require confirmation if replacing a ready image.
-- Common errors: `400`, `401`, `403`, `404`
-
-### Orchestrator
-
-Run slot body:
-
-```ts
-{
-  slot: "MORNING" | "AFTERNOON" | "EVENING";
-  scheduledFor?: string; // ISO date-time
-  force?: boolean;       // jobs run-slot only
-}
-```
-
-#### `POST /automation/orchestrator/run`
-
-- Auth: required
-- Role: `ADMIN`
-- Body: run slot body.
-- Response: orchestrator result, commonly:
-
-```ts
-{
-  ok: boolean;
-  slot: string;
-  jobId?: string;
-  skipped?: boolean;
-  reason?: string;
-}
-```
-
-- Frontend note: manual operation; may create a render job only if script passes quality gate.
-- Common errors: `400`, `401`, `403`, `409`, provider/config errors
-
-#### `POST /automation/orchestrator/run-now`
-
-- Auth: required
-- Role: `ADMIN`
-- Body: `{ slot }`; `scheduledFor` is ignored.
-- Response: same as `/run`.
-- Frontend note: manual immediate run; confirm before calling.
-- Common errors: same as `/run`
-
-### Jobs
-
-#### `GET /automation/jobs`
-
-- Auth: required
-- Role: `ADMIN`
-- Query:
-
-```ts
-{
-  page?: number;       // default 1
-  limit?: number;      // default 20, max 100
-  status?: VideoJobStatus;
-  published?: boolean; // accepts true/"true"
-  slot?: "MORNING" | "AFTERNOON" | "EVENING";
-  from?: string;       // ISO date-time
-  to?: string;         // ISO date-time
-  q?: string;          // topic/offer search
-}
-```
-
-- Response: `PaginatedResponse<VideoJobSummary>`
-- Frontend note: primary jobs list endpoint. Poll moderately while workers are active.
-- Common errors: `400`, `401`, `403`
-
-#### `GET /automation/jobs/summary`
-
-- Auth: required
-- Role: `ADMIN`
-- Response:
-
-```ts
-{ failedToday: number; stuckProcessing: number }
-```
-
-- Frontend note: dashboard alert counters.
-- Common errors: `401`, `403`
-
-#### `GET /automation/jobs/workers/status`
-
-- Auth: required
-- Role: `ADMIN`
-- Response:
-
-```ts
-{
-  workersEnabled: boolean;
-  automationEnabled: boolean;
-  autoPublish: boolean;
-  timezone: string;
-  runHours: number[];
-  videosPerDay: number;
-  activeSchedule: Array<{ slot: string; hour: number; scheduledFor: string }>;
-  pauseState: {
-    newRenderStartsPaused: boolean;
-    publishingPaused: boolean;
-  };
-  queues: {
-    pendingRender: number;
-    processingRender: number;
-    readyToPublish: number;
-    activeLeases: number;
-    staleLeases: number;
-    failedToday: number;
-  };
-  youtube: { tokenStorage: unknown };
-  recentWorkerEvents: PipelineEvent[];
-  checkedAt: string;
-}
-```
-
-- Frontend note: poll on dashboard/worker panel every 15-30 seconds.
-- Common errors: `401`, `403`
-
-#### `GET /automation/jobs/:id`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: `VideoJobSummary`
-- Frontend note: use for job detail drawer/page.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `GET /automation/jobs/:id/assets`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response:
-
-```ts
-{
-  job: VideoJobSummary;
-  script: {
-    id: string;
-    content: string;
-    promptVer: string;
-    createdAt: string;
-    topic: { id: string; title: string } | null;
-  } | null;
-  captionsSrt: string | null;
-}
-```
-
-- Frontend note: use for script/captions/video asset panel.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /automation/jobs/run-slot`
-
-- Auth: required
-- Role: `ADMIN`
-- Body: `{ slot: "MORNING" | "AFTERNOON" | "EVENING"; scheduledFor?: string; force?: boolean }`
-- Response:
-
-```ts
-{
-  ok: true;
-  queued: true;
-  slot: string;
-  scheduledFor: string;
-  force: boolean;
-  note: string;
-}
-```
-
-- Frontend note: async fire-and-return. After success, poll jobs and worker status. Use `force: true` only from a confirmed admin recovery action. Force reruns reset an existing same-slot job only when its status is `FAILED`, `FAILED_PUBLISH`, `FAILED_PERMANENT`, or `CANCELLED`; successful, pending, and processing jobs are not duplicated.
-- Common errors: `400`, `401`, `403`
-
-#### `POST /automation/jobs/:id/cancel`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Body: optional `{ status?: "CANCELLED" | "FAILED_PERMANENT" }`; defaults to `CANCELLED`.
-- Response: `{ ok: true }`
-- Frontend note: expose on failed/stuck job detail views with confirmation. This clears worker lease fields and raises attempts so workers will not retry the job.
-- Common errors: `400`, `401`, `403`, `404`, `409`
-
-#### `POST /automation/jobs/:id/reset-render`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Body: none
-- Response: `{ ok: true }`
-- Frontend note: expose on failed job detail views with confirmation. Allowed for `FAILED`, `FAILED_PUBLISH`, `FAILED_PERMANENT`, `FAILED_QUOTA`, and `CANCELLED`; it keeps the same script, offer, slot, and scheduledFor, but clears render/publish IDs, attempts, error, and worker lease fields before setting status to `PENDING`.
-- Common errors: `400`, `401`, `403`, `404`, `409`
-
-#### `POST /automation/jobs/:id/retry`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: `{ ok: true }`
-- Frontend note: require confirmation; only makes sense for failed/stuck jobs.
-- Common errors: `400`, `401`, `403`, `404`
-
-### Videos
-
-#### `GET /automation/videos`
-
-- Auth: required
-- Role: `ADMIN`
-- Query:
-
-```ts
-{
-  page?: number;
-  limit?: number; // max 100
-  status?: VideoJobStatus;
-  published?: boolean;
-  q?: string;
-}
-```
-
-- Response: `PaginatedResponse<VideoJobSummary>`
-- Frontend note: videos page can use this instead of jobs when focused on rendered/published videos.
-- Common errors: `400`, `401`, `403`
-
-#### `POST /automation/videos`
-
-- Auth: required
-- Role: `ADMIN`
-- Body:
-
-```ts
-{
-  jobId: string;
-  videoUrl: string;
-  youtubeUrl?: string;
-  status?: VideoJobStatus;
-  published?: boolean;
-}
-```
-
-- Response: `VideoJobSummary`
-- Frontend note: manual registration endpoint. Usually not used by normal dashboard except admin recovery tools.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `POST /automation/videos/:scriptId`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `scriptId` UUID
-- Body:
-
-```ts
-{
-  offerId?: string;
-  slot?: "MORNING" | "AFTERNOON" | "EVENING"; // default MORNING
-  scheduledFor?: string; // ISO date-time, default now
-}
-```
-
-- Response:
-
-```ts
-{ jobId: string; renderId: string; resumed?: boolean }
-```
-
-- Frontend note: starts render immediately. Blocked unless script review status is `APPROVED`.
-- Common errors: `400`, `401`, `403`, `404`, `409`
-
-#### `PATCH /automation/videos/:id/published`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: `VideoJobSummary`
-- Frontend note: manual override. Require confirmation because it marks job published.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `PATCH /automation/videos/:id/failed`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response: `VideoJobSummary`
-- Frontend note: manual override. Require confirmation.
-- Common errors: `400`, `401`, `403`, `404`
-
-#### `GET /automation/videos/:id/assets`
-
-- Auth: required
-- Role: `ADMIN`
-- Params: `id` UUID
-- Response:
-
-```ts
-{
-  job: VideoJobSummary;
-  script: {
-    id: string;
-    content: string;
-    promptVer: string;
-    createdAt: string;
-    topic: { id: string; title: string } | null;
-  } | null;
-  offer: { id: string; name: string; externalProductId: string | null } | null;
-  captionsSrt: string | null;
-}
-```
-
-- Frontend note: asset preview/detail endpoint.
-- Common errors: `400`, `401`, `403`, `404`
-
-### Workflow
-
-#### `GET /automation/workflow/status`
-
-- Auth: required
-- Role: `ADMIN`
-- Response:
-
-```ts
-{
-  date: string;
-  steps: Array<{ key: "trigger" | "topics" | "offers" | "scripts" | "render" | "publish" | "logging"; status: "pending" | "active" | "done" }>;
-  slots: Record<"MORNING" | "AFTERNOON" | "EVENING", {
-    steps: Array<{ key: string; status: "pending" | "active" | "done" }>;
-    jobs: number;
-  }>;
-  summary: { jobs: number; published: boolean; failed: boolean };
-}
-```
-
-- Frontend note: dashboard pipeline visualization. Poll every 15-30 seconds while active.
-- Common errors: `401`, `403`
-
-### Analytics
-
-#### `GET /automation/analytics/weekly`
-
-- Auth: required
-- Role: `ADMIN`
-- Query:
-  - `days?: string | number` clamped 1..30, default 7
-  - `tz?: string` IANA timezone, default `America/New_York`
-- Response:
-
-```ts
-{
-  timeZone: string;
-  range: { from: string; to: string; days: number };
-  points: Array<{ date: string; day: string; clicks: number; conversions: number; revenue: number }>;
-  totals: { clicks: number; conversions: number; revenue: number };
-}
-```
-
-- Frontend note: analytics charts/cards. Do not poll frequently; refresh on page load or filter change.
-- Common errors: `401`, `403`
-
-### Monitoring
-
-#### `GET /monitoring/pipeline/health`
-
-- Auth: required
-- Role: `ADMIN`
-- Response: `{ ok: true; route: "monitoring/pipeline"; timestamp: string }`
-- Frontend note: admin health check.
-- Common errors: `401`, `403`
-
-#### `GET /monitoring/pipeline/events`
-
-- Auth: required
-- Role: `ADMIN`
-- Query:
-
-```ts
-{
-  limit?: number; // 1..200, default 50
-  stage?: "IMAGE_GENERATION" | "RENDER" | "PUBLISH" | "TRACKING" | "CONVERSION";
-  severity?: "INFO" | "WARN" | "ERROR";
-  status?: string;
-  jobId?: string;
-  offerId?: string;
-  clickId?: string;
-  provider?: string;
-  sinceHours?: number;
-}
-```
-
-- Response: `PipelineEvent[]`
-- Frontend note: monitoring/events page; poll only when live mode is enabled.
-- Common errors: `400`, `401`, `403`
-
-#### `GET /monitoring/pipeline/summary`
-
-- Auth: required
-- Role: `ADMIN`
-- Query: `{ hours?: number }`
-- Response:
-
-```ts
-{
-  since: string;
-  hours: number;
-  totals: { events: number; errors: number; warns: number };
-  byStage: Record<string, { total: number; errors: number; warns: number; lastEventAt: string | null }>;
-}
-```
-
-- Frontend note: dashboard health cards.
-- Common errors: `400`, `401`, `403`
-
-### Publishing
-
-#### `POST /automation/publish-result`
-
-- Auth: required
-- Role: `ADMIN`
-- Body:
-
-```ts
-{
-  jobId?: string;
-  videoId?: string;
-  platform: string;
-  platformPostId: string;
-  status: "SUCCESS" | "FAILED";
-  errorMessage?: string;
-}
-```
-
-- Response: updated `VideoJob` database row.
-- Frontend note: manual/external publishing integration endpoint. Normal auto-publish uses the worker.
-- Common errors: `400`, `401`, `403`, `404`
-
-### Tracking
-
-#### `GET /r/:offerId`
-
-- Auth: public
-- Params: `offerId` UUID
-- Query:
-  - `jobId?: string` UUID
-  - `yt?: string` YouTube video ID
-- Response: `302` redirect to affiliate offer URL. On failure, `500` plain text `Tracking redirect failed`.
-- Frontend note: public viewer endpoint used in YouTube descriptions. Do not call from dashboard except to display/copy links.
-- Common errors: `400`, `500`
-
-### Webhooks
-
-#### `POST /webhooks/digistore24`
-
-- Auth: public
-- Body: `application/x-www-form-urlencoded` Digistore24 IPN payload.
-- Response: plain text `OK` for accepted, ignored, connection test, and logged failures.
-- Frontend note: not a dashboard endpoint. Provider posts here.
-- Common errors: intentionally hidden from provider; backend logs monitoring events instead.
-
-#### `POST /webhooks/clickbank?key=:key`
-
-- Auth: public
-- Query:
-  - `key?: string` required when `CLICKBANK_INS_ENABLED=true`
-- Body: ClickBank INS JSON payload. Uses `tid`/`TID` for attribution.
-- Response: plain text `OK` for accepted, ignored, rejected, and logged failures.
-- Frontend note: not a dashboard endpoint. Provider posts here.
-- Common errors: intentionally returns `OK` to avoid retry storms; inspect monitoring events for failures.
-
-## Frontend Page Mapping
-
-### Login Page
-
-Endpoints:
-
-- `POST /auth/login`
-- `GET /auth/me` after token restore
-
-UI states:
-
-- Empty form, submitting, invalid credentials, throttled, authenticated redirect.
-
-Actions/buttons:
-
-- Sign in.
-
-### Dashboard Page
-
-Endpoints:
-
-- `GET /automation/workflow/status`
-- `GET /automation/jobs/workers/status`
-- `GET /automation/jobs/summary`
-- `GET /monitoring/pipeline/summary`
-- `GET /automation/analytics/weekly`
-
-UI states:
-
-- Loading, automation paused, publishing paused, active queues, failed jobs, provider/config warnings.
-
-Actions/buttons:
-
-- Refresh, run slot, open failed jobs, open settings.
-
-### Settings Page
-
-Endpoints:
-
-- `GET /settings`
-- `PATCH /settings`
-
-UI states:
-
-- Loading, dirty form, saving, validation errors, saved.
-
-Actions/buttons:
-
-- Save settings, reset form.
-
-### API Keys Page
-
-Endpoints:
-
-- `GET /settings/api-keys`
-- `PUT /settings/api-keys/:provider`
-- `DELETE /settings/api-keys/:provider`
-
-UI states:
-
-- Provider configured/unconfigured, saving, deleting, confirmation modal.
-
-Actions/buttons:
-
-- Save key, replace key, delete key.
-
-### Offers Page
-
-Endpoints:
-
-- `GET /offers`
-- `GET /offers/:id`
-- `POST /offers`
-- `PATCH /offers/:id`
-- `POST /offers/:id/deactivate`
-- `POST /offers/:id/reactivate`
-- `GET /offers/:id/performance`
-- `POST /offers/:id/test-redirect`
-
-UI states:
-
-- Empty after reset, loading, filtered by network/niche/active state, validation errors, inactive offer, performance loaded.
-
-Actions/buttons:
-
-- Create offer, edit offer, deactivate/reactivate, test redirect, open performance.
-
-### YouTube Connection Page
-
-Endpoints:
-
-- `GET /auth/youtube`
-- `POST /auth/youtube/connect`
-- `GET /auth/youtube/callback` is handled by Google redirect.
-- `GET /automation/jobs/workers/status` for `youtube.tokenStorage`.
-
-Frontend flow:
-
-1. Call `POST /auth/youtube/connect` with the admin bearer token.
-2. Redirect the browser or popup to the returned `url`.
-3. Let Google return to `GET /auth/youtube/callback`; do not send a bearer token on the callback.
-
-UI states:
-
-- Not connected/unknown, connecting, connected, token storage warning.
-
-Actions/buttons:
-
-- Connect YouTube. Use browser navigation or popup.
-
-### Jobs List Page
-
-Endpoints:
-
-- `GET /automation/jobs`
-- `GET /automation/jobs/summary`
-- `POST /automation/jobs/:id/retry`
-
-UI states:
-
-- Empty, filtering, active processing, failed, stale lease, published.
-
-Actions/buttons:
-
-- Filter, refresh, retry failed job, open job detail.
-
-### Job Detail Page
-
-Endpoints:
-
-- `GET /automation/jobs/:id`
-- `GET /automation/jobs/:id/assets`
-- `POST /automation/jobs/:id/retry`
-- `PATCH /automation/videos/:id/failed`
-- `PATCH /automation/videos/:id/published`
-
-UI states:
-
-- Loading, missing assets, render pending, publish pending, failed, published.
-
-Actions/buttons:
-
-- Retry, mark failed, mark published, copy YouTube URL, view script/captions.
-
-### Script Review Page
-
-Endpoints:
-
-- `GET /automation/scripts`
-- `GET /automation/scripts/:id`
-- `GET /automation/scripts/:id/quality`
-- `PATCH /automation/scripts/:id/review-status`
-- `POST /automation/scripts/:id/review`
-- `GET /automation/scripts/:id/thumbnail`
-- `POST /automation/scripts/:id/thumbnail`
-- `PATCH /automation/scripts/:id/thumbnail`
-- `POST /automation/videos/:scriptId`
-
-UI states:
-
-- Needs review, rejected, approved, re-reviewing, thumbnail pending/generating/ready/failed, render blocked, render started.
-
-Actions/buttons:
-
-- Approve, reject, send back to needs review, regenerate/re-review, generate/regenerate thumbnail, start render.
-
-### Videos Page
-
-Endpoints:
-
-- `GET /automation/videos`
-- `GET /automation/videos/:id/assets`
-- `GET /automation/videos/:id/thumbnail`
-- `POST /automation/videos/:id/thumbnail`
-- `PATCH /automation/videos/:id/thumbnail`
-- `POST /automation/videos`
-- `PATCH /automation/videos/:id/published`
-- `PATCH /automation/videos/:id/failed`
-
-UI states:
-
-- Rendered, unrendered, published, unpublished, failed, thumbnail pending/generating/ready/failed.
-
-Actions/buttons:
-
-- Refresh, open assets, generate/regenerate thumbnail, register video manually, mark published, mark failed.
-
-### Monitoring/Events Page
-
-Endpoints:
-
-- `GET /monitoring/pipeline/events`
-- `GET /monitoring/pipeline/summary`
-- `GET /monitoring/pipeline/health`
-
-UI states:
-
-- Live polling on/off, filtered events, errors/warnings, empty.
-
-Actions/buttons:
-
-- Filter, refresh, toggle live mode, open related job.
-
-### Analytics Page
-
-Endpoints:
-
-- `GET /automation/analytics/weekly`
-
-UI states:
-
-- Loading, empty range, chart data, timezone/range selected.
-
-Actions/buttons:
-
-- Change days, change timezone, refresh.
-
-### Manual Operations Page
-
-Endpoints:
-
-- `POST /automation/orchestrator/run`
-- `POST /automation/orchestrator/run-now`
-- `POST /automation/jobs/run-slot`
-- `POST /automation/ingest`
-- `POST /automation/topics/seed`
-- `POST /automation/publish-result`
-
-UI states:
-
-- Confirming, queued, completed, failed, quality-gate blocked.
-
-Actions/buttons:
-
-- Run scheduled slot, run now, ingest topics, seed topics, register publish result.
-
-## Suggested TypeScript Frontend Types
-
-```ts
-export interface Admin {
-  id: string;
-  email: string;
-  role: "ADMIN" | string;
-  active?: boolean;
-  lastLoginAt?: string | null;
-  createdAt?: string;
-}
-
-export interface AuthResponse {
-  accessToken: string;
-  admin: Admin;
-}
-
-export interface AppSettings {
-  id: "app";
-  automationEnabled: boolean;
-  verticalEnabled: boolean;
-  autoPublish: boolean;
-  timezone: string;
-  videosPerDay: number;
-  runHours: number[];
-  updatedAt: string;
-}
-
-export type ApiKeyProvider =
-  | "GOOGLE"
-  | "OPENAI"
-  | "DIGISTORE"
-  | "CLICKBANK"
-  | "YOUTUBE"
-  | "SHOTSTACK";
-
-export interface ApiKeySummary {
-  provider: ApiKeyProvider;
-  masked: string;
-  updatedAt: string;
-  createdAt?: string;
-}
-
-export type OfferNetwork = "digistore24" | "clickbank";
-export type OfferNiche =
+type OfferNiche =
   | "sleep"
   | "weight-loss"
   | "energy"
@@ -1528,54 +505,184 @@ export type OfferNiche =
   | "dental-health"
   | "joint-health"
   | "hearing-health";
+```
 
-export interface OfferSummary {
+Beginner-facing meanings:
+
+- Affiliate link: `hoplink`, the product URL that receives viewer traffic.
+- Network: `network`, the affiliate provider. ClickBank tracking uses `tid`; Digistore24 uses `custom`.
+- Niche/category: `nicheTag`, used for filtering and topic-offer matching.
+- Product description: no backend field exists. Use `name`, `nicheTag`, and wizard `prompt` for positioning copy.
+
+Offer shape:
+
+```ts
+{
   id: string;
-  network: OfferNetwork | string;
+  workspaceId: string | null;
+  network: OfferNetwork;
   externalProductId: string | null;
   name: string;
-  nicheTag: OfferNiche | string | null;
+  nicheTag: OfferNiche | null;
   hoplink: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
-  _count?: {
-    clicks: number;
-    conversions: number;
-    videoJobs: number;
-  };
+  _count?: { clicks: number; conversions: number; videoJobs: number };
 }
+```
 
-export interface OfferPerformance {
-  offer: OfferSummary;
+### `GET /offers`
+
+Auth: workspace membership.
+
+Query:
+
+```ts
+{
+  page?: number;      // default 1
+  limit?: number;     // default 50, max 100
+  network?: OfferNetwork;
+  nicheTag?: OfferNiche;
+  active?: boolean;
+  q?: string;
+}
+```
+
+Response: `{ items: Offer[]; page: number; limit: number; total: number }`
+
+### `GET /offers/:id`
+
+Auth: workspace membership.
+
+Params: `id` UUID.
+
+Response: `Offer`.
+
+### `POST /offers`
+
+Auth: workspace `OWNER` or `ADMIN`.
+
+Request:
+
+```ts
+{
+  network: OfferNetwork;
+  name: string;
+  hoplink: string; // valid http(s) URL
+  nicheTag?: OfferNiche;
+  externalProductId?: string;
+  active?: boolean; // default true
+}
+```
+
+Response: created `Offer`.
+
+### `PATCH /offers/:id`
+
+Auth: workspace `OWNER` or `ADMIN`.
+
+Request: partial create body; at least one field.
+
+```ts
+{
+  network?: OfferNetwork;
+  name?: string;
+  hoplink?: string;
+  nicheTag?: OfferNiche;
+  externalProductId?: string;
+  active?: boolean;
+}
+```
+
+Response: updated `Offer`.
+
+### `POST /offers/:id/deactivate`
+
+Auth: workspace `OWNER` or `ADMIN`.
+
+Response: updated `Offer` with `active: false`.
+
+### `POST /offers/:id/reactivate`
+
+Auth: workspace `OWNER` or `ADMIN`.
+
+Response: updated `Offer` with `active: true`.
+
+### `GET /offers/:id/performance`
+
+Auth: workspace membership.
+
+Response:
+
+```ts
+{
+  offer: Offer;
   totals: {
     clicks: number;
     conversions: number;
     videoJobs: number;
     conversionRate: number;
-    revenueByCurrency: Array<{
-      currency: string;
-      conversions: number;
-      amount: number;
-    }>;
+    revenueByCurrency: Array<{ currency: string; conversions: number; amount: number }>;
   };
-  recent: {
-    lastClickAt: string | null;
-    lastConversionAt: string | null;
-  };
+  recent: { lastClickAt: string | null; lastConversionAt: string | null };
 }
+```
 
-export type VideoJobStatus =
-  | "PENDING"
-  | "PROCESSING"
-  | "COMPLETED"
-  | "FAILED"
-  | "FAILED_PERMANENT"
-  | "FAILED_QUOTA"
-  | "FAILED_PUBLISH"
-  | "CANCELLED";
+### `POST /offers/:id/test-redirect`
 
-export interface VideoJobSummary {
+Auth: workspace membership.
+
+Response:
+
+```ts
+{
+  offerId: string;
+  network: OfferNetwork;
+  hoplink: string;
+  previewClickId: string;
+  redirectUrl: string;
+  createsClick: false;
+}
+```
+
+## Customer Video Wizard
+
+All routes here require customer JWT, verified email, workspace membership, and `x-workspace-id`.
+
+Customer render starts use `POST /automation/videos/:scriptId`. Do not call the admin manual render route from the customer app.
+
+Script shape:
+
+```ts
+{
+  id: string;
+  workspaceId: string | null;
+  topicId: string;
+  promptVer: string;
+  content: string;
+  outputHash: string;
+  reviewStatus: ScriptReviewStatus;
+  qualityScore: number | null;
+  qualityReview: unknown | null;
+  titleCandidates: unknown | null;
+  selectedTitle: string | null;
+  youtubeDescription: string | null;
+  hashtags: string[];
+  thumbnailPrompt: string | null;
+  thumbnailImageUrl: string | null;
+  thumbnailStatus: ThumbnailStatus | string;
+  thumbnailError: string | null;
+  thumbnailGeneratedAt: string | null;
+  rewriteAttempts: number;
+  createdAt: string;
+}
+```
+
+Customer video status shape:
+
+```ts
+{
   id: string;
   scriptId: string;
   topicId: string | null;
@@ -1583,11 +690,11 @@ export interface VideoJobSummary {
   title: string;
   offerId: string | null;
   offerName: string | null;
-  status: VideoJobStatus | string;
+  status: VideoJobStatus;
   provider: string | null;
   published: boolean;
   platform: "youtube" | null;
-  slot: "MORNING" | "AFTERNOON" | "EVENING";
+  slot: RunSlot;
   scheduledFor: string;
   createdAt: string;
   attempts: number;
@@ -1597,205 +704,687 @@ export interface VideoJobSummary {
   youtubeUrl: string | null;
   youtubeVideoId: string | null;
   hasCaptions: boolean;
-  worker: {
-    lockedAt: string | null;
-    lockedBy: string | null;
-    stage: string | null;
+  worker: { lockedAt: string | null; lockedBy: string | null; stage: string | null };
+  thumbnail: {
+    prompt: string | null;
+    imageUrl: string | null;
+    status: ThumbnailStatus | string;
+    error: string | null;
+    generatedAt: string | null;
   };
+  qa: {
+    durationSeconds: number | null;
+    sceneCount: number | null;
+    hasBurnedSubtitles: boolean;
+    hasTrackingLink: boolean;
+    shotstackPayloadDebugPath: string | null;
+  };
+  renderStatus: "NOT_STARTED" | "SUBMITTED" | "PROCESSING" | "READY";
+  progress: number | null;
+  trackingUrl: string | null;
 }
+```
 
-export interface ScriptQuality {
+Status and failure fields:
+
+- `PENDING`: job exists, waiting for render.
+- `PROCESSING`: render submitted/in progress.
+- `COMPLETED`: render complete; `videoUrl` should be available before publish.
+- `FAILED`, `FAILED_PERMANENT`, `FAILED_QUOTA`, `FAILED_PUBLISH`: show `error`.
+- `CANCELLED`: stopped by admin.
+- Thumbnail failures use `thumbnail.status: "FAILED"` and `thumbnail.error`.
+
+Polling:
+
+- Poll `GET /automation/videos/:id` every 10-15 seconds while `PENDING` or `PROCESSING`.
+- Stop when `COMPLETED` with `videoUrl`, any `FAILED*`, or `CANCELLED`.
+- After publish, poll until `published: true` and `youtubeUrl` exists, or failure appears.
+
+### `POST /automation/scripts/ai-from-offer`
+
+Auth: workspace membership. Throttled at 20/min.
+
+Request:
+
+```ts
+{
+  offerId: string; // UUID; offer must belong to active workspace
+  topic?: string;  // min 1, max 240
+  prompt?: string; // max 1000
+}
+```
+
+Response: `Script`.
+
+Notes: creates/reuses a `Topic` with `source: "wizard"` and consumes one AI generation for billable workspaces.
+
+### `PATCH /automation/scripts/:id`
+
+Auth: workspace `OWNER` or `ADMIN`.
+
+Request:
+
+```ts
+{
+  title?: string;       // max 120; maps to selectedTitle
+  content?: string;
+  description?: string; // max 4500; maps to youtubeDescription
+  hashtags?: string[];  // normalized and max 18
+}
+```
+
+Response: updated script subset with content, review, metadata, thumbnail fields, and `createdAt`.
+
+### `GET /automation/scripts/:id`
+
+Auth: workspace membership.
+
+Response: `Script` plus `topic: { title: string }`.
+
+### `GET /automation/scripts/:id/quality`
+
+Auth: workspace membership.
+
+Response: script quality metadata:
+
+```ts
+{
   id: string;
   topicId: string;
-  reviewStatus: "PENDING" | "APPROVED" | "NEEDS_REVIEW" | "REJECTED" | string;
+  workspaceId: string | null;
+  reviewStatus: ScriptReviewStatus;
   qualityScore: number | null;
-  qualityReview: {
-    score?: number;
-    issues?: string[];
-    strengths?: string[];
-    dimensions?: Record<string, number>;
-    adminReview?: {
-      status: string;
-      note: string | null;
-      reviewedAt: string;
-    };
-    [key: string]: unknown;
-  } | null;
+  qualityReview: unknown | null;
   titleCandidates: unknown | null;
   selectedTitle: string | null;
   youtubeDescription: string | null;
   hashtags: string[];
   thumbnailPrompt: string | null;
   thumbnailImageUrl: string | null;
-  thumbnailStatus: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
+  thumbnailStatus: ThumbnailStatus | string;
   thumbnailError: string | null;
   thumbnailGeneratedAt: string | null;
   rewriteAttempts: number;
   createdAt: string;
 }
+```
 
-export interface ThumbnailMetadata {
-  target: "script" | "job";
-  id: string;
-  scriptId: string | null;
-  jobId: string | null;
-  thumbnailPrompt: string | null;
-  thumbnailImageUrl: string | null;
-  thumbnailStatus: "PENDING" | "GENERATING" | "READY" | "FAILED" | string;
-  thumbnailError: string | null;
-  thumbnailGeneratedAt: string | null;
-}
+### `PATCH /automation/scripts/:id/review-status`
 
-export interface PipelineEvent {
-  id: string;
-  stage: "IMAGE_GENERATION" | "RENDER" | "PUBLISH" | "TRACKING" | "CONVERSION";
-  severity: "INFO" | "WARN" | "ERROR";
-  status: string;
-  message: string;
-  jobId: string | null;
-  offerId: string | null;
-  clickId: string | null;
-  topicId: string | null;
-  scriptId: string | null;
-  provider: string | null;
-  meta: unknown | null;
-  createdAt: string;
-}
+Auth: workspace `OWNER` or `ADMIN`.
 
-export interface WorkerStatus {
-  workersEnabled: boolean;
-  automationEnabled: boolean;
-  autoPublish: boolean;
-  timezone: string;
-  runHours: number[];
-  videosPerDay: number;
-  activeSchedule: Array<{
-    slot: "MORNING" | "AFTERNOON" | "EVENING";
-    hour: number;
-    scheduledFor: string;
-  }>;
-  pauseState: {
-    newRenderStartsPaused: boolean;
-    publishingPaused: boolean;
-  };
-  queues: {
-    pendingRender: number;
-    processingRender: number;
-    readyToPublish: number;
-    activeLeases: number;
-    staleLeases: number;
-    failedToday: number;
-  };
-  youtube: { tokenStorage: unknown };
-  recentWorkerEvents: PipelineEvent[];
-  checkedAt: string;
-}
+Request:
 
-export interface PaginatedResponse<T> {
-  items: T[];
-  page: number;
-  limit: number;
-  total: number;
+```ts
+{
+  reviewStatus?: "APPROVED" | "NEEDS_REVIEW" | "REJECTED"; // defaults to APPROVED
+  note?: string; // max 1000
 }
 ```
 
-## Frontend Integration Warnings
+Response: updated review metadata. `APPROVED` is required before render/publish.
 
-Endpoints that return redirects:
+### `POST /automation/scripts/:id/review`
 
-- `GET /auth/youtube`
-- `GET /r/:offerId`
+Auth: workspace `OWNER` or `ADMIN`. Throttled at 20/min.
 
-Endpoints that return plain text:
+Request: none.
 
-- `GET /`
-- `GET /auth/youtube/callback`
+Response: refreshed quality metadata. Consumes one AI generation for billable workspaces.
+
+### `POST /automation/videos/:scriptId`
+
+Auth: workspace `OWNER` or `ADMIN`. Throttled at 10/min.
+
+Purpose: start video creation/render for an approved script in the active workspace.
+
+Request:
+
+```ts
+{
+  offerId?: string;       // UUID; offer must belong to active workspace
+  slot?: RunSlot;         // defaults to MORNING
+  scheduledFor?: string;  // ISO date-time; defaults to now
+}
+```
+
+Response:
+
+```ts
+{
+  videoId: string; // VideoJob.id
+  scriptId: string;
+  status: VideoJobStatus;
+  renderStatus: "NOT_STARTED" | "SUBMITTED" | "PROCESSING" | "READY";
+  progress: number | null;
+  trackingUrl: string | null;
+  message: "Render started" | "Render already started";
+}
+```
+
+Rules:
+
+- Requires customer JWT, verified email, `x-workspace-id`, and workspace membership.
+- Requires workspace `OWNER` or `ADMIN`; `MEMBER` is rejected with `403`.
+- Script must belong to the active workspace.
+- Script `reviewStatus` must be `APPROVED`; otherwise the backend returns `409`.
+- Optional `offerId` must belong to the active workspace.
+- Billing video-generation limit is enforced before the render provider is called.
+- Uses the same render service path as `POST /admin/manual-ops/videos/:scriptId/render`.
+- Response is intentionally customer-safe and does not include `renderId`, worker lease fields, provider debug paths, or admin-only internals.
+
+### `GET /automation/videos/:id`
+
+Auth: workspace membership.
+
+Params: `id` UUID, the `VideoJob.id`.
+
+Response: customer video status shape.
+
+Important fields:
+
+- `trackingUrl`: public affiliate redirect URL or `null`.
+- `youtubeUrl`: populated after successful publish.
+- `error`: render/publish failure reason.
+- `thumbnail.error`: thumbnail failure reason.
+
+### `GET /automation/videos`
+
+Auth: workspace membership.
+
+Query:
+
+```ts
+{
+  page?: number;      // default 1
+  limit?: number;     // default 20, max 100
+  status?: VideoJobStatus;
+  published?: boolean;
+  q?: string;
+}
+```
+
+Response: `{ items: VideoJobCustomerStatus[]; page: number; limit: number; total: number }`
+
+### `GET /automation/videos/:id/assets`
+
+Auth: workspace membership.
+
+Response:
+
+```ts
+{
+  job: VideoJobCustomerStatus;
+  script: {
+    id: string;
+    content: string;
+    promptVer: string;
+    createdAt: string;
+    thumbnailPrompt: string | null;
+    thumbnailImageUrl: string | null;
+    thumbnailStatus: ThumbnailStatus | string;
+    thumbnailError: string | null;
+    thumbnailGeneratedAt: string | null;
+    topic: { id: string; title: string } | null;
+  } | null;
+  captionsSrt: string | null;
+}
+```
+
+### `POST /automation/videos/:id/publish`
+
+Auth: workspace `OWNER` or `ADMIN`. Throttled at 10/min.
+
+Request: none.
+
+Queued response:
+
+```ts
+{
+  queued: true;
+  status: "QUEUED_FOR_PUBLISH";
+  trackingUrl: string | null;
+  job: VideoJobCustomerStatus;
+}
+```
+
+Already handled response:
+
+```ts
+{
+  queued: false;
+  status: "PUBLISHED" | "ALREADY_QUEUED";
+  job: VideoJobCustomerStatus;
+}
+```
+
+Preconditions: script `APPROVED`, job `COMPLETED`, `renderId` present, workspace YouTube connected, publish limit available.
+
+## Billing
+
+### `GET /billing/plans`
+
+Auth: public by controller.
+
+Response:
+
+```ts
+Array<{
+  plan: Plan;
+  limits: {
+    videoGenerations: number;
+    publishes: number;
+    aiGenerations: number;
+    renderMinutes: number;
+    storageBytes: string;
+  };
+}>
+```
+
+Current limits:
+
+```ts
+FREE:    { videoGenerations: 3, publishes: 1, aiGenerations: 10, renderMinutes: 90, storageBytes: "524288000" }
+PRO:     { videoGenerations: 50, publishes: 25, aiGenerations: 200, renderMinutes: 1500, storageBytes: "10737418240" }
+PREMIUM: { videoGenerations: 200, publishes: 100, aiGenerations: 1000, renderMinutes: 6000, storageBytes: "53687091200" }
+```
+
+### `GET /billing/subscription`
+
+Auth: workspace membership.
+
+Response:
+
+```ts
+{
+  id: string;
+  workspaceId: string;
+  plan: Plan;
+  status: SubscriptionStatus;
+  billingProvider: BillingProvider | null;
+  providerCustomerId: string | null;
+  providerSubscriptionId: string | null;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  cancelAtPeriodEnd: boolean;
+  trialEndsAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  effectivePlan: Plan;
+  limits: { videoGenerations: number; publishes: number; aiGenerations: number; renderMinutes: number; storageBytes: string };
+}
+```
+
+### `GET /billing/usage`
+
+Auth: workspace membership.
+
+Response:
+
+```ts
+{
+  usage: {
+    id: string;
+    workspaceId: string;
+    periodStart: string;
+    periodEnd: string;
+    videoGenerations: number;
+    publishes: number;
+    aiGenerations: number;
+    renderMinutes: number;
+    storageBytes: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  plan: Plan;
+  limits: { videoGenerations: number; publishes: number; aiGenerations: number; renderMinutes: number; storageBytes: string };
+}
+```
+
+### `POST /billing/start-checkout`
+
+Auth: workspace `OWNER` or `ADMIN`. Throttled at 10/min.
+
+Request:
+
+```ts
+{
+  plan?: "PRO" | "PREMIUM";       // defaults to PRO; FREE rejected
+  provider?: "PAYSTACK" | "STRIPE";
+  interval?: "monthly" | "yearly"; // defaults monthly
+  country?: string;                // 2 letters; used for provider auto-select
+}
+```
+
+Provider selection:
+
+- Explicit provider must be `PAYSTACK` or `STRIPE`.
+- Omitted provider selects `PAYSTACK` for `NG`, `GH`, `ZA`, `KE`, `CI`, `EG`, `RW`; otherwise `STRIPE`.
+
+Response:
+
+```ts
+{
+  provider: BillingProvider;
+  checkoutUrl: string;
+  reference: string;
+  sessionId?: string | null;
+}
+```
+
+Return URLs sent to the provider:
+
+- Success: `${BILLING_RETURN_BASE_URL || PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL}/billing/success`
+- Cancel: `${BILLING_RETURN_BASE_URL || PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL}/billing/cancel`
+
+The frontend should provide matching pages and refresh subscription state after redirect.
+
+### `POST /billing/cancel`
+
+Auth: workspace `OWNER` or `ADMIN`. Throttled at 10/min.
+
+Request: none.
+
+Response: subscription shape with `cancelAtPeriodEnd: true`; trialing subscriptions become `CANCELED`.
+
+## Customer Analytics / Tracking
+
+### `GET /offers/:id/performance`
+
+Offer-level performance endpoint. See Customer Product / Offer API.
+
+### `GET /automation/analytics/weekly`
+
+Auth: workspace membership.
+
+Query:
+
+```ts
+{ days?: string | number; tz?: string } // days clamped 1..30, default 7; tz default America/New_York
+```
+
+Response:
+
+```ts
+{
+  timeZone: string;
+  range: { from: string; to: string; days: number };
+  points: Array<{ date: string; day: string; clicks: number; conversions: number; revenue: number }>;
+  totals: { clicks: number; conversions: number; revenue: number };
+}
+```
+
+### Tracking redirect URL
+
+Public:
+
+```http
+GET /r/:offerId?jobId=:videoJobId&yt=:youtubeVideoId
+```
+
+Behavior:
+
+- Creates a click.
+- Redirects to offer `hoplink`.
+- Adds click id as `tid` for ClickBank and `custom` for Digistore24.
+- Optional `AFFILIATE_CLICK_PARAM` adds a second click-id query param.
+- Failure returns `500` plain text `Tracking redirect failed`.
+
+`trackingUrl` returned from video APIs is built as:
+
+```ts
+`${PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL}/r/${offerId}?jobId=${jobId}&yt=${youtubeVideoId}`
+```
+
+It is `null` when no offer exists or no public API base URL is configured.
+
+## Admin API
+
+Admin routes require admin JWT unless public. `@Roles("ADMIN")` accepts `SUPER_ADMIN`, `ADMIN`, and `SUPPORT`.
+
+### `/admin/auth/*`
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `POST` | `/admin/auth/login` | Admin login | Public | `{ email; password }` | `{ accessToken; admin }` |
+| `GET` | `/admin/auth/me` | Current admin profile | Any active admin | none | `{ kind: "admin"; admin } \| null` |
+| `GET` | `/admin/auth/youtube` | Redirect to global/admin YouTube OAuth | Any active admin | none | `302` |
+| `POST` | `/admin/auth/youtube/connect` | Create global/admin YouTube OAuth URL | Any active admin | none | `{ url: string }` |
+| `GET` | `/admin/auth/youtube/channel` | Global/admin YouTube diagnostics | Any active admin | none | `YoutubeDiagnostics` |
+| `GET` | `/admin/auth/youtube/callback` | Google callback | Public | query `{ code; state }` | plain text |
+
+### `/admin/workflow/*`
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `GET` | `/admin/workflow/status` | Workflow dashboard status | Admin role | none | `WorkflowService.getStatus()` object |
+
+### `/admin/manual-ops/*`
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `POST` | `/admin/manual-ops/ingest` | Ingest topics now | Admin role | none | `{ ok: true; created: number }` |
+| `POST` | `/admin/manual-ops/topics/seed` | Seed default topics | Admin role | none | `{ ok: true; created: number }` |
+| `POST` | `/admin/manual-ops/orchestrator/run` | Run orchestrator slot | Admin role | `RunSlotDto` | orchestrator result |
+| `POST` | `/admin/manual-ops/orchestrator/run-now` | Run slot immediately | Admin role | `RunSlotDto` | orchestrator result |
+| `POST` | `/admin/manual-ops/publish-result` | Register manual publish result | Admin role | `PublishResultDto` | updated `VideoJob` row |
+
+```ts
+type RunSlotDto = { slot: RunSlot; scheduledFor?: string; force?: boolean };
+type PublishResultDto = {
+  jobId?: string;
+  videoId?: string;
+  platform: string;
+  platformPostId: string;
+  status: "SUCCESS" | "FAILED";
+  errorMessage?: string;
+};
+```
+
+### `/admin/manual-ops/videos/*`
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `POST` | `/admin/manual-ops/videos` | Register rendered video | Admin role | `RegisterVideoDto` | customer video status |
+| `PATCH` | `/admin/manual-ops/videos/:id/published` | Mark job published | Admin role | none | customer video status |
+| `PATCH` | `/admin/manual-ops/videos/:id/failed` | Mark job failed | Admin role | none | customer video status |
+| `POST` | `/admin/manual-ops/videos/:scriptId/render` | Render from approved script | Admin role | `CreateVideoJobDto` | `{ jobId; renderId; resumed?; qa? }` |
+
+```ts
+type RegisterVideoDto = {
+  jobId: string;
+  videoUrl: string;
+  youtubeUrl?: string;
+  status?: VideoJobStatus;
+  published?: boolean;
+};
+type CreateVideoJobDto = {
+  offerId?: string;
+  slot?: RunSlot;        // default MORNING
+  scheduledFor?: string; // default now
+};
+```
+
+### `/admin/jobs/*`
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `GET` | `/admin/jobs` | List jobs | Admin role | query `ListJobsQueryDto` | paginated `VideoJobSummary` |
+| `GET` | `/admin/jobs/summary` | Failure summary | Admin role | none | `{ failedToday; stuckProcessing }` |
+| `GET` | `/admin/jobs/workers/status` | Worker/queue status | Admin role | none | worker status object |
+| `GET` | `/admin/jobs/:id` | Job detail | Admin role | UUID | `VideoJobSummary` |
+| `GET` | `/admin/jobs/:id/assets` | Job assets/captions | Admin role | UUID | `{ job; script; captionsSrt }` |
+| `POST` | `/admin/jobs/run-slot` | Queue schedule slot async | Admin role | `RunSlotDto` | `{ ok; queued; slot; scheduledFor; force; note }` |
+| `POST` | `/admin/jobs/:id/cancel` | Cancel job | Admin role | `{ status?: "CANCELLED" \| "FAILED_PERMANENT" }` | `{ ok: true }` |
+| `POST` | `/admin/jobs/:id/reset-render` | Reset failed render | Admin role | none | `{ ok: true }` |
+| `POST` | `/admin/jobs/:id/retry` | Retry job | Admin role | none | `{ ok: true }` |
+
+```ts
+type ListJobsQueryDto = {
+  page?: number;
+  limit?: number;
+  status?: VideoJobStatus;
+  published?: boolean;
+  slot?: RunSlot;
+  from?: string;
+  to?: string;
+  q?: string;
+};
+```
+
+### `/admin/logs/automation`
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `GET` | `/admin/logs/automation` | Google Sheets automation logs | Admin role | query `{ limit?: number }`, max 200 | `{ items: AutomationLogItem[] }` |
+
+```ts
+type AutomationLogItem = {
+  jobId: string | null;
+  scriptId: string | null;
+  topicTitle: string | null;
+  offerName: string | null;
+  platform: string | null;
+  status: string | null;
+  url: string | null;
+  error: string | null;
+  createdAt: string | null;
+  loggedAt: string | null;
+};
+```
+
+### `/admin/monitoring/pipeline/*`
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `GET` | `/admin/monitoring/pipeline/health` | Readiness | Admin role | none | `{ ok; checks; timestamp }` |
+| `GET` | `/admin/monitoring/pipeline/diagnostics` | Safe diagnostics | Admin role | none | diagnostics object, no secrets |
+| `GET` | `/admin/monitoring/pipeline/events` | List events | Admin role | query `MonitoringEventsQueryDto` | `PipelineEvent[]` |
+| `GET` | `/admin/monitoring/pipeline/summary` | Event summary | Admin role | query `{ hours?: number }` | summary object |
+
+```ts
+type MonitoringEventsQueryDto = {
+  limit?: number;
+  stage?: "IMAGE_GENERATION" | "RENDER" | "PUBLISH" | "TRACKING" | "CONVERSION";
+  severity?: "INFO" | "WARN" | "ERROR";
+  status?: string;
+  jobId?: string;
+  offerId?: string;
+  clickId?: string;
+  provider?: string;
+  sinceHours?: number;
+};
+```
+
+### `/admin/api-keys/*`
+
+```ts
+type IntegrationProvider = "GOOGLE" | "OPENAI" | "DIGISTORE" | "CLICKBANK" | "YOUTUBE" | "SHOTSTACK";
+```
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `GET` | `/admin/api-keys` | List key metadata | Admin role | none | `Array<{ provider; masked; updatedAt; createdAt }>` |
+| `PUT` | `/admin/api-keys/:provider` | Create/replace key | Admin role | `{ key: string }`, min 6 | `{ provider; masked; updatedAt }` |
+| `DELETE` | `/admin/api-keys/:provider` | Delete key | Admin role | none | `{ ok: true }` |
+
+### `/admin/platform/settings`
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `GET` | `/admin/platform/settings` | Get settings | Admin role | none | app settings |
+| `PATCH` | `/admin/platform/settings` | Update settings | Admin role | `UpdateSettingsDto` | app settings |
+| `GET` | `/admin/platform/health` | Basic health/debug | Admin role | none | plain string |
+
+```ts
+type UpdateSettingsDto = {
+  automationEnabled?: boolean;
+  verticalEnabled?: boolean;
+  autoPublish?: boolean;
+  timezone?: string;
+  videosPerDay?: number; // 1..3
+  runHours?: number[];   // integers 0..23, non-empty
+};
+```
+
+### `/admin/users`, `/admin/workspaces/*`, `/admin/billing/workspaces/:workspaceId/subscription`
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `GET` | `/admin/users` | List SaaS users | Admin role | none | user list with counts |
+| `GET` | `/admin/workspaces` | List SaaS workspaces | Admin role | none | workspace list with owner, subscription, counts |
+| `GET` | `/admin/workspaces/:workspaceId/usage` | View workspace usage | Admin role | UUID | billing usage response |
+| `POST` | `/admin/workspaces/:workspaceId/suspend` | Suspend workspace | Admin role | `{ reason?: string }`, max 500 | workspace row |
+| `POST` | `/admin/workspaces/:workspaceId/unsuspend` | Unsuspend workspace | Admin role | none | workspace row |
+| `GET` | `/admin/billing/workspaces/:workspaceId/subscription` | View subscription | Admin role | UUID | subscription response |
+| `PATCH` | `/admin/billing/workspaces/:workspaceId/subscription` | Update subscription manually | Admin role | `UpdateSubscriptionDto` | subscription response |
+
+```ts
+type UpdateSubscriptionDto = {
+  plan?: Plan;
+  status?: SubscriptionStatus;
+  billingProvider?: BillingProvider;
+  providerCustomerId?: string;
+  providerSubscriptionId?: string;
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  cancelAtPeriodEnd?: boolean;
+  trialEndsAt?: string;
+};
+```
+
+## Other Customer Automation Routes
+
+These remain workspace-scoped customer routes:
+
+| Method | Path | Purpose | Request | Response |
+| --- | --- | --- | --- | --- |
+| `POST` | `/automation/topics` | Create topic | `{ title: string; source?: string; score?: number }` | `Topic` |
+| `GET` | `/automation/topics` | List topics | none | `Topic[]` |
+| `GET` | `/automation/topics/pending` | Up to 5 pending topics | none | `Topic[]` |
+| `PATCH` | `/automation/topics/:id/used` | Mark topic used | none | `Topic` |
+| `POST` | `/automation/scripts` | Create reviewed script from content | `{ topicId: string; content: string }` | `Script` |
+| `POST` | `/automation/scripts/ai` | Generate AI script | `{ topicId: string; topic: string }` | `Script` |
+| `GET` | `/automation/scripts` | List scripts | none | `Script[]` |
+| `GET` | `/automation/scripts/:id/thumbnail` | Script thumbnail metadata | none | thumbnail metadata |
+| `POST` | `/automation/scripts/:id/thumbnail` | Generate script thumbnail | `{ prompt?: string }` | thumbnail metadata |
+| `PATCH` | `/automation/scripts/:id/thumbnail` | Regenerate script thumbnail | `{ prompt?: string }` | thumbnail metadata |
+| `GET` | `/automation/videos/:id/thumbnail` | Video thumbnail metadata | none | thumbnail metadata |
+| `POST` | `/automation/videos/:id/thumbnail` | Generate video thumbnail | `{ prompt?: string }` | thumbnail metadata |
+| `PATCH` | `/automation/videos/:id/thumbnail` | Regenerate video thumbnail | `{ prompt?: string }` | thumbnail metadata |
+
+## Public Webhooks
+
+Not frontend routes:
+
+- `POST /billing/webhook`
+- `POST /billing/webhook/:provider`
 - `POST /webhooks/digistore24`
-- `POST /webhooks/clickbank`
-- `GET /r/:offerId` returns plain text only on failure.
+- `POST /webhooks/clickbank?key=:key`
 
-Public endpoints not meant for dashboard API calls:
+## Removed / Deprecated Frontend Route Usage
 
-- `GET /auth/youtube/callback`
-- `GET /r/:offerId`
-- `POST /webhooks/digistore24`
-- `POST /webhooks/clickbank`
+- Customer app must not call `/admin/*`.
+- Customer app must not use old admin-only offer assumptions; `/offers` is now workspace-scoped customer API.
+- Old `/settings` is gone; admin settings are `/admin/platform/settings`.
+- Old `/automation/orchestrator/run` and `/automation/orchestrator/run-now` moved to `/admin/manual-ops/orchestrator/*`.
+- Old `/automation/ingest` and `/automation/topics/seed` moved to `/admin/manual-ops/ingest` and `/admin/manual-ops/topics/seed`.
+- Old `/monitoring/pipeline/*` moved to `/admin/monitoring/pipeline/*`.
+- Old `/automation/workflow/status` moved to `/admin/workflow/status`.
+- Old `/automation/jobs*` moved to `/admin/jobs*`.
+- Old `POST /automation/videos` manual registration moved to `POST /admin/manual-ops/videos`.
+- Customer render starts now use `POST /automation/videos/:scriptId`; admin/manual render remains `/admin/manual-ops/videos/:scriptId/render`.
 
-Endpoints requiring manual confirmation:
+## Frontend Migration Checklist
 
-- `DELETE /settings/api-keys/:provider`
-- `PATCH /offers/:id` when changing `network` or `hoplink`
-- `POST /offers/:id/deactivate`
-- `POST /offers/:id/reactivate`
-- `PATCH /automation/scripts/:id/review-status`
-- `POST /automation/scripts/:id/review`
-- `POST /automation/scripts/:id/thumbnail`
-- `PATCH /automation/scripts/:id/thumbnail`
-- `POST /automation/videos/:scriptId`
-- `POST /automation/videos/:id/thumbnail`
-- `PATCH /automation/videos/:id/thumbnail`
-- `PATCH /automation/videos/:id/published`
-- `PATCH /automation/videos/:id/failed`
-- `POST /automation/jobs/:id/retry`
-- `POST /automation/orchestrator/run`
-- `POST /automation/orchestrator/run-now`
-- `POST /automation/jobs/run-slot`
-- `POST /automation/ingest`
-- `POST /automation/topics/seed`
-- `POST /automation/publish-result`
-
-Endpoints that should be polled:
-
-- `GET /automation/jobs`
-- `GET /automation/jobs/:id`
-- `GET /automation/jobs/workers/status`
-- `GET /automation/workflow/status`
-- `GET /monitoring/pipeline/events` only in live mode.
-
-Suggested polling intervals:
-
-- Worker/dashboard state: 15-30 seconds.
-- Job detail while processing: 10-15 seconds.
-- Monitoring live mode: 10-30 seconds.
-
-Endpoints that should not be called frequently:
-
-- `POST /offers/:id/test-redirect`
-- `POST /automation/scripts/ai`
-- `POST /automation/scripts/:id/review`
-- `POST /automation/scripts/:id/thumbnail`
-- `PATCH /automation/scripts/:id/thumbnail`
-- `POST /automation/videos/:id/thumbnail`
-- `PATCH /automation/videos/:id/thumbnail`
-- `POST /automation/orchestrator/run`
-- `POST /automation/orchestrator/run-now`
-- `POST /automation/jobs/run-slot`
-- `POST /automation/ingest`
-- `POST /automation/topics/seed`
-- `GET /automation/analytics/weekly`
-- `GET /automation/scripts`
-- `GET /automation/topics`
-
-Quality gate warning:
-
-- Automatic render/publish only proceeds for scripts whose `reviewStatus` is `APPROVED`.
-- `NEEDS_REVIEW`, `PENDING`, and `REJECTED` scripts should render as action-required in the frontend.
-- Manual approval is `PATCH /automation/scripts/:id/review-status` with `reviewStatus: "APPROVED"`.
-
-## Missing or Optional Backend Endpoints
-
-These would improve the frontend but are not currently implemented here:
-
-- Paginated scripts endpoint with filters by `reviewStatus`, topic, and date.
-- Paginated topics endpoint with filters by `status`, source, and score.
-- Dedicated YouTube connection status endpoint instead of reading `workers/status.youtube.tokenStorage`.
-- Offer-level date filters for performance reporting.
-- Endpoint to assign or override an offer on an existing video job.
-- Endpoint to clear or force-release stale worker leases.
-- Endpoint to pause/resume only render or only publish without changing broader settings.
-- Endpoint to preview generated video metadata before publish.
-- Endpoint to list publish history/results separately from `VideoJob`.
-- Endpoint to download captions as `text/plain` or `.srt`.
-- Endpoint to edit script content before approval.
-- Endpoint to bulk approve/reject scripts.
-- Backend-generated OpenAPI types package or stable `/api-json` availability in all environments.
+- Update customer auth helpers for signup, login, me, verify email, resend verification, forgot/reset password, refresh, logout, logout-all.
+- Add admin auth helpers for `/admin/auth/login` and `/admin/auth/me`.
+- Separate customer/admin sessions.
+- Add `x-workspace-id` handling to customer API helpers.
+- Update admin API paths to the new `/admin/*` routes.
+- Remove old operator route usage from the customer app.
+- Update customer and admin navigation.
+- Update command palette commands to separate customer/admin destinations.
+- Test customer wizard script generation, edit, review, video polling, assets, and publish.
+- Test customer wizard render start with `POST /automation/videos/:scriptId`.
+- Test admin console auth, workflow, manual ops, jobs, logs, monitoring, API keys, platform settings, users, workspaces, and billing.

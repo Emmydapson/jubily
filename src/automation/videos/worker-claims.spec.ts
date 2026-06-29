@@ -43,6 +43,8 @@ describe('Worker lease claims', () => {
       {} as never,
       { info: jest.fn(), warn: jest.fn(), error: jest.fn() } as never,
       { getSettings: jest.fn() } as never,
+      { consumePublish: jest.fn(), assertWorkspaceActive: jest.fn() } as never,
+      { record: jest.fn() } as never,
     );
   }
 
@@ -57,21 +59,24 @@ describe('Worker lease claims', () => {
     ).resolves.toBe(true);
 
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: {
+      where: expect.objectContaining({
         id: 'job-1',
         renderId: null,
         published: false,
         attempts: { lt: 6 },
         status: { in: ['PENDING', 'FAILED'] },
         script: { reviewStatus: 'APPROVED' },
-        OR: [{ workerLockedAt: null }, { workerLockedAt: { lt: expect.any(Date) } }],
-      },
-      data: {
+        OR: [
+          { workerLockedAt: null },
+          { workerLockedAt: { lt: expect.any(Date) } },
+        ],
+      }),
+      data: expect.objectContaining({
         workerLockedAt: expect.any(Date),
         workerLockedBy: expect.stringMatching(/^render-/),
         workerStage: 'RENDER_START',
         error: null,
-      },
+      }),
     });
   });
 
@@ -141,21 +146,25 @@ describe('Worker lease claims', () => {
     ).resolves.toBe(true);
 
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: {
+      where: expect.objectContaining({
         id: 'job-1',
         status: 'COMPLETED',
         published: false,
         renderId: 'render-1',
         attempts: { lt: 6 },
         script: { reviewStatus: 'APPROVED' },
-        OR: [{ workerLockedAt: null }, { workerLockedAt: { lt: expect.any(Date) } }],
-      },
-      data: {
+        OR: [
+          { workerStage: 'PUBLISH_QUEUED' },
+          { workerLockedAt: null },
+          { workerLockedAt: { lt: expect.any(Date) } },
+        ],
+      }),
+      data: expect.objectContaining({
         workerLockedAt: expect.any(Date),
         workerLockedBy: expect.stringMatching(/^publish-/),
         workerStage: 'PUBLISH',
         error: null,
-      },
+      }),
     });
   });
 

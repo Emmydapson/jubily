@@ -1,0 +1,11 @@
+CREATE TYPE "AdminRole" AS ENUM ('SUPER_ADMIN', 'ADMIN', 'SUPPORT');
+
+ALTER TABLE "AdminUser" ALTER COLUMN "role" DROP DEFAULT;
+ALTER TABLE "AdminUser" ALTER COLUMN "role" TYPE "AdminRole" USING (
+  CASE
+    WHEN "role" = 'SUPER_ADMIN' THEN 'SUPER_ADMIN'::"AdminRole"
+    WHEN "role" = 'SUPPORT' THEN 'SUPPORT'::"AdminRole"
+    ELSE 'ADMIN'::"AdminRole"
+  END
+);
+ALTER TABLE "AdminUser" ALTER COLUMN "role" SET DEFAULT 'ADMIN';

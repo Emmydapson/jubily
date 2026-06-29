@@ -88,6 +88,7 @@ describe('Webhook controllers', () => {
       click: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'click-1',
+          workspaceId: 'workspace-1',
           offerId: 'offer-1',
           videoJobId: 'job-1',
         }),
@@ -106,6 +107,7 @@ describe('Webhook controllers', () => {
 
     expect(prisma.conversion.create).toHaveBeenCalledWith({
       data: {
+        workspaceId: 'workspace-1',
         offerId: 'offer-1',
         clickId: 'click-1',
         videoJobId: 'job-1',

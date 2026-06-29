@@ -78,6 +78,10 @@ export class Digistore24Service {
     // 6) Persist Conversion (never violate FK)
     const conversion = await this.prisma.conversion.create({
       data: {
+        workspaceId: click?.workspaceId ?? (await this.prisma.offer.findUnique({
+          where: { id: offerId },
+          select: { workspaceId: true },
+        }))?.workspaceId ?? null,
         offerId,
         clickId: click?.id || null,
         videoJobId,

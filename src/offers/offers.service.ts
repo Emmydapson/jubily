@@ -18,12 +18,13 @@ export class OffersService {
     private readonly tracking: TrackingService,
   ) {}
 
-  async list(query: ListOffersQueryDto) {
+  async list(query: ListOffersQueryDto, workspaceId?: string | null) {
     const page = Math.max(Number(query.page ?? 1), 1);
     const limit = Math.min(Math.max(Number(query.limit ?? 50), 1), 100);
     const skip = (page - 1) * limit;
 
     const where: Prisma.OfferWhereInput = {};
+    if (workspaceId !== undefined) where.workspaceId = workspaceId;
     if (query.network) where.network = query.network;
     if (query.nicheTag) where.nicheTag = query.nicheTag;
     if (query.active != null) where.active = query.active;
@@ -54,7 +55,7 @@ export class OffersService {
     return { items, page, limit, total };
   }
 
-  async getOne(id: string) {
+  async getOne(id: string, workspaceId?: string | null) {
     const offer = await this.prisma.offer.findUnique({
       where: { id },
       include: {
@@ -63,11 +64,13 @@ export class OffersService {
         },
       },
     });
-    if (!offer) throw new NotFoundException('Offer not found');
+    if (!offer || (workspaceId !== undefined && offer.workspaceId !== workspaceId)) {
+      throw new NotFoundException('Offer not found');
+    }
     return offer;
   }
 
-  async create(dto: CreateOfferDto) {
+  async create(dto: CreateOfferDto, workspaceId?: string | null) {
     const data = normalizeAndValidateOfferInput(dto) as Required<
       Pick<Prisma.OfferCreateInput, 'network' | 'name' | 'hoplink'>
     > &
@@ -76,10 +79,11 @@ export class OffersService {
         'externalProductId' | 'nicheTag' | 'active'
       >;
 
-    await this.ensureNoDuplicate(data);
+    await this.ensureNoDuplicate(data, workspaceId);
 
     return this.prisma.offer.create({
       data: {
+        workspaceId: workspaceId ?? null,
         network: data.network,
         name: data.name,
         hoplink: data.hoplink,
@@ -90,8 +94,8 @@ export class OffersService {
     });
   }
 
-  async update(id: string, dto: UpdateOfferDto) {
-    const current = await this.getOne(id);
+  async update(id: string, dto: UpdateOfferDto, workspaceId?: string | null) {
+    const current = await this.getOne(id, workspaceId);
     const data = normalizeAndValidateOfferInput(dto, { partial: true });
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('At least one field is required');
@@ -105,7 +109,7 @@ export class OffersService {
         data.externalProductId !== undefined
           ? data.externalProductId
           : current.externalProductId,
-    });
+    }, workspaceId);
 
     return this.prisma.offer.update({
       where: { id },
@@ -113,24 +117,25 @@ export class OffersService {
     });
   }
 
-  async deactivate(id: string) {
-    await this.getOne(id);
+  async deactivate(id: string, workspaceId?: string | null) {
+    await this.getOne(id, workspaceId);
     return this.prisma.offer.update({
       where: { id },
       data: { active: false },
     });
   }
 
-  async reactivate(id: string) {
-    await this.getOne(id);
+  async reactivate(id: string, workspaceId?: string | null) {
+    await this.getOne(id, workspaceId);
     return this.prisma.offer.update({
       where: { id },
       data: { active: true },
     });
   }
 
-  async performance(id: string) {
-    const offer = await this.getOne(id);
+  async performance(id: string, workspaceId?: string | null) {
+    const offer = await this.getOne(id, workspaceId);
+    const scoped = workspaceId !== undefined ? { workspaceId } : {};
 
     const [
       clicks,
@@ -140,22 +145,22 @@ export class OffersService {
       lastClick,
       lastConversion,
     ] = await Promise.all([
-      this.prisma.click.count({ where: { offerId: id } }),
-      this.prisma.conversion.count({ where: { offerId: id } }),
-      this.prisma.videoJob.count({ where: { offerId: id } }),
+      this.prisma.click.count({ where: { offerId: id, ...scoped } }),
+      this.prisma.conversion.count({ where: { offerId: id, ...scoped } }),
+      this.prisma.videoJob.count({ where: { offerId: id, ...scoped } }),
       this.prisma.conversion.groupBy({
         by: ['currency'],
-        where: { offerId: id },
+        where: { offerId: id, ...scoped },
         _count: { _all: true },
         _sum: { amount: true },
       }),
       this.prisma.click.findFirst({
-        where: { offerId: id },
+        where: { offerId: id, ...scoped },
         orderBy: { createdAt: 'desc' },
         select: { createdAt: true },
       }),
       this.prisma.conversion.findFirst({
-        where: { offerId: id },
+        where: { offerId: id, ...scoped },
         orderBy: { createdAt: 'desc' },
         select: { createdAt: true },
       }),
@@ -181,8 +186,8 @@ export class OffersService {
     };
   }
 
-  async testRedirect(id: string) {
-    const offer = await this.getOne(id);
+  async testRedirect(id: string, workspaceId?: string | null) {
+    const offer = await this.getOne(id, workspaceId);
     const previewClickId = '00000000-0000-4000-8000-000000000000';
     const redirectUrl = await this.tracking.buildOfferUrl(id, previewClickId);
     return {
@@ -202,11 +207,13 @@ export class OffersService {
       externalProductId: string | null;
       hoplink: string;
     }>,
+    workspaceId?: string | null,
   ) {
     if (data.externalProductId) {
       const existing = await this.prisma.offer.findFirst({
         where: {
           externalProductId: data.externalProductId,
+          workspaceId: workspaceId ?? null,
           ...(data.id ? { id: { not: data.id } } : {}),
         },
         select: { id: true },
@@ -221,6 +228,7 @@ export class OffersService {
         where: {
           network: data.network,
           hoplink: data.hoplink,
+          workspaceId: workspaceId ?? null,
           ...(data.id ? { id: { not: data.id } } : {}),
         },
         select: { id: true },

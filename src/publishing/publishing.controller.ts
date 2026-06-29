@@ -1,7 +1,8 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { PublishingService } from './publishing.service';
 import { CreatePublishResultDto } from './dto/create-publish-result.dto';
 import { Roles } from '../auth/roles.decorator';
+import { AdminGuard } from '../auth/admin.guard';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -10,9 +11,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-@Controller('automation/publish-result')
+@Controller('admin/manual-ops/publish-result')
 @Roles('ADMIN')
-@ApiTags('Publishing')
+@UseGuards(AdminGuard)
+@ApiTags('Admin - Publishing')
 @ApiBearerAuth('jwt')
 export class PublishingController {
   constructor(private readonly publishingService: PublishingService) {}
@@ -20,7 +22,7 @@ export class PublishingController {
   @Post()
   @ApiOperation({
     summary: 'Register a publish result',
-    description: 'Requires a valid ADMIN bearer token.',
+    description: 'Admin-only endpoint.',
   })
   @ApiBody({ type: CreatePublishResultDto })
   @ApiOkResponse({

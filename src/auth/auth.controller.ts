@@ -1,224 +1,142 @@
 /* eslint-disable prettier/prettier */
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Post,
-  Query,
-  Req,
-  Res,
-  UnauthorizedException,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { SignupDto } from './dto/signup.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { Public } from './public.decorator';
-import { YoutubeService } from '../common/youtube.service';
-import type { Request, Response } from 'express';
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import type { Request } from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Roles } from './roles.decorator';
-import { ApiBearerAuth, ApiBody, ApiFoundResponse, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 type AuthenticatedRequest = Request & {
   user: {
-    adminId: string;
+    adminId?: string;
+    userId?: string;
     email: string;
     role: string;
+    kind?: 'user';
+    emailVerified?: boolean;
   };
 };
 
-type PendingYoutubeOAuthState = {
-  adminId: string;
-  adminEmail: string;
-  expiresAt: number;
-};
+function requestMeta(req: Request) {
+  return {
+    ip: req.ip,
+    userAgent: req.get('user-agent') || undefined,
+  };
+}
 
 @Controller('auth')
-@Roles('ADMIN')
 @ApiTags('Auth')
 @ApiBearerAuth('jwt')
 export class AuthController {
-  private readonly pendingYoutubeOAuthStates = new Map<string, PendingYoutubeOAuthState>();
-  private readonly youtubeOAuthStateTtlMs = 10 * 60 * 1000;
+  constructor(private auth: AuthService) {}
 
-  constructor(private auth: AuthService,
-    private youtube: YoutubeService,
-  ) {}
-
-  private getCookie(req: Request, name: string): string | null {
-    const header = req.headers.cookie;
-    if (!header) return null;
-
-    const prefix = `${name}=`;
-    for (const part of header.split(';')) {
-      const item = part.trim();
-      if (!item.startsWith(prefix)) continue;
-      return decodeURIComponent(item.slice(prefix.length));
-    }
-
-    return null;
-  }
-
-  private stateMatches(expected: string | null, actual?: string) {
-    if (!expected || !actual) return false;
-    const a = Buffer.from(expected, 'utf8');
-    const b = Buffer.from(actual, 'utf8');
-    return a.length === b.length && timingSafeEqual(a, b);
-  }
-
-  private youtubeStateSecret() {
-    return process.env.JWT_SECRET || process.env.AUTH_SECRET || process.env.ADMIN_JWT_SECRET || 'local-youtube-oauth-state';
-  }
-
-  private signYoutubeState(nonce: string) {
-    return createHmac('sha256', this.youtubeStateSecret()).update(nonce).digest('hex');
-  }
-
-  private createYoutubeState() {
-    const nonce = randomBytes(24).toString('hex');
-    return `${nonce}.${this.signYoutubeState(nonce)}`;
-  }
-
-  private isSignedYoutubeState(state?: string) {
-    if (!state) return false;
-    const [nonce, signature] = state.split('.');
-    if (!nonce || !signature) return false;
-    return this.stateMatches(this.signYoutubeState(nonce), signature);
-  }
-
-  private pruneExpiredYoutubeStates(now = Date.now()) {
-    for (const [state, pending] of this.pendingYoutubeOAuthStates.entries()) {
-      if (pending.expiresAt <= now) this.pendingYoutubeOAuthStates.delete(state);
-    }
-  }
-
-  private storePendingYoutubeState(req: AuthenticatedRequest) {
-    const adminEmail = this.auth.ensureAdminEmailAllowed(req.user.email);
-    const state = this.createYoutubeState();
-
-    this.pruneExpiredYoutubeStates();
-    this.pendingYoutubeOAuthStates.set(state, {
-      adminId: req.user.adminId,
-      adminEmail,
-      expiresAt: Date.now() + this.youtubeOAuthStateTtlMs,
-    });
-
-    return { state, adminEmail };
-  }
-
-  private consumePendingYoutubeState(state?: string) {
-    if (!this.isSignedYoutubeState(state)) return null;
-
-    this.pruneExpiredYoutubeStates();
-    const pending = this.pendingYoutubeOAuthStates.get(state || '');
-    if (!pending) return null;
-
-    this.pendingYoutubeOAuthStates.delete(state || '');
-    if (pending.expiresAt <= Date.now()) return null;
-    return pending;
-  }
-
-  // Public because this is the admin login entrypoint; throttling limits brute-force attempts.
   @Public()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
-  @ApiOperation({ summary: 'Authenticate an admin user', description: 'Public endpoint. Returns a JWT access token for protected admin routes.' })
+  @ApiOperation({ summary: 'Authenticate a SaaS user', description: 'Public endpoint. Returns a customer JWT with kind: "user". Admin login is POST /admin/auth/login.' })
   @ApiBody({ type: LoginDto })
   @ApiOkResponse({
-    description: 'Admin login succeeded.',
-    schema: { example: { accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...', admin: { id: '7f8d41e2-0dd8-48ea-a143-b2f8dfc21bcb', email: 'admin@joinjubily.com', role: 'ADMIN' } } },
+    description: 'Customer login succeeded.',
+    schema: { example: { accessToken: 'eyJhbGciOi...', refreshToken: 'refresh-token', user: { id: '7f8d41e2-0dd8-48ea-a143-b2f8dfc21bcb', email: 'user@example.com', name: 'Jane' } } },
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials.' })
-  login(@Body() dto: LoginDto) {
-    return this.auth.login(dto.email, dto.password);
+  login(@Req() req: Request, @Body() dto: LoginDto) {
+    return this.auth.customerLogin(dto.email, dto.password, requestMeta(req));
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('signup')
+  @ApiOperation({ summary: 'Create a SaaS user account', description: 'Public endpoint. Returns a JWT access token for workspace-scoped routes.' })
+  @ApiBody({ type: SignupDto })
+  @ApiOkResponse({
+    description: 'Signup succeeded.',
+    schema: { example: { accessToken: 'eyJhbGciOi...', user: { id: '7f8d41e2-0dd8-48ea-a143-b2f8dfc21bcb', email: 'user@example.com', name: 'Jane' } } },
+  })
+  signup(@Req() req: Request, @Body() dto: SignupDto) {
+    return this.auth.signup(dto.email, dto.password, dto.name, requestMeta(req));
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('verify-email')
+  @ApiOperation({ summary: 'Verify a SaaS user email address' })
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.auth.verifyEmail(dto.token);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('resend-verification')
+  @ApiOperation({ summary: 'Resend the verification email for an unverified account' })
+  resendVerification(@Body() dto: ResendVerificationDto) {
+    return this.auth.resendVerification(dto.email);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Request a password reset email' })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.forgotPassword(dto.email);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Reset a user password with a one-time token' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto.token, dto.password);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Post('refresh')
+  @ApiOperation({ summary: 'Rotate a refresh token and issue a new access token' })
+  refresh(@Req() req: Request, @Body() dto: RefreshTokenDto) {
+    return this.auth.refresh(dto.refreshToken, requestMeta(req));
+  }
+
+  @Post('logout')
+  @Roles('USER')
+  @ApiOperation({ summary: 'Log out the current refresh session' })
+  logout(@Body() dto: RefreshTokenDto) {
+    return this.auth.logout(dto.refreshToken);
+  }
+
+  @Post('logout-all')
+  @Roles('USER')
+  @ApiOperation({ summary: 'Log out all refresh sessions for the current SaaS user' })
+  logoutAll(@Req() req: AuthenticatedRequest) {
+    if (!req.user?.userId) throw new UnauthorizedException('SaaS user token required');
+    return this.auth.logoutAll(req.user.userId);
   }
 
   @Get('me')
-  @ApiOperation({ summary: 'Get the current admin profile', description: 'Requires a valid ADMIN bearer token.' })
+  @Roles('USER')
+  @ApiOperation({ summary: 'Get the current SaaS user profile', description: 'Requires a valid customer bearer token.' })
   @ApiOkResponse({
-    description: 'Authenticated admin profile.',
-    schema: { example: { id: '7f8d41e2-0dd8-48ea-a143-b2f8dfc21bcb', email: 'admin@joinjubily.com', role: 'ADMIN' } },
+    description: 'Authenticated customer profile.',
+    schema: { example: { kind: 'user', user: { id: '7f8d41e2-0dd8-48ea-a143-b2f8dfc21bcb', email: 'user@example.com' } } },
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
   me(@Req() req: AuthenticatedRequest) {
-    // req.user from JwtStrategy.validate
-    return this.auth.me(req.user.adminId);
-  }
-
-  // Protected: only authenticated admin can initiate channel connection
-  @Get('youtube')
-  @ApiOperation({ summary: 'Start YouTube OAuth connection', description: 'Requires a valid ADMIN bearer token and redirects the admin to Google OAuth.' })
-  @ApiFoundResponse({ description: 'Redirects to the Google OAuth consent URL.' })
-  @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
-  youtubeAuth(@Req() req: AuthenticatedRequest, @Res() res: Response) {
-    const { state, adminEmail } = this.storePendingYoutubeState(req);
-
-    res.cookie('yt_oauth_state', state, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 10 * 60 * 1000, // 10 min
-      path: '/auth/youtube/callback',
-    });
-
-    res.cookie('yt_oauth_email', adminEmail, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 10 * 60 * 1000,
-      path: '/auth/youtube/callback',
-    });
-
-    const url = String(this.youtube.getAuthUrl(state));
-    return res.redirect(url);
-  }
-
-  @Post('youtube/connect')
-  @ApiOperation({ summary: 'Create a YouTube OAuth connection URL', description: 'Requires a valid ADMIN bearer token. Use from frontend axios, then navigate to the returned URL.' })
-  @ApiOkResponse({ description: 'Google OAuth consent URL.', schema: { example: { url: 'https://accounts.google.com/o/oauth2/v2/auth?...' } } })
-  @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
-  youtubeConnect(@Req() req: AuthenticatedRequest) {
-    const { state } = this.storePendingYoutubeState(req);
-    return { url: String(this.youtube.getAuthUrl(state)) };
-  }
-
-  // Public because YouTube redirects here without a bearer token; state cookies validate the request.
-  @Public()
-  @Get('youtube/callback')
-  @ApiOperation({ summary: 'Handle YouTube OAuth callback', description: 'Public callback used by Google OAuth. State cookies validate the request.' })
-  @ApiOkResponse({ description: 'YouTube account connected.', schema: { example: 'YouTube connected. You can close this tab.' } })
-  @ApiResponse({ status: 400, description: 'Missing OAuth code.' })
-  @ApiResponse({ status: 401, description: 'Invalid OAuth state.' })
-  async youtubeCallback(
-    @Req() req: Request,
-    @Res() res: Response,
-    @Query('code') code?: string,
-    @Query('state') state?: string,
-  ) {
-    if (!code) throw new BadRequestException('Missing OAuth code');
-
-    const expected = this.getCookie(req, 'yt_oauth_state');
-    const adminEmail = this.getCookie(req, 'yt_oauth_email');
-    res.clearCookie('yt_oauth_state', { path: '/auth/youtube/callback' });
-    res.clearCookie('yt_oauth_email', { path: '/auth/youtube/callback' });
-
-    const pending = this.consumePendingYoutubeState(state);
-    if (pending) {
-      this.auth.ensureAdminEmailAllowed(pending.adminEmail);
-      await this.youtube.handleAuthCallback(code);
-      return res.status(200).send('âœ… YouTube connected. You can close this tab.');
-    }
-
-    if (!this.stateMatches(expected, state)) {
-      throw new UnauthorizedException('Invalid OAuth state');
-    }
-
-    this.auth.ensureAdminEmailAllowed(adminEmail || '');
-
-    await this.youtube.handleAuthCallback(code);
-    return res.status(200).send('✅ YouTube connected. You can close this tab.');
+    if (!req.user?.userId || req.user.kind !== 'user') throw new UnauthorizedException('SaaS user token required');
+    return this.auth.me({ userId: req.user.userId });
   }
 }

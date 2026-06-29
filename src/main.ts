@@ -23,7 +23,7 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-workspace-id'],
   });
 
   const reflector = app.get(Reflector);
@@ -37,7 +37,11 @@ async function bootstrap() {
   );
 
   app.use(urlencoded({ extended: false }));
-  app.use(json());
+  app.use(json({
+    verify: (req: any, _res, buf) => {
+      req.rawBody = Buffer.from(buf);
+    },
+  }));
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Jubily Automation Core API')

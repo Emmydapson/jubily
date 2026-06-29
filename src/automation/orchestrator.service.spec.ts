@@ -29,7 +29,7 @@ describe('OrchestratorService force slot rerun', () => {
   function makeService(existing: { id: string; status: string } | null) {
     const prisma = {
       videoJob: {
-        findUnique: jest.fn().mockResolvedValue(existing),
+        findFirst: jest.fn().mockResolvedValue(existing),
         update: jest.fn().mockResolvedValue({}),
       },
     };
@@ -68,8 +68,12 @@ describe('OrchestratorService force slot rerun', () => {
       }),
     );
 
-    expect(prisma.videoJob.findUnique).toHaveBeenCalledWith({
-      where: { slot_scheduledFor: { slot: 'MORNING', scheduledFor: new Date('2026-06-02T09:00:00.000Z') } },
+    expect(prisma.videoJob.findFirst).toHaveBeenCalledWith({
+      where: {
+        workspaceId: null,
+        slot: 'MORNING',
+        scheduledFor: new Date('2026-06-02T09:00:00.000Z'),
+      },
       select: { id: true, status: true },
     });
     expect(prisma.videoJob.update).toHaveBeenCalledWith({
@@ -105,5 +109,64 @@ describe('OrchestratorService force slot rerun', () => {
 
     expect(prisma.videoJob.update).not.toHaveBeenCalled();
     expect(videos.startRenderForJob).not.toHaveBeenCalled();
+  });
+
+  it('scopes slot idempotency, topic selection, and offer selection to workspace', async () => {
+    const prisma = {
+      videoJob: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      topic: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'topic-1', title: 'Sleep support' }),
+      },
+      offer: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'offer-1', name: 'Offer', hoplink: 'https://example.com', nicheTag: 'sleep', network: 'digistore24' }]),
+      },
+    };
+    const automation = {
+      generateScriptWithAiOffer: jest.fn().mockResolvedValue({ id: 'script-1' }),
+    };
+    const videos = {
+      createVideoJob: jest.fn().mockResolvedValue({ jobId: 'job-1', renderId: 'render-1' }),
+    };
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({ automationEnabled: true }),
+    };
+
+    const service = new OrchestratorService(
+      prisma as never,
+      automation as never,
+      videos as never,
+      settings as never,
+    );
+
+    await service.runSlot('MORNING', new Date('2026-06-02T09:00:00.000Z'), { workspaceId: 'workspace-1' });
+
+    expect(prisma.videoJob.findFirst).toHaveBeenCalledWith({
+      where: {
+        workspaceId: 'workspace-1',
+        slot: 'MORNING',
+        scheduledFor: new Date('2026-06-02T09:00:00.000Z'),
+      },
+      select: { id: true, status: true },
+    });
+    expect(prisma.topic.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ workspaceId: 'workspace-1' }),
+      }),
+    );
+    expect(prisma.offer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ workspaceId: 'workspace-1', active: true }),
+      }),
+    );
+    expect(videos.createVideoJob).toHaveBeenCalledWith(
+      'script-1',
+      'offer-1',
+      'MORNING',
+      new Date('2026-06-02T09:00:00.000Z'),
+      'workspace-1',
+    );
   });
 });

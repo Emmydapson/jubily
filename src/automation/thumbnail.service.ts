@@ -40,11 +40,22 @@ export class ThumbnailService {
     };
   }
 
-  async getScriptThumbnail(scriptId: string) {
+  private assertWorkspaceMatch<T extends { workspaceId?: string | null }>(
+    row: T | null,
+    workspaceId?: string | null,
+    label = 'Resource',
+  ): asserts row is T {
+    if (!row || (workspaceId !== undefined && row.workspaceId !== workspaceId)) {
+      throw new NotFoundException(`${label} not found`);
+    }
+  }
+
+  async getScriptThumbnail(scriptId: string, workspaceId?: string | null) {
     const script = await this.prisma.script.findUnique({
       where: { id: scriptId },
       select: {
         id: true,
+        workspaceId: true,
         thumbnailPrompt: true,
         thumbnailImageUrl: true,
         thumbnailStatus: true,
@@ -53,7 +64,7 @@ export class ThumbnailService {
       },
     });
 
-    if (!script) throw new NotFoundException('Script not found');
+    this.assertWorkspaceMatch(script, workspaceId, 'Script');
 
     return this.statusShape({
       target: 'script',
@@ -67,11 +78,12 @@ export class ThumbnailService {
     });
   }
 
-  async getJobThumbnail(jobId: string) {
+  async getJobThumbnail(jobId: string, workspaceId?: string | null) {
     const job = await this.prisma.videoJob.findUnique({
       where: { id: jobId },
       select: {
         id: true,
+        workspaceId: true,
         scriptId: true,
         thumbnailPrompt: true,
         thumbnailImageUrl: true,
@@ -90,7 +102,7 @@ export class ThumbnailService {
       },
     });
 
-    if (!job) throw new NotFoundException('Job not found');
+    this.assertWorkspaceMatch(job, workspaceId, 'Job');
 
     return this.statusShape({
       target: 'job',
@@ -105,12 +117,12 @@ export class ThumbnailService {
     });
   }
 
-  async generateForScript(scriptId: string, promptOverride?: string) {
+  async generateForScript(scriptId: string, promptOverride?: string, workspaceId?: string | null) {
     const script = await this.prisma.script.findUnique({
       where: { id: scriptId },
-      select: { id: true, thumbnailPrompt: true },
+      select: { id: true, workspaceId: true, thumbnailPrompt: true },
     });
-    if (!script) throw new NotFoundException('Script not found');
+    this.assertWorkspaceMatch(script, workspaceId, 'Script');
 
     const prompt = this.normalizePrompt(promptOverride || script.thumbnailPrompt);
     await this.prisma.script.update({
@@ -188,17 +200,18 @@ export class ThumbnailService {
     }
   }
 
-  async generateForJob(jobId: string, promptOverride?: string) {
+  async generateForJob(jobId: string, promptOverride?: string, workspaceId?: string | null) {
     const job = await this.prisma.videoJob.findUnique({
       where: { id: jobId },
       select: {
         id: true,
+        workspaceId: true,
         scriptId: true,
         thumbnailPrompt: true,
         script: { select: { thumbnailPrompt: true } },
       },
     });
-    if (!job) throw new NotFoundException('Job not found');
+    this.assertWorkspaceMatch(job, workspaceId, 'Job');
 
     const prompt = this.normalizePrompt(
       promptOverride || job.thumbnailPrompt || job.script?.thumbnailPrompt,

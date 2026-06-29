@@ -10,6 +10,9 @@ import { extractScenes } from '../scene.parser';
 import { MonitoringService } from 'src/monitoring/monitoring.service';
 import { randomUUID } from 'crypto';
 import { SettingsService } from '../../settings/settings.service';
+import { BillingService } from '../../billing/billing.service';
+import { AuditService } from '../../audit/audit.service';
+import { safeErrorMessage } from '../../common/safe-metadata';
 
 @Injectable()
 export class PublishWorker implements OnModuleInit {
@@ -30,6 +33,8 @@ export class PublishWorker implements OnModuleInit {
     private serve: ShotstackServeService,
     private monitoring: MonitoringService,
     private settingsService: SettingsService,
+    private billing: BillingService,
+    private audit: AuditService,
   ) {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -59,7 +64,10 @@ export class PublishWorker implements OnModuleInit {
         renderId: job.renderId,
         attempts: { lt: this.maxPublishAttempts },
         script: { reviewStatus: 'APPROVED' },
-        OR: this.availableLeaseWhere(),
+        OR: [
+          { workerStage: 'PUBLISH_QUEUED' },
+          ...this.availableLeaseWhere(),
+        ],
       },
       data: {
         workerLockedAt: new Date(),
@@ -141,9 +149,34 @@ export class PublishWorker implements OnModuleInit {
     }
   }
 
-  private publicApiBaseUrl() {
-    const configured = process.env.PUBLIC_API_BASE_URL || process.env.JUBILY_API_BASE_URL;
-    return configured ? String(configured).replace(/\/+$/, '') : null;
+  private publicApiBaseUrl(): { url: string | null; reason: string | null } {
+    const candidates = [
+      ['PUBLIC_API_BASE_URL', process.env.PUBLIC_API_BASE_URL],
+      ['JUBILY_API_BASE_URL', process.env.JUBILY_API_BASE_URL],
+    ] as const;
+    let lastReason = 'missing';
+
+    for (const [name, configured] of candidates) {
+      const raw = configured ? String(configured).trim().replace(/\/+$/, '') : '';
+      if (!raw) continue;
+
+      try {
+        const url = new URL(raw);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          lastReason = `${name}:invalid_protocol`;
+          continue;
+        }
+        if (!url.hostname || url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+          lastReason = `${name}:non_public_host`;
+          continue;
+        }
+        return { url: url.toString().replace(/\/+$/, ''), reason: null };
+      } catch {
+        lastReason = `${name}:invalid_url`;
+      }
+    }
+
+    return { url: null, reason: lastReason };
   }
 
   private buildTrackingUrl(apiBaseUrl: string, offerId: string, jobId: string, youtubeId: string) {
@@ -154,12 +187,16 @@ export class PublishWorker implements OnModuleInit {
   }
 
   private buildDescriptionWithOfferLink(baseDesc: string, trackUrl: string) {
-    return `${baseDesc}
-
-Recommended product:
+    const suffix = `Recommended product:
 ${trackUrl}
 
-Affiliate disclosure: We may earn a commission if you buy through this link.`.slice(0, 4500);
+Affiliate disclosure: We may earn a commission if you buy through this link.`;
+    const separator = '\n\n';
+    const maxDescriptionLength = 4500;
+    const maxBaseLength = Math.max(0, maxDescriptionLength - suffix.length - separator.length);
+    const trimmedBase = String(baseDesc || '').slice(0, maxBaseLength).trimEnd();
+
+    return `${trimmedBase}${separator}${suffix}`.slice(0, maxDescriptionLength);
   }
 
   private isPublishRateLimited(err: any): { hit: boolean; reason: string } {
@@ -265,6 +302,66 @@ ${captionLine2}
 ${hashtags.join(' ')}`.slice(0, 4500);
 
     return { desc, tags };
+  }
+
+  private normalizeHashtag(value: string) {
+    const tag = String(value || '')
+      .trim()
+      .replace(/^#+/, '')
+      .replace(/[^a-zA-Z0-9_]/g, '')
+      .toLowerCase();
+    return tag ? `#${tag}` : null;
+  }
+
+  private reviewedHashtags(value: unknown) {
+    if (!Array.isArray(value)) return [];
+    const tags: string[] = [];
+    for (const item of value) {
+      const tag = this.normalizeHashtag(String(item || ''));
+      if (tag && !tags.includes(tag)) tags.push(tag);
+      if (tags.length >= 18) break;
+    }
+    return tags;
+  }
+
+  private buildReviewedDescription(
+    topicTitle: string,
+    contentObj: any,
+    rawScript: string,
+    reviewed?: { youtubeDescription?: string | null; hashtags?: unknown },
+  ) {
+    const fallback = this.buildHashtags(topicTitle, rawScript);
+    const reviewedTags = this.reviewedHashtags(reviewed?.hashtags);
+    const hashtags = [...reviewedTags, ...fallback.hashtags]
+      .filter((tag, index, all) => all.indexOf(tag) === index)
+      .slice(0, 18);
+    const tags = hashtags
+      .map((tag) => tag.replace(/^#/, ''))
+      .filter((tag) => tag && tag !== 'shorts')
+      .slice(0, 25);
+
+    const reviewedDescription = String(reviewed?.youtubeDescription || '').trim();
+    if (reviewedDescription) {
+      return {
+        desc: `${reviewedDescription}
+
+${hashtags.join(' ')}`.slice(0, 4500),
+        tags,
+      };
+    }
+
+    const hook = String(contentObj?.hook || '').trim();
+    const cta = String(contentObj?.cta || '').trim();
+    const captionLine1 = hook || topicTitle || 'Quick health tip';
+    const captionLine2 = cta || 'Save this and try it today';
+
+    return {
+      desc: `${captionLine1}
+${captionLine2}
+
+${hashtags.join(' ')}`.slice(0, 4500),
+      tags,
+    };
   }
 
   private toSrtTime(seconds: number) {
@@ -416,6 +513,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
         where: { id: job.id },
         select: {
           id: true,
+          workspaceId: true,
           offerId: true,
           youtubeUrl: true,
           published: true,
@@ -424,7 +522,11 @@ ${hashtags.join(' ')}`.slice(0, 4500);
           scriptId: true,
           videoUrl: true,
           renderId: true,
-          script: { include: { topic: { select: { title: true } } } },
+          script: {
+            include: {
+              topic: { select: { title: true } },
+            },
+          },
           offer: { select: { name: true } },
         },
       });
@@ -474,10 +576,16 @@ ${hashtags.join(' ')}`.slice(0, 4500);
         contentObj = null;
       }
 
-      const videoTitle = String(contentObj?.title || topicTitle || 'Untitled').slice(0, 90);
-      const { desc: baseDesc, tags } = this.buildDescription(topicTitle, contentObj, rawContent);
+      const videoTitle = String(fullJob.script.selectedTitle || contentObj?.title || topicTitle || 'Untitled').slice(0, 90);
+      const { desc: baseDesc, tags } = this.buildReviewedDescription(topicTitle, contentObj, rawContent, {
+        youtubeDescription: fullJob.script.youtubeDescription,
+        hashtags: fullJob.script.hashtags,
+      });
 
       // Ensure stable URL (Cloudinary)
+      if (fullJob.workspaceId) {
+        await this.billing.assertWorkspaceActive(fullJob.workspaceId);
+      }
       const stableUrl = await this.ensureStableUrl(fullJob);
       this.logger.log(`Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
       await this.monitoring.info({
@@ -519,8 +627,13 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       let youtubeUrl = fullJob.youtubeUrl || null;
 
       if (!youtubeId) {
+        if (fullJob.workspaceId && (job as any).workerStage !== 'PUBLISH_QUEUED') {
+          await this.billing.consumePublish(fullJob.workspaceId);
+        }
         try {
-  youtubeId = await this.youtube.upload(videoTitle, baseDesc, stableUrl, tags);
+  youtubeId = fullJob.workspaceId
+    ? await this.youtube.upload(videoTitle, baseDesc, stableUrl, tags, fullJob.workspaceId)
+    : await this.youtube.upload(videoTitle, baseDesc, stableUrl, tags);
 } catch (e: any) {
   const gate = this.isPublishRateLimited(e);
   if (gate.hit) {
@@ -574,6 +687,15 @@ ${hashtags.join(' ')}`.slice(0, 4500);
           provider: 'youtube',
           meta: { youtubeId, youtubeUrl },
         });
+        if (fullJob.workspaceId) {
+          await this.audit.record({
+            action: 'VIDEO_PUBLISHED',
+            workspaceId: fullJob.workspaceId,
+            targetType: 'VideoJob',
+            targetId: job.id,
+            metadata: { youtubeId, youtubeUrl },
+          });
+        }
       } else {
         // already uploaded in the past - ensure published stays true
         await this.prisma.videoJob.updateMany({
@@ -586,29 +708,47 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       // STEP 2: Offer link in description (safe retry)
       // -----------------------------
       let finalDesc = baseDesc;
+      let trackUrl: string | null = null;
 
       if (fullJob.offerId && youtubeId) {
-        const apiBaseUrl = this.publicApiBaseUrl();
-        if (apiBaseUrl) {
-          const trackUrl = this.buildTrackingUrl(apiBaseUrl, fullJob.offerId, job.id, youtubeId);
+        const apiBase = this.publicApiBaseUrl();
+        if (apiBase.url) {
+          trackUrl = this.buildTrackingUrl(apiBase.url, fullJob.offerId, job.id, youtubeId);
           finalDesc = this.buildDescriptionWithOfferLink(baseDesc, trackUrl);
         } else {
-          this.logger.warn(`Tracking link skipped job=${job.id}; set PUBLIC_API_BASE_URL or JUBILY_API_BASE_URL`);
+          this.logger.warn(
+            `Tracking link skipped job=${job.id}; reason=${apiBase.reason}; set PUBLIC_API_BASE_URL or JUBILY_API_BASE_URL`,
+          );
           await this.monitoring.warn({
             stage: 'PUBLISH',
             status: 'TRACKING_LINK_SKIPPED',
-            message: 'Tracking link skipped because public API base URL is not configured',
+            message: 'Tracking link skipped because public API base URL is not valid',
             jobId: job.id,
             offerId: fullJob.offerId,
             scriptId: fullJob.scriptId,
             provider: 'youtube',
+            meta: { reason: apiBase.reason },
           });
         }
       }
 
+      const hasTrackingLink = Boolean(trackUrl && finalDesc.split('\n').includes(trackUrl));
+      const trackingLineIndex = trackUrl ? finalDesc.split('\n').indexOf(trackUrl) : -1;
+      this.logger.log(
+        `[YouTubeMetadataQA] job=${job.id} descriptionLength=${finalDesc.length} hasTrackingLink=${hasTrackingLink} trackingLineIndex=${trackingLineIndex}`,
+      );
+      await this.prisma.videoJob.updateMany({
+        where: { id: job.id, workerLockedBy: this.workerId },
+        data: { hasTrackingLink },
+      });
+
       // Update metadata (safe retry; never causes re-upload)
       try {
-        await this.youtube.updateMetadata(youtubeId, videoTitle, finalDesc, tags);
+        if (fullJob.workspaceId) {
+          await this.youtube.updateMetadata(youtubeId, videoTitle, finalDesc, tags, fullJob.workspaceId);
+        } else {
+          await this.youtube.updateMetadata(youtubeId, videoTitle, finalDesc, tags);
+        }
         await this.monitoring.info({
           stage: 'PUBLISH',
           status: 'METADATA_DONE',
@@ -617,7 +757,12 @@ ${hashtags.join(' ')}`.slice(0, 4500);
           offerId: fullJob.offerId ?? null,
           scriptId: fullJob.scriptId,
           provider: 'youtube',
-          meta: { youtubeId },
+          meta: {
+            youtubeId,
+            descriptionLength: finalDesc.length,
+            hasTrackingLink,
+            trackingLineIndex,
+          },
         });
       } catch (e: any) {
         const msg = e?.message || String(e);
@@ -642,7 +787,11 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       // STEP 3: Captions (best-effort; never causes re-upload)
       // -----------------------------
       try {
-        await this.youtube.uploadCaptions(youtubeId, srt);
+        if (fullJob.workspaceId) {
+          await this.youtube.uploadCaptions(youtubeId, srt, fullJob.workspaceId);
+        } else {
+          await this.youtube.uploadCaptions(youtubeId, srt);
+        }
         await this.prisma.videoJob.updateMany({
           where: { id: job.id, workerLockedBy: this.workerId },
           data: { publishStage: 'CAPTIONS_DONE' },
@@ -690,7 +839,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       });
       await this.releaseClaim(job.id, { status: 'COMPLETED', published: true });
     } catch (e: any) {
-      const msg = e?.message || String(e);
+      const msg = safeErrorMessage(e);
       const nextAttempts = Number(job.attempts ?? 0) + 1;
 
       await this.releaseClaim(job.id, {

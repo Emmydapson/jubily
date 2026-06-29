@@ -139,4 +139,26 @@ export class MonitoringService {
       byStage,
     };
   }
+
+  async readiness() {
+    const checks = {
+      database: false,
+      jwtSecretConfigured: Boolean(process.env.JWT_SECRET),
+      encryptionKeyConfigured: Boolean(process.env.SETTINGS_MASTER_KEY_BASE64),
+      publicApiBaseUrlConfigured: Boolean(process.env.PUBLIC_API_BASE_URL || process.env.JUBILY_API_BASE_URL),
+    };
+
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      checks.database = true;
+    } catch {
+      checks.database = false;
+    }
+
+    return {
+      ok: Object.values(checks).every(Boolean),
+      checks,
+      timestamp: new Date().toISOString(),
+    };
+  }
 }

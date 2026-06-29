@@ -26,6 +26,11 @@ type VideoJobWithRelations = {
   thumbnailStatus?: string | null;
   thumbnailError?: string | null;
   thumbnailGeneratedAt?: Date | null;
+  durationSeconds?: number | null;
+  sceneCount?: number | null;
+  hasBurnedSubtitles?: boolean | null;
+  hasTrackingLink?: boolean | null;
+  shotstackPayloadDebugPath?: string | null;
   offer?: { id: string; name: string } | null;
   script?: { id: string; topic?: { id: string; title: string } | null } | null;
 };
@@ -63,6 +68,13 @@ export type VideoJobSummary = {
     status: string;
     error: string | null;
     generatedAt: Date | null;
+  };
+  qa: {
+    durationSeconds: number | null;
+    sceneCount: number | null;
+    hasBurnedSubtitles: boolean;
+    hasTrackingLink: boolean;
+    shotstackPayloadDebugPath: string | null;
   };
 };
 
@@ -102,6 +114,13 @@ export function presentVideoJob(job: VideoJobWithRelations): VideoJobSummary {
       status: job.thumbnailStatus ?? 'PENDING',
       error: job.thumbnailError ?? null,
       generatedAt: job.thumbnailGeneratedAt ?? null,
+    },
+    qa: {
+      durationSeconds: job.durationSeconds ?? null,
+      sceneCount: job.sceneCount ?? null,
+      hasBurnedSubtitles: Boolean(job.hasBurnedSubtitles),
+      hasTrackingLink: Boolean(job.hasTrackingLink),
+      shotstackPayloadDebugPath: job.shotstackPayloadDebugPath ?? null,
     },
   };
 }

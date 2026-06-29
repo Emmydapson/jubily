@@ -1,6 +1,7 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import { AppService } from './app.service';
 import { Roles } from './auth/roles.decorator';
+import { AdminGuard } from './auth/admin.guard';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -8,17 +9,18 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-@Controller()
+@Controller('admin/platform')
 @Roles('ADMIN')
-@ApiTags('App')
+@UseGuards(AdminGuard)
+@ApiTags('Admin - Platform')
 @ApiBearerAuth('jwt')
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  @Get()
+  @Get('health')
   @ApiOperation({
     summary: 'Health greeting',
-    description: 'Requires a valid ADMIN bearer token.',
+    description: 'Admin-only endpoint.',
   })
   @ApiOkResponse({
     description: 'Service greeting.',

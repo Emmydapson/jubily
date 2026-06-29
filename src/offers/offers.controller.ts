@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -16,14 +17,16 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import { Roles } from '../auth/roles.decorator';
+import { ActiveWorkspace } from '../workspaces/workspace.decorator';
+import { WorkspaceGuard } from '../workspaces/workspace.guard';
+import { WorkspaceRoles } from '../workspaces/workspace-roles.decorator';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { ListOffersQueryDto } from './dto/list-offers-query.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
 import { OffersService } from './offers.service';
 
 @Controller('offers')
-@Roles('ADMIN')
+@UseGuards(WorkspaceGuard)
 @ApiTags('Offers')
 @ApiBearerAuth('jwt')
 export class OffersController {
@@ -52,44 +55,52 @@ export class OffersController {
       },
     },
   })
-  list(@Query() query: ListOffersQueryDto) {
-    return this.offers.list(query);
+  list(@Query() query: ListOffersQueryDto, @ActiveWorkspace() workspace?: { id: string } | null) {
+    return this.offers.list(query, workspace?.id);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get an affiliate offer' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  get(@Param('id', ParseUUIDPipe) id: string) {
-    return this.offers.getOne(id);
+  get(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+    return this.offers.getOne(id, workspace?.id);
   }
 
   @Post()
+  @WorkspaceRoles('OWNER', 'ADMIN')
   @ApiOperation({ summary: 'Create an affiliate offer' })
   @ApiBody({ type: CreateOfferDto })
-  create(@Body() dto: CreateOfferDto) {
-    return this.offers.create(dto);
+  create(@Body() dto: CreateOfferDto, @ActiveWorkspace() workspace?: { id: string } | null) {
+    return this.offers.create(dto, workspace?.id);
   }
 
   @Patch(':id')
+  @WorkspaceRoles('OWNER', 'ADMIN')
   @ApiOperation({ summary: 'Update an affiliate offer' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiBody({ type: UpdateOfferDto })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateOfferDto) {
-    return this.offers.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateOfferDto,
+    @ActiveWorkspace() workspace?: { id: string } | null,
+  ) {
+    return this.offers.update(id, dto, workspace?.id);
   }
 
   @Post(':id/deactivate')
+  @WorkspaceRoles('OWNER', 'ADMIN')
   @ApiOperation({ summary: 'Deactivate an offer without deleting history' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  deactivate(@Param('id', ParseUUIDPipe) id: string) {
-    return this.offers.deactivate(id);
+  deactivate(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+    return this.offers.deactivate(id, workspace?.id);
   }
 
   @Post(':id/reactivate')
+  @WorkspaceRoles('OWNER', 'ADMIN')
   @ApiOperation({ summary: 'Reactivate an offer' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  reactivate(@Param('id', ParseUUIDPipe) id: string) {
-    return this.offers.reactivate(id);
+  reactivate(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+    return this.offers.reactivate(id, workspace?.id);
   }
 
   @Get(':id/performance')
@@ -116,8 +127,8 @@ export class OffersController {
       },
     },
   })
-  performance(@Param('id', ParseUUIDPipe) id: string) {
-    return this.offers.performance(id);
+  performance(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+    return this.offers.performance(id, workspace?.id);
   }
 
   @Post(':id/test-redirect')
@@ -125,8 +136,7 @@ export class OffersController {
     summary: 'Preview the affiliate redirect URL without recording a click',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
-  testRedirect(@Param('id', ParseUUIDPipe) id: string) {
-    return this.offers.testRedirect(id);
+  testRedirect(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+    return this.offers.testRedirect(id, workspace?.id);
   }
 }
-
