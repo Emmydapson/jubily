@@ -10,6 +10,7 @@ import { BillingInterval } from './dto/start-checkout.dto';
 import { StripeBillingAdapter } from './providers/stripe-billing.adapter';
 import { PaystackBillingAdapter } from './providers/paystack-billing.adapter';
 import { LiveBillingProviderAdapter, ProviderSubscriptionUpdate } from './providers/billing-provider.types';
+import { BillingPricingService } from './providers/billing-pricing.service';
 
 type UsageIncrement = {
   videoGenerations?: number;
@@ -40,6 +41,7 @@ export class BillingService {
     private readonly webhookAdapter: GenericBillingWebhookAdapter,
     private readonly stripe: StripeBillingAdapter,
     private readonly paystack: PaystackBillingAdapter,
+    private readonly pricing: BillingPricingService,
   ) {}
 
   private startOfMonth(date = new Date()) {
@@ -276,7 +278,10 @@ export class BillingService {
   }
 
   listPlans() {
-    return this.planLimits.listPlans();
+    return {
+      plans: this.planLimits.listPlans(),
+      pricing: this.pricing.listDisplayPrices(),
+    };
   }
 
   private providerAdapter(provider: BillingProvider): LiveBillingProviderAdapter {

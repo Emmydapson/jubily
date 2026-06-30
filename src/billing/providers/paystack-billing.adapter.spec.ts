@@ -14,6 +14,7 @@ describe('PaystackBillingAdapter', () => {
     process.env = {
       ...originalEnv,
       PAYSTACK_SECRET_KEY: 'sk_paystack',
+      PAYSTACK_WEBHOOK_SECRET: '',
       PAYSTACK_PRO_MONTHLY_PLAN_CODE: 'PLN_pro_monthly',
     };
     jest.mocked(axios.post).mockReset().mockResolvedValue({
@@ -45,6 +46,7 @@ describe('PaystackBillingAdapter', () => {
 
     const body = jest.mocked(axios.post).mock.calls[0][1] as any;
     expect(body.plan).toBe('PLN_pro_monthly');
+    expect(body.amount).toBeUndefined();
     expect(body.metadata).toEqual(expect.objectContaining({
       workspaceId: 'workspace-1',
       userId: 'user-1',

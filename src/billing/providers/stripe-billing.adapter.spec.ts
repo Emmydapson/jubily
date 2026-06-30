@@ -47,6 +47,8 @@ describe('StripeBillingAdapter', () => {
     const params = jest.mocked(axios.post).mock.calls[0][1] as URLSearchParams;
     expect(params.get('mode')).toBe('subscription');
     expect(params.get('line_items[0][price]')).toBe('price_pro_monthly');
+    expect(params.get('line_items[0][amount]')).toBeNull();
+    expect(params.get('line_items[0][price_data][unit_amount]')).toBeNull();
     expect(params.get('metadata[workspaceId]')).toBe('workspace-1');
     expect(params.get('metadata[userId]')).toBe('user-1');
     expect(params.get('metadata[provider]')).toBe('STRIPE');

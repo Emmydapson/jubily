@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { BillingProvider, Plan, SubscriptionStatus } from '@prisma/client';
 import { BillingService } from './billing.service';
 import { PlanLimitsService } from './plan-limits.service';
+import { BillingPricingService } from './providers/billing-pricing.service';
 
 describe('BillingService', () => {
   const periodStart = new Date('2026-06-01T00:00:00.000Z');
@@ -83,7 +84,15 @@ describe('BillingService', () => {
       verifyWebhook: jest.fn().mockReturnValue({ valid: true }),
       parseWebhook: jest.fn(),
     };
-    service = new BillingService(prisma, new PlanLimitsService(), audit as never, webhookAdapter as never, stripe as never, paystack as never);
+    service = new BillingService(
+      prisma,
+      new PlanLimitsService(),
+      audit as never,
+      webhookAdapter as never,
+      stripe as never,
+      paystack as never,
+      new BillingPricingService(),
+    );
   });
 
   afterEach(() => jest.useRealTimers());
@@ -228,6 +237,56 @@ describe('BillingService', () => {
         usage: expect.objectContaining({ storageBytes: '0' }),
       }),
     );
+  });
+
+  it('returns plan limits with displayed Stripe and Paystack pricing metadata', () => {
+    expect(service.listPlans()).toEqual({
+      plans: expect.arrayContaining([
+        expect.objectContaining({ plan: Plan.FREE, limits: expect.objectContaining({ videoGenerations: 3 }) }),
+      ]),
+      pricing: expect.arrayContaining([
+        expect.objectContaining({
+          provider: BillingProvider.STRIPE,
+          prices: expect.arrayContaining([
+            expect.objectContaining({
+              plan: Plan.PRO,
+              interval: 'monthly',
+              currency: 'USD',
+              amountMinor: 999,
+              formatted: '$9.99',
+              savings: null,
+            }),
+            expect.objectContaining({
+              plan: Plan.PREMIUM,
+              interval: 'yearly',
+              amountMinor: 27399,
+              formatted: '$273.99',
+              savings: expect.objectContaining({ label: '1 month free', monthsFree: 1 }),
+            }),
+          ]),
+        }),
+        expect.objectContaining({
+          provider: BillingProvider.PAYSTACK,
+          prices: expect.arrayContaining([
+            expect.objectContaining({
+              plan: Plan.PRO,
+              interval: 'yearly',
+              currency: 'NGN',
+              amountMinor: 8350000,
+              formatted: expect.any(String),
+              savings: expect.objectContaining({ label: '1 month free', monthsFree: 1 }),
+            }),
+            expect.objectContaining({
+              plan: Plan.PREMIUM,
+              interval: 'monthly',
+              amountMinor: 2000000,
+              formatted: expect.any(String),
+              savings: null,
+            }),
+          ]),
+        }),
+      ]),
+    });
   });
 
   it('lets platform admin helpers update subscription and suspend workspaces', async () => {
