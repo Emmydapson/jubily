@@ -1,10 +1,12 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { YoutubeService } from '../common/youtube.service';
 import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class WorkspacesService {
+  private readonly logger = new Logger(WorkspacesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly youtube: YoutubeService,
@@ -25,20 +27,26 @@ export class WorkspacesService {
     const slug = this.normalizeSlug(dto.slug || name);
     if (!name) throw new ConflictException('Workspace name is required');
 
-    const workspace = await this.prisma.workspace.create({
-      data: {
-        name,
-        slug: slug || null,
-        ownerId: userId,
-        members: {
-          create: {
-            userId,
-            role: 'OWNER',
+    let workspace;
+    try {
+      workspace = await this.prisma.workspace.create({
+        data: {
+          name,
+          slug: slug || null,
+          ownerId: userId,
+          members: {
+            create: {
+              userId,
+              role: 'OWNER',
+            },
           },
         },
-      },
-      include: { members: { where: { userId }, select: { role: true } } },
-    });
+        include: { members: { where: { userId }, select: { role: true } } },
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002') throw new ConflictException('Workspace slug is already in use');
+      throw error;
+    }
     await this.audit.record({
       action: 'WORKSPACE_CREATED',
       workspaceId: workspace.id,
@@ -47,6 +55,7 @@ export class WorkspacesService {
       targetId: workspace.id,
       metadata: { slug: workspace.slug },
     });
+    this.logger.log({ message: 'Workspace created', userId, workspaceId: workspace.id });
     return workspace;
   }
 
@@ -68,10 +77,12 @@ export class WorkspacesService {
       },
     });
 
-    return memberships.map((membership) => ({
+    const workspaces = memberships.map((membership) => ({
       ...membership.workspace,
       role: membership.role,
     }));
+    this.logger.debug({ message: 'Workspace list fetched', userId, workspaceCount: workspaces.length });
+    return workspaces;
   }
 
   async requireMembership(workspaceId: string, userId: string, roles?: Array<'OWNER' | 'ADMIN' | 'MEMBER'>) {

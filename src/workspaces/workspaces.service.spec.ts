@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { WorkspacesService } from './workspaces.service';
 
 describe('WorkspacesService', () => {
@@ -67,6 +67,20 @@ describe('WorkspacesService', () => {
     ]);
     expect(prisma.workspaceMember.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'user-1' } }),
+    );
+  });
+
+  it('returns an empty workspace list clearly for newly verified users without memberships', async () => {
+    prisma.workspaceMember.findMany.mockResolvedValue([]);
+
+    await expect(service.listMine('fresh-user-1')).resolves.toEqual([]);
+  });
+
+  it('maps duplicate workspace slug errors to a clean conflict response', async () => {
+    prisma.workspace.create.mockRejectedValue({ code: 'P2002' });
+
+    await expect(service.createWorkspace('user-1', { name: 'Acme Team' })).rejects.toBeInstanceOf(
+      ConflictException,
     );
   });
 

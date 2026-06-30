@@ -11,7 +11,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node dist/src/main.js",
     "admin:create": "ts-node scripts/create-admin.ts",
     "offers:seed": "ts-node scripts/seed-offers.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",

@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
@@ -37,6 +38,7 @@ const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 60_000;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly failedLogins = new Map<string, FailedLoginState>();
 
   constructor(
@@ -118,6 +120,30 @@ export class AuthService {
     this.failedLogins.delete(email);
   }
 
+  private async userWorkspaces(userId: string) {
+    const memberships = await this.prisma.workspaceMember.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        role: true,
+        workspace: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    return memberships.map((membership) => ({
+      ...membership.workspace,
+      role: membership.role,
+    }));
+  }
+
   private async createSession(userId: string, meta?: ClientMeta) {
     const refreshToken = this.randomToken();
     await this.prisma.userSession.create({
@@ -133,6 +159,7 @@ export class AuthService {
   }
 
   private async signSaasUser(user: SaasUser, meta?: ClientMeta) {
+    const workspaces = await this.userWorkspaces(user.id);
     const accessToken = await this.jwt.signAsync({
       sub: user.id,
       email: user.email,
@@ -150,6 +177,33 @@ export class AuthService {
         email: user.email,
         name: user.name ?? null,
         emailVerified: Boolean(user.emailVerified),
+        emailVerifiedAt: user.emailVerifiedAt ?? null,
+      },
+      emailVerified: Boolean(user.emailVerified),
+      workspaces,
+      workspace: workspaces[0] ?? null,
+      onboarding: {
+        emailVerified: Boolean(user.emailVerified),
+        hasWorkspace: workspaces.length > 0,
+        needsWorkspace: workspaces.length === 0,
+      },
+    };
+  }
+
+  private verificationRequiredResponse(user: SaasUser, verificationEmailSent: boolean) {
+    return {
+      success: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      message: verificationEmailSent
+        ? 'Email verification required. Verification email sent.'
+        : 'Email verification required. Please check your inbox or request a new verification email.',
+      requiresEmailVerification: true,
+      emailVerified: false,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name ?? null,
+        emailVerified: false,
         emailVerifiedAt: user.emailVerifiedAt ?? null,
       },
     };
@@ -193,6 +247,22 @@ export class AuthService {
     return token;
   }
 
+  private async createVerificationTokenIfAllowed(user: SaasUser) {
+    const latestToken = await this.prisma.emailVerificationToken.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    if (
+      latestToken?.createdAt &&
+      latestToken.createdAt.getTime() > Date.now() - EMAIL_VERIFICATION_RESEND_COOLDOWN_MS
+    ) {
+      return false;
+    }
+    await this.createVerificationToken(user);
+    return true;
+  }
+
   async signup(email: string, password: string, name?: string, meta?: ClientMeta) {
     const normalizedEmail = this.normalizeEmail(email);
     if (!normalizedEmail) throw new UnauthorizedException('Invalid email');
@@ -221,7 +291,7 @@ export class AuthService {
       targetId: user.id,
     });
     await this.createVerificationToken(user);
-    return this.signSaasUser(user, meta);
+    return this.verificationRequiredResponse(user, true);
   }
 
   async adminLogin(email: string, password: string, meta?: ClientMeta) {
@@ -267,6 +337,7 @@ export class AuthService {
       targetType: 'AdminUser',
       targetId: admin.id,
     });
+    this.logger.log({ message: 'Admin login success', adminId: admin.id });
     return {
       accessToken: token,
       admin: { id: admin.id, email: admin.email, role: admin.role },
@@ -302,6 +373,17 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (!user.emailVerified) {
+      this.clearLoginFailures(normalizedEmail);
+      const verificationEmailSent = await this.createVerificationTokenIfAllowed(user);
+      this.logger.log({
+        message: 'Customer login blocked pending email verification',
+        userId: user.id,
+        verificationEmailSent,
+      });
+      return this.verificationRequiredResponse(user, verificationEmailSent);
+    }
+
     this.clearLoginFailures(normalizedEmail);
     await this.prisma.user.update({
       where: { id: user.id },
@@ -314,6 +396,7 @@ export class AuthService {
       targetType: 'User',
       targetId: user.id,
     });
+    this.logger.log({ message: 'Customer login success', userId: user.id });
     return this.signSaasUser(user, meta);
   }
 
@@ -388,15 +471,8 @@ export class AuthService {
       };
     }
 
-    const latestToken = await this.prisma.emailVerificationToken.findFirst({
-      where: { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true },
-    });
-    if (
-      latestToken?.createdAt &&
-      latestToken.createdAt.getTime() > Date.now() - EMAIL_VERIFICATION_RESEND_COOLDOWN_MS
-    ) {
+    const sent = await this.createVerificationTokenIfAllowed(user);
+    if (!sent) {
       throw new HttpException(
         {
           success: false,
@@ -406,7 +482,6 @@ export class AuthService {
       );
     }
 
-    await this.createVerificationToken(user);
     return {
       success: true,
       message: 'Verification email sent.',
@@ -532,6 +607,7 @@ export class AuthService {
       targetType: 'UserSession',
       targetId: session.id,
     });
+    const workspaces = await this.userWorkspaces(session.user.id);
 
     return {
       accessToken,
@@ -542,6 +618,14 @@ export class AuthService {
         name: session.user.name ?? null,
         emailVerified: Boolean(session.user.emailVerified),
         emailVerifiedAt: session.user.emailVerifiedAt ?? null,
+      },
+      emailVerified: Boolean(session.user.emailVerified),
+      workspaces,
+      workspace: workspaces[0] ?? null,
+      onboarding: {
+        emailVerified: Boolean(session.user.emailVerified),
+        hasWorkspace: workspaces.length > 0,
+        needsWorkspace: workspaces.length === 0,
       },
     };
   }
@@ -618,6 +702,23 @@ export class AuthService {
         },
       },
     });
-    return user ? { kind: 'user', user } : null;
+    if (!user) return null;
+    const workspaces = user.memberships.map((membership) => ({
+      ...membership.workspace,
+      role: membership.role,
+    }));
+    this.logger.debug({ message: 'Current user fetched', userId: identity.userId, workspaceCount: workspaces.length });
+    return {
+      kind: 'user',
+      user,
+      emailVerified: Boolean(user.emailVerified),
+      workspaces,
+      workspace: workspaces[0] ?? null,
+      onboarding: {
+        emailVerified: Boolean(user.emailVerified),
+        hasWorkspace: workspaces.length > 0,
+        needsWorkspace: workspaces.length === 0,
+      },
+    };
   }
 }

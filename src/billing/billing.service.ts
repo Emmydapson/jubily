@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { BillingProvider, Plan, SubscriptionStatus, WorkspaceSubscription, WorkspaceUsage } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlanLimitsService } from './plan-limits.service';
@@ -34,6 +34,8 @@ type SubscriptionUpdate = {
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly planLimits: PlanLimitsService,
@@ -176,18 +178,22 @@ export class BillingService {
   }
 
   async getSubscriptionResponse(workspaceId: string) {
-    return this.serializeSubscription(await this.getOrCreateSubscription(workspaceId));
+    const response = this.serializeSubscription(await this.getOrCreateSubscription(workspaceId));
+    this.logger.debug({ message: 'Subscription fetched', workspaceId, plan: response.effectivePlan });
+    return response;
   }
 
   async getUsageResponse(workspaceId: string) {
     const subscription = await this.getOrCreateSubscription(workspaceId);
     const usage = await this.getUsage(workspaceId);
     const effectivePlan = this.effectivePlan(subscription);
-    return {
+    const response = {
       usage: this.serializeUsage(usage),
       plan: effectivePlan,
       limits: this.planLimits.serializeLimits(this.planLimits.getLimits(effectivePlan)),
     };
+    this.logger.debug({ message: 'Usage fetched', workspaceId, plan: effectivePlan });
+    return response;
   }
 
   private async assertWithinLimit(workspaceId: string, field: keyof Pick<WorkspaceUsage, 'videoGenerations' | 'publishes' | 'aiGenerations'>, label: string) {

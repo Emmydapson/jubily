@@ -13,6 +13,7 @@ describe('AuthService', () => {
     $transaction: jest.Mock;
     adminUser: { findUnique: jest.Mock; update: jest.Mock };
     user: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
+    workspaceMember: { findMany: jest.Mock };
     emailVerificationToken: { create: jest.Mock; findUnique: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
     passwordResetToken: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
     userSession: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
@@ -38,6 +39,9 @@ describe('AuthService', () => {
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+      },
+      workspaceMember: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
       emailVerificationToken: {
         create: jest.fn(),
@@ -133,12 +137,20 @@ describe('AuthService', () => {
     await expect(service.login('user@example.com', 'secret')).resolves.toEqual({
       accessToken: 'signed.jwt.token',
       refreshToken: expect.any(String),
+      emailVerified: true,
       user: {
         id: 'user-1',
         email: 'user@example.com',
         name: 'User',
         emailVerified: true,
         emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      workspaces: [],
+      workspace: null,
+      onboarding: {
+        emailVerified: true,
+        hasWorkspace: false,
+        needsWorkspace: true,
       },
     });
 
@@ -159,6 +171,39 @@ describe('AuthService', () => {
     });
   });
 
+  it('blocks unverified SaaS login without issuing access tokens and resends when allowed', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      name: 'User',
+      passwordHash: 'hash',
+      active: true,
+      emailVerified: false,
+      emailVerifiedAt: null,
+    });
+    prisma.emailVerificationToken.findFirst.mockResolvedValue(null);
+    jest.mocked(bcrypt.compare).mockResolvedValue(true as never);
+
+    await expect(service.login('user@example.com', 'secret')).resolves.toEqual({
+      success: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      message: 'Email verification required. Verification email sent.',
+      requiresEmailVerification: true,
+      emailVerified: false,
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+        name: 'User',
+        emailVerified: false,
+        emailVerifiedAt: null,
+      },
+    });
+
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+    expect(prisma.userSession.create).not.toHaveBeenCalled();
+    expect(emails.sendVerificationEmail).toHaveBeenCalled();
+  });
+
   it('records failed login attempts and rejects unknown SaaS users', async () => {
     prisma.user.findUnique.mockResolvedValue(null);
 
@@ -173,7 +218,7 @@ describe('AuthService', () => {
     expect(jwt.signAsync).not.toHaveBeenCalled();
   });
 
-  it('signs up SaaS users, creates verification token, sends verification email, and returns tokens', async () => {
+  it('signs up SaaS users, creates verification token, sends verification email, and returns no tokens', async () => {
     prisma.user.findUnique.mockResolvedValue(null);
     jest.mocked(bcrypt.hash).mockResolvedValue('hashed-password' as never);
     prisma.user.create.mockResolvedValue({
@@ -185,8 +230,11 @@ describe('AuthService', () => {
     });
 
     await expect(service.signup('USER@example.com', 'password123', 'User')).resolves.toEqual({
-      accessToken: 'signed.jwt.token',
-      refreshToken: expect.any(String),
+      success: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      message: 'Email verification required. Verification email sent.',
+      requiresEmailVerification: true,
+      emailVerified: false,
       user: {
         id: 'user-1',
         email: 'user@example.com',
@@ -216,6 +264,8 @@ describe('AuthService', () => {
       expect.objectContaining({ id: 'user-1', email: 'user@example.com' }),
       expect.any(String),
     );
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+    expect(prisma.userSession.create).not.toHaveBeenCalled();
   });
 
   it('verifies email tokens once and rejects expired verification tokens', async () => {
@@ -406,12 +456,20 @@ describe('AuthService', () => {
     await expect(service.refresh('refresh-token')).resolves.toEqual({
       accessToken: 'signed.jwt.token',
       refreshToken: expect.any(String),
+      emailVerified: true,
       user: {
         id: 'user-1',
         email: 'user@example.com',
         name: 'User',
         emailVerified: true,
         emailVerifiedAt: null,
+      },
+      workspaces: [],
+      workspace: null,
+      onboarding: {
+        emailVerified: true,
+        hasWorkspace: false,
+        needsWorkspace: true,
       },
     });
 
@@ -431,5 +489,38 @@ describe('AuthService', () => {
       user: { active: true },
     });
     await expect(service.refresh('refresh-token')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('returns current user with onboarding and workspace state', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      name: 'User',
+      active: true,
+      emailVerified: true,
+      emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+      passwordChangedAt: null,
+      lastLoginAt: null,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      memberships: [
+        {
+          role: 'OWNER',
+          workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace' },
+        },
+      ],
+    });
+
+    await expect(service.me({ userId: 'user-1' })).resolves.toEqual({
+      kind: 'user',
+      user: expect.objectContaining({ id: 'user-1', emailVerified: true }),
+      emailVerified: true,
+      workspaces: [{ id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' }],
+      workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' },
+      onboarding: {
+        emailVerified: true,
+        hasWorkspace: true,
+        needsWorkspace: false,
+      },
+    });
   });
 });
