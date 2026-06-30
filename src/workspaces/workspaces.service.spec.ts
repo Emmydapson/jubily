@@ -76,6 +76,38 @@ describe('WorkspacesService', () => {
     await expect(service.listMine('fresh-user-1')).resolves.toEqual([]);
   });
 
+  it('lets an existing zero-workspace user create their first workspace', async () => {
+    prisma.workspace.create.mockResolvedValue({
+      id: 'workspace-1',
+      name: 'Fresh Workspace',
+      slug: 'fresh-workspace',
+      ownerId: 'fresh-user-1',
+      members: [{ role: 'OWNER' }],
+    });
+
+    await expect(
+      service.createWorkspace('fresh-user-1', { name: 'Fresh Workspace' }),
+    ).resolves.toMatchObject({
+      id: 'workspace-1',
+      slug: 'fresh-workspace',
+    });
+
+    expect(prisma.workspace.create).toHaveBeenCalledWith({
+      data: {
+        name: 'Fresh Workspace',
+        slug: 'fresh-workspace',
+        ownerId: 'fresh-user-1',
+        members: {
+          create: {
+            userId: 'fresh-user-1',
+            role: 'OWNER',
+          },
+        },
+      },
+      include: { members: { where: { userId: 'fresh-user-1' }, select: { role: true } } },
+    });
+  });
+
   it('maps duplicate workspace slug errors to a clean conflict response', async () => {
     prisma.workspace.create.mockRejectedValue({ code: 'P2002' });
 

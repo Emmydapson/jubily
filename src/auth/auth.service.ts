@@ -52,6 +52,26 @@ export class AuthService {
     return String(email || '').trim().toLowerCase();
   }
 
+  private normalizeSlug(value: string) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80);
+  }
+
+  private onboardingState(emailVerified: boolean, workspaceCount: number) {
+    const needsWorkspace = workspaceCount === 0;
+    return {
+      emailVerified,
+      hasWorkspace: !needsWorkspace,
+      needsWorkspace,
+      required: needsWorkspace,
+      reason: needsWorkspace ? 'NO_WORKSPACE' : null,
+    };
+  }
+
   private allowedAdminEmails() {
     return String(process.env.ADMIN_EMAILS || '')
       .split(',')
@@ -120,6 +140,44 @@ export class AuthService {
     this.failedLogins.delete(email);
   }
 
+  private defaultWorkspaceName(name?: string | null) {
+    const firstName = String(name || '').trim().split(/\s+/).filter(Boolean)[0];
+    return `${firstName || 'My'}'s Workspace`;
+  }
+
+  private async createDefaultWorkspaceForUser(user: SaasUser) {
+    const name = this.defaultWorkspaceName(user.name);
+    const slugBase = this.normalizeSlug(name);
+    const slugSuffix = this.normalizeSlug(user.id).slice(0, 8);
+    const slug = [slugBase, slugSuffix].filter(Boolean).join('-') || null;
+
+    const workspace = await this.prisma.workspace.create({
+      data: {
+        name,
+        slug,
+        ownerId: user.id,
+        members: {
+          create: {
+            userId: user.id,
+            role: 'OWNER',
+          },
+        },
+      },
+      select: { id: true, slug: true },
+    });
+
+    await this.audit.record({
+      action: 'WORKSPACE_CREATED',
+      workspaceId: workspace.id,
+      userId: user.id,
+      targetType: 'Workspace',
+      targetId: workspace.id,
+      metadata: { slug: workspace.slug, default: true },
+    });
+    this.logger.log({ message: 'Default workspace provisioned', userId: user.id, workspaceId: workspace.id });
+    return workspace;
+  }
+
   private async userWorkspaces(userId: string) {
     const memberships = await this.prisma.workspaceMember.findMany({
       where: { userId },
@@ -182,11 +240,7 @@ export class AuthService {
       emailVerified: Boolean(user.emailVerified),
       workspaces,
       workspace: workspaces[0] ?? null,
-      onboarding: {
-        emailVerified: Boolean(user.emailVerified),
-        hasWorkspace: workspaces.length > 0,
-        needsWorkspace: workspaces.length === 0,
-      },
+      onboarding: this.onboardingState(Boolean(user.emailVerified), workspaces.length),
     };
   }
 
@@ -290,6 +344,7 @@ export class AuthService {
       targetType: 'User',
       targetId: user.id,
     });
+    await this.createDefaultWorkspaceForUser(user);
     await this.createVerificationToken(user);
     return this.verificationRequiredResponse(user, true);
   }
@@ -622,11 +677,7 @@ export class AuthService {
       emailVerified: Boolean(session.user.emailVerified),
       workspaces,
       workspace: workspaces[0] ?? null,
-      onboarding: {
-        emailVerified: Boolean(session.user.emailVerified),
-        hasWorkspace: workspaces.length > 0,
-        needsWorkspace: workspaces.length === 0,
-      },
+      onboarding: this.onboardingState(Boolean(session.user.emailVerified), workspaces.length),
     };
   }
 
@@ -714,11 +765,7 @@ export class AuthService {
       emailVerified: Boolean(user.emailVerified),
       workspaces,
       workspace: workspaces[0] ?? null,
-      onboarding: {
-        emailVerified: Boolean(user.emailVerified),
-        hasWorkspace: workspaces.length > 0,
-        needsWorkspace: workspaces.length === 0,
-      },
+      onboarding: this.onboardingState(Boolean(user.emailVerified), workspaces.length),
     };
   }
 }
