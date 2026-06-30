@@ -1,10 +1,11 @@
+import { NotFoundException } from '@nestjs/common';
 import { AutomationService } from './automation.service';
 
 describe('AutomationService customer wizard helpers', () => {
   let prisma: {
     offer: { findUnique: jest.Mock };
-    topic: { findFirst: jest.Mock; findUnique: jest.Mock; create: jest.Mock };
-    script: { findUnique: jest.Mock; update: jest.Mock };
+    topic: { findFirst: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock; create: jest.Mock };
+    script: { findUnique: jest.Mock; findMany: jest.Mock; update: jest.Mock };
   };
   let scriptService: { createReviewed: jest.Mock };
   let ai: { generateScriptWithOffer: jest.Mock };
@@ -16,8 +17,8 @@ describe('AutomationService customer wizard helpers', () => {
   beforeEach(() => {
     prisma = {
       offer: { findUnique: jest.fn() },
-      topic: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
-      script: { findUnique: jest.fn(), update: jest.fn() },
+      topic: { findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn() },
+      script: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn() },
     };
     scriptService = { createReviewed: jest.fn() };
     ai = { generateScriptWithOffer: jest.fn() };
@@ -128,5 +129,29 @@ describe('AutomationService customer wizard helpers', () => {
       workspaceId: 'workspace-1',
       targetId: 'script-1',
     }));
+  });
+
+  it('returns empty create-video page lists safely for a fresh free workspace', async () => {
+    prisma.topic.findMany.mockResolvedValue([]);
+    prisma.script.findMany.mockResolvedValue([]);
+
+    await expect(service.getTopics('workspace-1')).resolves.toEqual([]);
+    await expect(service.getPendingTopics('workspace-1')).resolves.toEqual([]);
+    await expect(service.getAllScripts('workspace-1')).resolves.toEqual([]);
+
+    expect(prisma.topic.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { workspaceId: 'workspace-1' },
+    }));
+    expect(prisma.script.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { workspaceId: 'workspace-1' },
+    }));
+  });
+
+  it('returns a clear not-found error when create-video offer generation references a missing offer', async () => {
+    prisma.offer.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.generateScriptWithAiFromOffer({ offerId: 'missing-offer', topic: 'Topic' }, 'workspace-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

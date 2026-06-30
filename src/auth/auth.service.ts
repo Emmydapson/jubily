@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  InternalServerErrorException,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -142,7 +143,7 @@ export class AuthService {
 
   private defaultWorkspaceName(name?: string | null) {
     const firstName = String(name || '').trim().split(/\s+/).filter(Boolean)[0];
-    return `${firstName || 'My'}'s Workspace`;
+    return firstName ? `${firstName}'s Workspace` : 'My Workspace';
   }
 
   private async createDefaultWorkspaceForUser(user: SaasUser) {
@@ -176,6 +177,31 @@ export class AuthService {
     });
     this.logger.log({ message: 'Default workspace provisioned', userId: user.id, workspaceId: workspace.id });
     return workspace;
+  }
+
+  private async ensureWorkspacesForVerifiedUser(user: SaasUser) {
+    const existing = await this.userWorkspaces(user.id);
+    if (existing.length > 0 || !user.emailVerified) return existing;
+
+    try {
+      await this.createDefaultWorkspaceForUser(user);
+    } catch (error: any) {
+      if (error?.code !== 'P2002') {
+        this.logger.error({
+          message: 'Default workspace provisioning failed',
+          userId: user.id,
+          error: error?.message || String(error),
+        });
+        throw new InternalServerErrorException('Workspace provisioning failed. Please try again.');
+      }
+    }
+
+    const recovered = await this.userWorkspaces(user.id);
+    if (recovered.length === 0) {
+      this.logger.error({ message: 'Default workspace recovery returned no workspace', userId: user.id });
+      throw new InternalServerErrorException('Workspace provisioning failed. Please try again.');
+    }
+    return recovered;
   }
 
   private async userWorkspaces(userId: string) {
@@ -217,7 +243,7 @@ export class AuthService {
   }
 
   private async signSaasUser(user: SaasUser, meta?: ClientMeta) {
-    const workspaces = await this.userWorkspaces(user.id);
+    const workspaces = await this.ensureWorkspacesForVerifiedUser(user);
     const accessToken = await this.jwt.signAsync({
       sub: user.id,
       email: user.email,
@@ -662,7 +688,7 @@ export class AuthService {
       targetType: 'UserSession',
       targetId: session.id,
     });
-    const workspaces = await this.userWorkspaces(session.user.id);
+    const workspaces = await this.ensureWorkspacesForVerifiedUser(session.user);
 
     return {
       accessToken,
@@ -754,10 +780,14 @@ export class AuthService {
       },
     });
     if (!user) return null;
-    const workspaces = user.memberships.map((membership) => ({
+    const existingWorkspaces = user.memberships.map((membership) => ({
       ...membership.workspace,
       role: membership.role,
     }));
+    const workspaces =
+      existingWorkspaces.length > 0 || !user.emailVerified
+        ? existingWorkspaces
+        : await this.ensureWorkspacesForVerifiedUser(user);
     this.logger.debug({ message: 'Current user fetched', userId: identity.userId, workspaceCount: workspaces.length });
     return {
       kind: 'user',

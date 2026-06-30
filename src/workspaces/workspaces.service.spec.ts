@@ -3,6 +3,7 @@ import { WorkspacesService } from './workspaces.service';
 
 describe('WorkspacesService', () => {
   let prisma: {
+    user: { findUnique: jest.Mock };
     workspace: { create: jest.Mock; findUnique: jest.Mock };
     workspaceMember: { findMany: jest.Mock; findUnique: jest.Mock };
     offer: { count: jest.Mock };
@@ -16,6 +17,7 @@ describe('WorkspacesService', () => {
 
   beforeEach(() => {
     prisma = {
+      user: { findUnique: jest.fn() },
       workspace: { create: jest.fn(), findUnique: jest.fn() },
       workspaceMember: { findMany: jest.fn(), findUnique: jest.fn() },
       offer: { count: jest.fn() },
@@ -72,8 +74,62 @@ describe('WorkspacesService', () => {
 
   it('returns an empty workspace list clearly for newly verified users without memberships', async () => {
     prisma.workspaceMember.findMany.mockResolvedValue([]);
+    prisma.user.findUnique.mockResolvedValue({ id: 'fresh-user-1', name: 'Fresh', emailVerified: false });
 
     await expect(service.listMine('fresh-user-1')).resolves.toEqual([]);
+  });
+
+  it('recovers a default workspace when a verified legacy user lists workspaces with no memberships', async () => {
+    prisma.workspaceMember.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          role: 'OWNER',
+          workspace: { id: 'workspace-1', name: "Fresh's Workspace", slug: 'fresh-s-workspace-fresh-us' },
+        },
+      ]);
+    prisma.user.findUnique.mockResolvedValue({ id: 'fresh-user-1', name: 'Fresh User', emailVerified: true });
+    prisma.workspace.create.mockResolvedValue({
+      id: 'workspace-1',
+      name: "Fresh's Workspace",
+      slug: 'fresh-s-workspace-fresh-us',
+      ownerId: 'fresh-user-1',
+      members: [{ role: 'OWNER' }],
+    });
+
+    await expect(service.listMine('fresh-user-1')).resolves.toEqual([
+      { id: 'workspace-1', name: "Fresh's Workspace", slug: 'fresh-s-workspace-fresh-us', role: 'OWNER' },
+    ]);
+
+    expect(prisma.workspace.create).toHaveBeenCalledWith({
+      data: {
+        name: "Fresh's Workspace",
+        slug: 'fresh-s-workspace-fresh-us',
+        ownerId: 'fresh-user-1',
+        members: {
+          create: {
+            userId: 'fresh-user-1',
+            role: 'OWNER',
+          },
+        },
+      },
+      include: { members: { where: { userId: 'fresh-user-1' }, select: { role: true } } },
+    });
+  });
+
+  it('does not duplicate a workspace on repeated workspace list calls when membership exists', async () => {
+    prisma.workspaceMember.findMany.mockResolvedValue([
+      {
+        role: 'OWNER',
+        workspace: { id: 'workspace-1', name: 'Existing Workspace', slug: 'existing-workspace' },
+      },
+    ]);
+
+    await service.listMine('user-1');
+    await service.listMine('user-1');
+
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.workspace.create).not.toHaveBeenCalled();
   });
 
   it('lets an existing zero-workspace user create their first workspace', async () => {

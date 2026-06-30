@@ -136,6 +136,12 @@ describe('AuthService', () => {
       emailVerified: true,
       emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
     });
+    prisma.workspaceMember.findMany.mockResolvedValue([
+      {
+        role: 'OWNER',
+        workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace' },
+      },
+    ]);
     jest.mocked(bcrypt.compare).mockResolvedValue(true as never);
 
     await expect(service.login('user@example.com', 'secret')).resolves.toEqual({
@@ -149,14 +155,14 @@ describe('AuthService', () => {
         emailVerified: true,
         emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
       },
-      workspaces: [],
-      workspace: null,
+      workspaces: [{ id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' }],
+      workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' },
       onboarding: {
         emailVerified: true,
-        hasWorkspace: false,
-        needsWorkspace: true,
-        required: true,
-        reason: 'NO_WORKSPACE',
+        hasWorkspace: true,
+        needsWorkspace: false,
+        required: false,
+        reason: null,
       },
     });
 
@@ -228,7 +234,7 @@ describe('AuthService', () => {
     prisma.user.findUnique.mockResolvedValue(null);
     jest.mocked(bcrypt.hash).mockResolvedValue('hashed-password' as never);
     prisma.user.create.mockResolvedValue({
-      id: 'user-1',
+      id: 'user-123456789',
       email: 'user@example.com',
       name: 'User',
       emailVerified: false,
@@ -236,7 +242,7 @@ describe('AuthService', () => {
     });
     prisma.workspace.create.mockResolvedValue({
       id: 'workspace-1',
-      slug: 'user-s-workspace-user-1',
+      slug: 'user-s-workspace-user-123',
     });
 
     await expect(service.signup('USER@example.com', 'password123', 'User')).resolves.toEqual({
@@ -246,7 +252,7 @@ describe('AuthService', () => {
       requiresEmailVerification: true,
       emailVerified: false,
       user: {
-        id: 'user-1',
+        id: 'user-123456789',
         email: 'user@example.com',
         name: 'User',
         emailVerified: false,
@@ -266,11 +272,11 @@ describe('AuthService', () => {
     expect(prisma.workspace.create).toHaveBeenCalledWith({
       data: {
         name: "User's Workspace",
-        slug: 'user-s-workspace-user-1',
-        ownerId: 'user-1',
+        slug: 'user-s-workspace-user-123',
+        ownerId: 'user-123456789',
         members: {
           create: {
-            userId: 'user-1',
+            userId: 'user-123456789',
             role: 'OWNER',
           },
         },
@@ -280,17 +286,17 @@ describe('AuthService', () => {
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       action: 'WORKSPACE_CREATED',
       workspaceId: 'workspace-1',
-      userId: 'user-1',
+      userId: 'user-123456789',
     }));
     expect(prisma.emailVerificationToken.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        userId: 'user-1',
+        userId: 'user-123456789',
         tokenHash: expect.any(String),
         expiresAt: expect.any(Date),
       }),
     });
     expect(emails.sendVerificationEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'user-1', email: 'user@example.com' }),
+      expect.objectContaining({ id: 'user-123456789', email: 'user@example.com' }),
       expect.any(String),
     );
     expect(jwt.signAsync).not.toHaveBeenCalled();
@@ -481,6 +487,12 @@ describe('AuthService', () => {
         emailVerifiedAt: null,
       },
     });
+    prisma.workspaceMember.findMany.mockResolvedValue([
+      {
+        role: 'OWNER',
+        workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace' },
+      },
+    ]);
 
     await expect(service.refresh('refresh-token')).resolves.toEqual({
       accessToken: 'signed.jwt.token',
@@ -493,14 +505,14 @@ describe('AuthService', () => {
         emailVerified: true,
         emailVerifiedAt: null,
       },
-      workspaces: [],
-      workspace: null,
+      workspaces: [{ id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' }],
+      workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' },
       onboarding: {
         emailVerified: true,
-        hasWorkspace: false,
-        needsWorkspace: true,
-        required: true,
-        reason: 'NO_WORKSPACE',
+        hasWorkspace: true,
+        needsWorkspace: false,
+        required: false,
+        reason: null,
       },
     });
 
@@ -557,7 +569,35 @@ describe('AuthService', () => {
     });
   });
 
-  it('returns explicit onboarding requirement for verified users with zero workspaces', async () => {
+  it('returns explicit onboarding requirement for unverified users with zero workspaces', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      name: 'User',
+      active: true,
+      emailVerified: false,
+      emailVerifiedAt: null,
+      passwordChangedAt: null,
+      lastLoginAt: null,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      memberships: [],
+    });
+
+    await expect(service.me({ userId: 'user-1' })).resolves.toMatchObject({
+      kind: 'user',
+      workspaces: [],
+      workspace: null,
+      onboarding: {
+        emailVerified: false,
+        hasWorkspace: false,
+        needsWorkspace: true,
+        required: true,
+        reason: 'NO_WORKSPACE',
+      },
+    });
+  });
+
+  it('returns a clear error if verified zero-workspace recovery cannot produce a workspace', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'user-1',
       email: 'user@example.com',
@@ -570,18 +610,136 @@ describe('AuthService', () => {
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       memberships: [],
     });
+    prisma.workspace.create.mockResolvedValue({ id: 'workspace-1', slug: 'user-s-workspace-user-1' });
+    prisma.workspaceMember.findMany.mockResolvedValue([]);
 
-    await expect(service.me({ userId: 'user-1' })).resolves.toMatchObject({
-      kind: 'user',
-      workspaces: [],
-      workspace: null,
+    await expect(service.me({ userId: 'user-1' })).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: 'Workspace provisioning failed. Please try again.',
+      }),
+      status: 500,
+    });
+  });
+
+  it('recovers a default workspace for a legacy verified user during login', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'legacy-user-1',
+      email: 'legacy@example.com',
+      name: 'Legacy User',
+      passwordHash: 'hash',
+      active: true,
+      emailVerified: true,
+      emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    prisma.workspaceMember.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          role: 'OWNER',
+          workspace: { id: 'workspace-1', name: "Legacy's Workspace", slug: 'legacy-s-workspace-legacy-u' },
+        },
+      ]);
+    prisma.workspace.create.mockResolvedValue({ id: 'workspace-1', slug: 'legacy-s-workspace-legacy-u' });
+    jest.mocked(bcrypt.compare).mockResolvedValue(true as never);
+
+    await expect(service.login('legacy@example.com', 'secret')).resolves.toMatchObject({
+      workspaces: [{ id: 'workspace-1', name: "Legacy's Workspace", slug: 'legacy-s-workspace-legacy-u', role: 'OWNER' }],
+      workspace: { id: 'workspace-1', name: "Legacy's Workspace", slug: 'legacy-s-workspace-legacy-u', role: 'OWNER' },
       onboarding: {
-        emailVerified: true,
-        hasWorkspace: false,
-        needsWorkspace: true,
-        required: true,
-        reason: 'NO_WORKSPACE',
+        hasWorkspace: true,
+        needsWorkspace: false,
+        required: false,
+        reason: null,
       },
     });
+
+    expect(prisma.workspace.create).toHaveBeenCalledTimes(1);
+    expect(prisma.workspace.create).toHaveBeenCalledWith({
+      data: {
+        name: "Legacy's Workspace",
+        slug: 'legacy-s-workspace-legacy-u',
+        ownerId: 'legacy-user-1',
+        members: { create: { userId: 'legacy-user-1', role: 'OWNER' } },
+      },
+      select: { id: true, slug: true },
+    });
+  });
+
+  it('recovers a default workspace for a legacy verified user during /auth/me', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'legacy-user-1',
+      email: 'legacy@example.com',
+      name: null,
+      active: true,
+      emailVerified: true,
+      emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+      passwordChangedAt: null,
+      lastLoginAt: null,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      memberships: [],
+    });
+    prisma.workspaceMember.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          role: 'OWNER',
+          workspace: { id: 'workspace-1', name: 'My Workspace', slug: 'my-workspace-legacy-u' },
+        },
+      ]);
+    prisma.workspace.create.mockResolvedValue({ id: 'workspace-1', slug: 'my-workspace-legacy-u' });
+
+    await expect(service.me({ userId: 'legacy-user-1' })).resolves.toMatchObject({
+      workspaces: [{ id: 'workspace-1', name: 'My Workspace', slug: 'my-workspace-legacy-u', role: 'OWNER' }],
+      workspace: { id: 'workspace-1', name: 'My Workspace', slug: 'my-workspace-legacy-u', role: 'OWNER' },
+      onboarding: {
+        hasWorkspace: true,
+        needsWorkspace: false,
+        required: false,
+        reason: null,
+      },
+    });
+
+    expect(prisma.workspace.create).toHaveBeenCalledTimes(1);
+    expect(prisma.workspace.create).toHaveBeenCalledWith({
+      data: {
+        name: 'My Workspace',
+        slug: 'my-workspace-legacy-u',
+        ownerId: 'legacy-user-1',
+        members: { create: { userId: 'legacy-user-1', role: 'OWNER' } },
+      },
+      select: { id: true, slug: true },
+    });
+  });
+
+  it('does not duplicate workspace on repeated verified login or /auth/me when membership exists', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      name: 'User',
+      passwordHash: 'hash',
+      active: true,
+      emailVerified: true,
+      emailVerifiedAt: null,
+      memberships: [
+        {
+          role: 'OWNER',
+          workspace: { id: 'workspace-1', name: 'Existing Workspace', slug: 'existing-workspace' },
+        },
+      ],
+    });
+    prisma.workspaceMember.findMany.mockResolvedValue([
+      {
+        role: 'OWNER',
+        workspace: { id: 'workspace-1', name: 'Existing Workspace', slug: 'existing-workspace' },
+      },
+    ]);
+    jest.mocked(bcrypt.compare).mockResolvedValue(true as never);
+
+    await service.login('user@example.com', 'secret');
+    await service.login('user@example.com', 'secret');
+    await service.me({ userId: 'user-1' });
+    await service.me({ userId: 'user-1' });
+
+    expect(prisma.workspace.create).not.toHaveBeenCalled();
   });
 });

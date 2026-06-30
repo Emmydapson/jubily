@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { YoutubeService } from '../common/youtube.service';
 import { AuditService } from '../audit/audit.service';
@@ -20,6 +20,44 @@ export class WorkspacesService {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 80);
+  }
+
+  private defaultWorkspaceName(name?: string | null) {
+    const firstName = String(name || '').trim().split(/\s+/).filter(Boolean)[0];
+    return firstName ? `${firstName}'s Workspace` : 'My Workspace';
+  }
+
+  private async createDefaultWorkspaceForUser(user: { id: string; name?: string | null }) {
+    const name = this.defaultWorkspaceName(user.name);
+    const slugBase = this.normalizeSlug(name);
+    const slugSuffix = this.normalizeSlug(user.id).slice(0, 8);
+    const slug = [slugBase, slugSuffix].filter(Boolean).join('-') || null;
+
+    const workspace = await this.prisma.workspace.create({
+      data: {
+        name,
+        slug,
+        ownerId: user.id,
+        members: {
+          create: {
+            userId: user.id,
+            role: 'OWNER',
+          },
+        },
+      },
+      include: { members: { where: { userId: user.id }, select: { role: true } } },
+    });
+
+    await this.audit.record({
+      action: 'WORKSPACE_CREATED',
+      workspaceId: workspace.id,
+      userId: user.id,
+      targetType: 'Workspace',
+      targetId: workspace.id,
+      metadata: { slug: workspace.slug, default: true, recovery: true },
+    });
+    this.logger.log({ message: 'Default workspace recovered', userId: user.id, workspaceId: workspace.id });
+    return workspace;
   }
 
   async createWorkspace(userId: string, dto: { name: string; slug?: string }) {
@@ -60,7 +98,51 @@ export class WorkspacesService {
   }
 
   async listMine(userId: string) {
-    const memberships = await this.prisma.workspaceMember.findMany({
+    const memberships = await this.findMemberships(userId);
+
+    let workspaces = memberships.map((membership) => ({
+      ...membership.workspace,
+      role: membership.role,
+    }));
+
+    if (workspaces.length === 0) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, name: true, emailVerified: true },
+      });
+
+      if (user?.emailVerified) {
+        try {
+          await this.createDefaultWorkspaceForUser(user);
+        } catch (error: any) {
+          if (error?.code !== 'P2002') {
+            this.logger.error({
+              message: 'Default workspace recovery failed',
+              userId,
+              error: error?.message || String(error),
+            });
+            throw new InternalServerErrorException('Workspace provisioning failed. Please try again.');
+          }
+        }
+
+        const recoveredMemberships = await this.findMemberships(userId);
+        workspaces = recoveredMemberships.map((membership) => ({
+          ...membership.workspace,
+          role: membership.role,
+        }));
+        if (workspaces.length === 0) {
+          this.logger.error({ message: 'Workspace recovery returned no workspace', userId });
+          throw new InternalServerErrorException('Workspace provisioning failed. Please try again.');
+        }
+      }
+    }
+
+    this.logger.debug({ message: 'Workspace list fetched', userId, workspaceCount: workspaces.length });
+    return workspaces;
+  }
+
+  private findMemberships(userId: string) {
+    return this.prisma.workspaceMember.findMany({
       where: { userId },
       orderBy: { createdAt: 'asc' },
       select: {
@@ -76,13 +158,6 @@ export class WorkspacesService {
         },
       },
     });
-
-    const workspaces = memberships.map((membership) => ({
-      ...membership.workspace,
-      role: membership.role,
-    }));
-    this.logger.debug({ message: 'Workspace list fetched', userId, workspaceCount: workspaces.length });
-    return workspaces;
   }
 
   async requireMembership(workspaceId: string, userId: string, roles?: Array<'OWNER' | 'ADMIN' | 'MEMBER'>) {

@@ -239,6 +239,34 @@ describe('BillingService', () => {
     );
   });
 
+  it('creates safe FREE subscription and usage defaults when billing rows are missing', async () => {
+    prisma.workspaceSubscription.findUnique.mockResolvedValue(null);
+    prisma.workspaceSubscription.create.mockResolvedValue({
+      id: 'sub-new',
+      workspaceId: 'workspace-1',
+      plan: Plan.FREE,
+      status: SubscriptionStatus.ACTIVE,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+      trialEndsAt: null,
+    });
+
+    await expect(service.getSubscriptionResponse('workspace-1')).resolves.toEqual(
+      expect.objectContaining({
+        plan: Plan.FREE,
+        effectivePlan: Plan.FREE,
+        limits: expect.objectContaining({ videoGenerations: 3, publishes: 1 }),
+      }),
+    );
+    await expect(service.getUsageResponse('workspace-1')).resolves.toEqual(
+      expect.objectContaining({
+        plan: Plan.FREE,
+        usage: expect.objectContaining({ storageBytes: '0' }),
+      }),
+    );
+  });
+
   it('returns plan limits with displayed Stripe and Paystack pricing metadata', () => {
     expect(service.listPlans()).toEqual({
       plans: expect.arrayContaining([
