@@ -78,6 +78,29 @@ describe('validateEnv', () => {
     ).not.toThrow();
   });
 
+  it('requires public frontend and api URLs in hosted environments', () => {
+    const hostedBase = {
+      NODE_ENV: 'staging',
+      JWT_SECRET: strongSecret,
+      DATABASE_URL: 'postgresql://user:pass@db/app',
+      ADMIN_EMAILS: 'admin@example.com',
+      SETTINGS_MASTER_KEY_BASE64: key,
+      PUBLIC_API_BASE_URL: 'https://api.example.com',
+    };
+
+    expect(() => validateEnv({ ...hostedBase, FRONTEND_URL: 'http://localhost:3000', API_URL: 'https://api.example.com' }))
+      .toThrow('FRONTEND_URL must not use a local host');
+    expect(() => validateEnv({ ...hostedBase, FRONTEND_URL: 'https://joinjubily.com' }))
+      .toThrow('API_URL is required');
+    expect(() =>
+      validateEnv({
+        ...hostedBase,
+        FRONTEND_URL: 'https://joinjubily.com',
+        API_URL: 'https://api.joinjubily.com',
+      }),
+    ).not.toThrow();
+  });
+
   it('requires Stripe pricing only when Stripe is enabled', () => {
     expect(() =>
       validateEnv({

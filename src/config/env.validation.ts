@@ -104,7 +104,9 @@ function requireProviderPricing(env: Record<string, unknown>, provider: 'STRIPE'
 
 export function validateEnv(config: Record<string, unknown>) {
   const env = { ...config };
-  const isProduction = String(env.NODE_ENV || '').toLowerCase() === 'production';
+  const nodeEnv = String(env.NODE_ENV || '').toLowerCase();
+  const isProduction = nodeEnv === 'production';
+  const isHosted = isProduction || nodeEnv === 'staging';
 
   assertStrongSecret(env, 'JWT_SECRET');
 
@@ -112,13 +114,16 @@ export function validateEnv(config: Record<string, unknown>) {
     throw new Error('JWT_EXPIRES_IN must be a duration like 15m, 1h, or 1d');
   }
 
-  if (isProduction) {
+  if (isHosted) {
     requireValue(env, 'DATABASE_URL');
     requireValue(env, 'ADMIN_EMAILS');
     assertBase64Key(env, 'SETTINGS_MASTER_KEY_BASE64');
     assertUrl(env, 'FRONTEND_URL', { publicHost: true });
     assertUrl(env, 'API_URL', { publicHost: true });
     assertUrl(env, 'PUBLIC_API_BASE_URL', { publicHost: true });
+  }
+
+  if (isProduction) {
     assertUrl(env, 'YOUTUBE_ADMIN_REDIRECT_URI', { publicHost: true });
     assertUrl(env, 'YOUTUBE_CUSTOMER_REDIRECT_URI', { publicHost: true });
     requireValue(env, 'YOUTUBE_CLIENT_ID');
@@ -144,15 +149,15 @@ export function validateEnv(config: Record<string, unknown>) {
     requireProviderPricing(env, 'PAYSTACK');
   }
 
-  if (env.PUBLIC_API_BASE_URL) assertUrl(env, 'PUBLIC_API_BASE_URL', { publicHost: isProduction });
-  if (env.JUBILY_API_BASE_URL) assertUrl(env, 'JUBILY_API_BASE_URL', { publicHost: isProduction });
-  if (env.FRONTEND_URL) assertUrl(env, 'FRONTEND_URL', { publicHost: isProduction });
-  if (env.API_URL) assertUrl(env, 'API_URL', { publicHost: isProduction });
-  if (env.APP_WEB_URL) assertUrl(env, 'APP_WEB_URL', { publicHost: isProduction });
-  if (env.PUBLIC_APP_URL) assertUrl(env, 'PUBLIC_APP_URL', { publicHost: isProduction });
-  if (env.YOUTUBE_REDIRECT) assertUrl(env, 'YOUTUBE_REDIRECT', { publicHost: isProduction });
-  if (env.YOUTUBE_ADMIN_REDIRECT_URI) assertUrl(env, 'YOUTUBE_ADMIN_REDIRECT_URI', { publicHost: isProduction });
-  if (env.YOUTUBE_CUSTOMER_REDIRECT_URI) assertUrl(env, 'YOUTUBE_CUSTOMER_REDIRECT_URI', { publicHost: isProduction });
+  if (env.PUBLIC_API_BASE_URL) assertUrl(env, 'PUBLIC_API_BASE_URL', { publicHost: isHosted });
+  if (env.JUBILY_API_BASE_URL) assertUrl(env, 'JUBILY_API_BASE_URL', { publicHost: isHosted });
+  if (env.FRONTEND_URL) assertUrl(env, 'FRONTEND_URL', { publicHost: isHosted });
+  if (env.API_URL) assertUrl(env, 'API_URL', { publicHost: isHosted });
+  if (env.APP_WEB_URL) assertUrl(env, 'APP_WEB_URL', { publicHost: isHosted });
+  if (env.PUBLIC_APP_URL) assertUrl(env, 'PUBLIC_APP_URL', { publicHost: isHosted });
+  if (env.YOUTUBE_REDIRECT) assertUrl(env, 'YOUTUBE_REDIRECT', { publicHost: isHosted });
+  if (env.YOUTUBE_ADMIN_REDIRECT_URI) assertUrl(env, 'YOUTUBE_ADMIN_REDIRECT_URI', { publicHost: isHosted });
+  if (env.YOUTUBE_CUSTOMER_REDIRECT_URI) assertUrl(env, 'YOUTUBE_CUSTOMER_REDIRECT_URI', { publicHost: isHosted });
 
   return env;
 }

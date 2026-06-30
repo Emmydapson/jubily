@@ -13,17 +13,32 @@ jest.mock('nodemailer', () => ({
 
 describe('account email templates', () => {
   it('generates verification, reset, and password changed templates', () => {
-    expect(verificationEmailTemplate({ name: 'Jane', url: 'https://app.test/verify' })).toEqual(
+    const verification = verificationEmailTemplate({ name: 'Jane', url: 'https://app.test/verify' });
+    expect(verification).toEqual(
       expect.objectContaining({
         subject: 'Verify your Jubily email',
         text: expect.stringContaining('https://app.test/verify'),
         html: expect.stringContaining('Verify email'),
       }),
     );
-    expect(passwordResetEmailTemplate({ name: 'Jane', url: 'https://app.test/reset' }).text).toContain(
-      'https://app.test/reset',
-    );
-    expect(passwordChangedEmailTemplate('Jane').subject).toBe('Your Jubily password was changed');
+    expect(verification.html).toContain('#FFF8F0');
+    expect(verification.html).toContain('#FF5A3D');
+    expect(verification.html).toContain('#EAD8C8');
+    expect(verification.html).toContain('Jubily');
+    expect(verification.html).not.toContain('Oneverse');
+    expect(verification.html).toContain('If the button does not work');
+    expect(verification.html).not.toMatch(/^<p>/);
+
+    const reset = passwordResetEmailTemplate({ name: 'Jane', url: 'https://app.test/reset' });
+    expect(reset.text).toContain('https://app.test/reset');
+    expect(reset.html).toContain('#FFF8F0');
+    expect(reset.html).toContain('Reset password');
+
+    const changed = passwordChangedEmailTemplate('Jane');
+    expect(changed.subject).toBe('Your Jubily password was changed');
+    expect(changed.text).toContain('Your Jubily password was changed');
+    expect(changed.html).toContain('Jubily');
+    expect(changed.html).not.toContain('Oneverse');
   });
 });
 
@@ -77,6 +92,33 @@ describe('AuthEmailService SMTP delivery', () => {
       }),
     );
     expect(sendMail.mock.calls[0][0].text).not.toContain('https://api.joinjubily.com');
+  });
+
+  it('does not fall back to localhost for hosted account email links', async () => {
+    delete process.env.FRONTEND_URL;
+    delete process.env.APP_WEB_URL;
+    delete process.env.PUBLIC_APP_URL;
+    process.env.NODE_ENV = 'production';
+    const service = new AuthEmailService();
+
+    expect(() =>
+      service.sendVerificationEmail({ id: 'user-1', email: 'user@example.com' }, 'verify-token'),
+    ).toThrow('FRONTEND_URL is required for account email links');
+
+    process.env.FRONTEND_URL = 'http://localhost:3000';
+    expect(() =>
+      service.sendPasswordResetEmail({ id: 'user-1', email: 'user@example.com' }, 'reset-token'),
+    ).toThrow('FRONTEND_URL must not use a local host');
+  });
+
+  it('debug logs only the generated email link domain, never the token', async () => {
+    const service = new AuthEmailService();
+    const debugSpy = jest.spyOn((service as any).logger, 'debug').mockImplementation(jest.fn());
+
+    await service.sendVerificationEmail({ id: 'user-1', email: 'user@example.com' }, 'secret-token');
+
+    expect(JSON.stringify(debugSpy.mock.calls)).toContain('joinjubily.com');
+    expect(JSON.stringify(debugSpy.mock.calls)).not.toContain('secret-token');
   });
 
   it('sends password reset and password changed emails', async () => {

@@ -50,13 +50,23 @@ export class AuthEmailService {
 
   constructor(private readonly prisma?: PrismaService) {}
 
+  private isHostedEnvironment() {
+    const env = String(process.env.NODE_ENV || '').trim().toLowerCase();
+    return env === 'production' || env === 'staging';
+  }
+
   private appBaseUrl() {
-    return String(
+    const value = String(
       process.env.FRONTEND_URL ||
         process.env.APP_WEB_URL ||
         process.env.PUBLIC_APP_URL ||
-        'http://localhost:3000',
+        (this.isHostedEnvironment() ? '' : 'http://localhost:3000'),
     ).replace(/\/+$/, '');
+    if (!value) throw new BadRequestException('FRONTEND_URL is required for account email links');
+    if (this.isHostedEnvironment() && /\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(?::|\/|$)/i.test(value)) {
+      throw new BadRequestException('FRONTEND_URL must not use a local host in production or staging');
+    }
+    return value;
   }
 
   private verificationUrl(token: string) {
@@ -65,6 +75,24 @@ export class AuthEmailService {
 
   private resetUrl(token: string) {
     return `${this.appBaseUrl()}/reset-password?token=${encodeURIComponent(token)}`;
+  }
+
+  private logLinkDomain(type: AccountEmailType, url: string, userId: string) {
+    try {
+      this.logger.debug({
+        message: 'Generated account email link',
+        type,
+        userId,
+        domain: new URL(url).hostname,
+      });
+    } catch {
+      this.logger.debug({
+        message: 'Generated account email link',
+        type,
+        userId,
+        domain: 'invalid_url',
+      });
+    }
   }
 
   private fromAddress() {
@@ -276,7 +304,9 @@ export class AuthEmailService {
   }
 
   sendVerificationEmail(user: AccountEmailUser, token: string) {
-    const template = verificationEmailTemplate({ name: user.name, url: this.verificationUrl(token) });
+    const url = this.verificationUrl(token);
+    this.logLinkDomain('verification', url, user.id);
+    const template = verificationEmailTemplate({ name: user.name, url });
     return this.sendEmail({
       to: user.email,
       userId: user.id,
@@ -286,7 +316,9 @@ export class AuthEmailService {
   }
 
   sendPasswordResetEmail(user: AccountEmailUser, token: string) {
-    const template = passwordResetEmailTemplate({ name: user.name, url: this.resetUrl(token) });
+    const url = this.resetUrl(token);
+    this.logLinkDomain('password_reset', url, user.id);
+    const template = passwordResetEmailTemplate({ name: user.name, url });
     return this.sendEmail({
       to: user.email,
       userId: user.id,
