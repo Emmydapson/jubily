@@ -13,7 +13,7 @@ describe('AuthService', () => {
     $transaction: jest.Mock;
     adminUser: { findUnique: jest.Mock; update: jest.Mock };
     user: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
-    emailVerificationToken: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+    emailVerificationToken: { create: jest.Mock; findUnique: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
     passwordResetToken: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
     userSession: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
   };
@@ -42,6 +42,7 @@ describe('AuthService', () => {
       emailVerificationToken: {
         create: jest.fn(),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         update: jest.fn(),
       },
       passwordResetToken: {
@@ -223,10 +224,13 @@ describe('AuthService', () => {
       userId: 'user-1',
       usedAt: null,
       expiresAt: new Date(Date.now() + 60_000),
-      user: { id: 'user-1' },
+      user: { id: 'user-1', emailVerified: false },
     });
 
-    await expect(service.verifyEmail('raw-token')).resolves.toEqual({ verified: true });
+    await expect(service.verifyEmail('raw-token')).resolves.toEqual({
+      success: true,
+      message: 'Email verified successfully.',
+    });
     expect(prisma.$transaction).toHaveBeenCalledWith([
       undefined,
       undefined,
@@ -245,11 +249,33 @@ describe('AuthService', () => {
       userId: 'user-1',
       usedAt: null,
       expiresAt: new Date(Date.now() - 60_000),
-      user: { id: 'user-1' },
+      user: { id: 'user-1', emailVerified: false },
     });
-    await expect(service.verifyEmail('expired-token')).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(service.verifyEmail('expired-token')).rejects.toMatchObject({
+      response: { success: false, message: 'Verification link has expired.' },
+      status: 400,
+    });
+  });
+
+  it('returns specific responses for already verified and invalid verification tokens', async () => {
+    prisma.emailVerificationToken.findUnique.mockResolvedValueOnce({
+      id: 'verification-1',
+      userId: 'user-1',
+      usedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+      user: { id: 'user-1', emailVerified: true },
+    });
+
+    await expect(service.verifyEmail('used-token')).resolves.toEqual({
+      success: true,
+      message: 'Email already verified.',
+    });
+
+    prisma.emailVerificationToken.findUnique.mockResolvedValueOnce(null);
+    await expect(service.verifyEmail('bad-token')).rejects.toMatchObject({
+      response: { success: false, message: 'Invalid verification token.' },
+      status: 400,
+    });
   });
 
   it('resends verification for unverified users', async () => {
@@ -260,11 +286,48 @@ describe('AuthService', () => {
       emailVerified: false,
       emailVerifiedAt: null,
     });
+    prisma.emailVerificationToken.findFirst.mockResolvedValue(null);
 
-    await expect(service.resendVerification('USER@example.com')).resolves.toEqual({ ok: true });
+    await expect(service.resendVerification('USER@example.com')).resolves.toEqual({
+      success: true,
+      message: 'Verification email sent.',
+    });
 
     expect(prisma.emailVerificationToken.create).toHaveBeenCalled();
     expect(emails.sendVerificationEmail).toHaveBeenCalled();
+  });
+
+  it('does not resend verification for verified users and rate limits rapid resend requests', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'user-1',
+      email: 'user@example.com',
+      name: 'User',
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+
+    await expect(service.resendVerification('user@example.com')).resolves.toEqual({
+      success: true,
+      message: 'Email already verified.',
+    });
+    expect(prisma.emailVerificationToken.create).not.toHaveBeenCalled();
+
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'user-2',
+      email: 'new@example.com',
+      name: 'New',
+      emailVerified: false,
+      emailVerifiedAt: null,
+    });
+    prisma.emailVerificationToken.findFirst.mockResolvedValueOnce({ createdAt: new Date(Date.now() - 30_000) });
+
+    await expect(service.resendVerification('new@example.com')).rejects.toMatchObject({
+      response: {
+        success: false,
+        message: 'Please wait 60 seconds before requesting another verification email.',
+      },
+      status: 429,
+    });
   });
 
   it('creates password reset tokens and completes one-time reset with session revocation', async () => {

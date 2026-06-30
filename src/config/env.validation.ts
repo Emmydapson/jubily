@@ -116,6 +116,8 @@ export function validateEnv(config: Record<string, unknown>) {
     requireValue(env, 'DATABASE_URL');
     requireValue(env, 'ADMIN_EMAILS');
     assertBase64Key(env, 'SETTINGS_MASTER_KEY_BASE64');
+    assertUrl(env, 'FRONTEND_URL', { publicHost: true });
+    assertUrl(env, 'API_URL', { publicHost: true });
     assertUrl(env, 'PUBLIC_API_BASE_URL', { publicHost: true });
     assertUrl(env, 'YOUTUBE_ADMIN_REDIRECT_URI', { publicHost: true });
     assertUrl(env, 'YOUTUBE_CUSTOMER_REDIRECT_URI', { publicHost: true });
@@ -144,6 +146,10 @@ export function validateEnv(config: Record<string, unknown>) {
 
   if (env.PUBLIC_API_BASE_URL) assertUrl(env, 'PUBLIC_API_BASE_URL', { publicHost: isProduction });
   if (env.JUBILY_API_BASE_URL) assertUrl(env, 'JUBILY_API_BASE_URL', { publicHost: isProduction });
+  if (env.FRONTEND_URL) assertUrl(env, 'FRONTEND_URL', { publicHost: isProduction });
+  if (env.API_URL) assertUrl(env, 'API_URL', { publicHost: isProduction });
+  if (env.APP_WEB_URL) assertUrl(env, 'APP_WEB_URL', { publicHost: isProduction });
+  if (env.PUBLIC_APP_URL) assertUrl(env, 'PUBLIC_APP_URL', { publicHost: isProduction });
   if (env.YOUTUBE_REDIRECT) assertUrl(env, 'YOUTUBE_REDIRECT', { publicHost: isProduction });
   if (env.YOUTUBE_ADMIN_REDIRECT_URI) assertUrl(env, 'YOUTUBE_ADMIN_REDIRECT_URI', { publicHost: isProduction });
   if (env.YOUTUBE_CUSTOMER_REDIRECT_URI) assertUrl(env, 'YOUTUBE_CUSTOMER_REDIRECT_URI', { publicHost: isProduction });

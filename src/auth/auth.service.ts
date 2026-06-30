@@ -1,5 +1,6 @@
 /* eslint-disable prettier/prettier */
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   HttpException,
@@ -31,6 +32,8 @@ type FailedLoginState = {
   count: number;
   lockedUntil?: number;
 };
+
+const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 60_000;
 
 @Injectable()
 export class AuthService {
@@ -322,10 +325,25 @@ export class AuthService {
     const tokenHash = this.tokenHash(token);
     const record = await this.prisma.emailVerificationToken.findUnique({
       where: { tokenHash },
-      include: { user: { select: { id: true } } },
+      include: { user: { select: { id: true, emailVerified: true } } },
     });
-    if (!record || record.usedAt || record.expiresAt <= new Date()) {
-      throw new UnauthorizedException('Invalid or expired verification token');
+    if (!record) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Invalid verification token.',
+      });
+    }
+    if (record.user.emailVerified || record.usedAt) {
+      return {
+        success: true,
+        message: 'Email already verified.',
+      };
+    }
+    if (record.expiresAt <= new Date()) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Verification link has expired.',
+      });
     }
 
     await this.prisma.$transaction([
@@ -345,7 +363,10 @@ export class AuthService {
       targetType: 'User',
       targetId: record.userId,
     });
-    return { verified: true };
+    return {
+      success: true,
+      message: 'Email verified successfully.',
+    };
   }
 
   async resendVerification(email: string) {
@@ -354,10 +375,42 @@ export class AuthService {
       where: { email: normalizedEmail },
       select: { id: true, email: true, name: true, emailVerified: true, emailVerifiedAt: true },
     });
-    if (user && !user.emailVerified) {
-      await this.createVerificationToken(user);
+    if (!user) {
+      throw new BadRequestException({
+        success: false,
+        message: 'User not found.',
+      });
     }
-    return { ok: true };
+    if (user.emailVerified) {
+      return {
+        success: true,
+        message: 'Email already verified.',
+      };
+    }
+
+    const latestToken = await this.prisma.emailVerificationToken.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    if (
+      latestToken?.createdAt &&
+      latestToken.createdAt.getTime() > Date.now() - EMAIL_VERIFICATION_RESEND_COOLDOWN_MS
+    ) {
+      throw new HttpException(
+        {
+          success: false,
+          message: 'Please wait 60 seconds before requesting another verification email.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    await this.createVerificationToken(user);
+    return {
+      success: true,
+      message: 'Verification email sent.',
+    };
   }
 
   async forgotPassword(email: string) {

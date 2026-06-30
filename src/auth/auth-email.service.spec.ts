@@ -34,7 +34,9 @@ describe('AuthEmailService SMTP delivery', () => {
   beforeEach(() => {
     process.env = {
       ...originalEnv,
+      FRONTEND_URL: 'https://joinjubily.com',
       APP_WEB_URL: 'https://app.jubily.test',
+      PUBLIC_API_BASE_URL: 'https://api.joinjubily.com',
       EMAIL_PROVIDER: 'smtp',
       SMTP_HOST: 'smtp.example.com',
       SMTP_PORT: '587',
@@ -71,9 +73,10 @@ describe('AuthEmailService SMTP delivery', () => {
         from: { name: 'Jubily', address: 'hello@jubily.test' },
         to: 'user@example.com',
         subject: 'Verify your Jubily email',
-        text: expect.stringContaining('/verify-email?token=verify-token'),
+        text: expect.stringContaining('https://joinjubily.com/verify-email?token=verify-token'),
       }),
     );
+    expect(sendMail.mock.calls[0][0].text).not.toContain('https://api.joinjubily.com');
   });
 
   it('sends password reset and password changed emails', async () => {

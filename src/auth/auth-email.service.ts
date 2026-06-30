@@ -52,10 +52,9 @@ export class AuthEmailService {
 
   private appBaseUrl() {
     return String(
-      process.env.APP_WEB_URL ||
+      process.env.FRONTEND_URL ||
+        process.env.APP_WEB_URL ||
         process.env.PUBLIC_APP_URL ||
-        process.env.PUBLIC_API_BASE_URL ||
-        process.env.JUBILY_API_BASE_URL ||
         'http://localhost:3000',
     ).replace(/\/+$/, '');
   }
