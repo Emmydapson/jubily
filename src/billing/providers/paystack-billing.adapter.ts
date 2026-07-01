@@ -1,14 +1,16 @@
 /* eslint-disable prettier/prettier */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { BillingProvider, Plan, SubscriptionStatus } from '@prisma/client';
 import axios from 'axios';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { BillingPricingService } from './billing-pricing.service';
 import { CheckoutRequest, CheckoutResponse, LiveBillingProviderAdapter, ProviderWebhookResult } from './billing-provider.types';
+import { logAndThrowProviderError } from './provider-error';
 
 @Injectable()
 export class PaystackBillingAdapter implements LiveBillingProviderAdapter {
   provider = BillingProvider.PAYSTACK;
+  private readonly logger = new Logger(PaystackBillingAdapter.name);
 
   constructor(private readonly pricing: BillingPricingService) {}
 
@@ -20,10 +22,13 @@ export class PaystackBillingAdapter implements LiveBillingProviderAdapter {
 
   async createCheckout(input: CheckoutRequest): Promise<CheckoutResponse> {
     const planCode = this.pricing.getPriceId(this.provider, input.plan, input.interval);
-    const response = await axios.post(
-      'https://api.paystack.co/transaction/initialize',
-      {
+    const amount = this.pricing.getDisplayPrice(this.provider, input.plan, input.interval).amountMinor;
+    try {
+      const response = await axios.post(
+        'https://api.paystack.co/transaction/initialize',
+        {
         email: input.email,
+        amount,
         plan: planCode,
         callback_url: input.successUrl,
         metadata: {
@@ -34,24 +39,39 @@ export class PaystackBillingAdapter implements LiveBillingProviderAdapter {
           provider: this.provider,
         },
       },
-      { headers: { Authorization: `Bearer ${this.secret()}` } },
-    );
+        { headers: { Authorization: `Bearer ${this.secret()}` } },
+      );
 
-    return {
-      provider: this.provider,
-      checkoutUrl: response.data?.data?.authorization_url,
-      reference: response.data?.data?.reference,
-      sessionId: response.data?.data?.reference,
-    };
+      return {
+        provider: this.provider,
+        checkoutUrl: response.data?.data?.authorization_url,
+        reference: response.data?.data?.reference,
+        sessionId: response.data?.data?.reference,
+      };
+    } catch (error) {
+      logAndThrowProviderError(this.logger, error, {
+        provider: this.provider,
+        endpoint: 'transaction.initialize',
+        userId: input.userId,
+        workspaceId: input.workspaceId,
+      });
+    }
   }
 
   async cancelSubscription(subscriptionId: string, customerId?: string | null) {
     if (!subscriptionId || !customerId) throw new BadRequestException('Paystack subscription code/token is missing');
-    await axios.post(
-      'https://api.paystack.co/subscription/disable',
-      { code: subscriptionId, token: customerId },
-      { headers: { Authorization: `Bearer ${this.secret()}` } },
-    );
+    try {
+      await axios.post(
+        'https://api.paystack.co/subscription/disable',
+        { code: subscriptionId, token: customerId },
+        { headers: { Authorization: `Bearer ${this.secret()}` } },
+      );
+    } catch (error) {
+      logAndThrowProviderError(this.logger, error, {
+        provider: this.provider,
+        endpoint: 'subscription.disable',
+      });
+    }
     return { cancelAtPeriodEnd: false };
   }
 

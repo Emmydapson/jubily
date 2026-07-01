@@ -146,6 +146,8 @@ export function validateEnv(config: Record<string, unknown>) {
 
   if (isEnabled(env, 'PAYSTACK_ENABLED')) {
     requireValue(env, 'PAYSTACK_SECRET_KEY');
+    requireValue(env, 'PAYSTACK_PUBLIC_KEY');
+    assertUrl(env, 'FRONTEND_URL', { publicHost: isHosted });
     requireProviderPricing(env, 'PAYSTACK');
   }
 

@@ -68,7 +68,7 @@ describe('BillingPricingService', () => {
         provider: BillingProvider.PAYSTACK,
         prices: expect.arrayContaining([
           expect.objectContaining({ plan: Plan.PRO, interval: BillingInterval.MONTHLY, amountMinor: 750000 }),
-          expect.objectContaining({ plan: Plan.PRO, interval: BillingInterval.YEARLY, amountMinor: 8350000 }),
+          expect.objectContaining({ plan: Plan.PRO, interval: BillingInterval.YEARLY, amountMinor: 8250000 }),
           expect.objectContaining({ plan: Plan.PREMIUM, interval: BillingInterval.MONTHLY, amountMinor: 2000000 }),
           expect.objectContaining({
             plan: Plan.PREMIUM,

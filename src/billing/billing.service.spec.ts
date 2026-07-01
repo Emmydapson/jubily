@@ -300,7 +300,7 @@ describe('BillingService', () => {
               plan: Plan.PRO,
               interval: 'yearly',
               currency: 'NGN',
-              amountMinor: 8350000,
+              amountMinor: 8250000,
               formatted: expect.any(String),
               savings: expect.objectContaining({ label: '1 month free', monthsFree: 1 }),
             }),
@@ -400,7 +400,7 @@ describe('BillingService', () => {
   });
 
   it('creates checkout with the selected provider', async () => {
-    process.env.BILLING_RETURN_BASE_URL = 'https://api.example.com';
+    process.env.FRONTEND_URL = 'https://joinjubily.com';
     prisma.user.findUnique.mockResolvedValue({ email: 'user@example.com' });
     stripe.createCheckout.mockResolvedValue({
       provider: BillingProvider.STRIPE,
@@ -418,6 +418,32 @@ describe('BillingService', () => {
       userId: 'user-1',
       email: 'user@example.com',
       plan: Plan.PRO,
+      successUrl: 'https://joinjubily.com/billing/success',
+      cancelUrl: 'https://joinjubily.com/billing/cancel',
+    }));
+  });
+
+  it('uses FRONTEND_URL for Paystack checkout redirects', async () => {
+    process.env.FRONTEND_URL = 'https://joinjubily.com';
+    prisma.user.findUnique.mockResolvedValue({ email: 'user@example.com' });
+    paystack.createCheckout.mockResolvedValue({
+      provider: BillingProvider.PAYSTACK,
+      checkoutUrl: 'https://paystack.com/pay/ref',
+      reference: 'ref-1',
+      sessionId: 'ref-1',
+    });
+
+    await expect(
+      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.PAYSTACK }),
+    ).resolves.toEqual(expect.objectContaining({ provider: BillingProvider.PAYSTACK, reference: 'ref-1' }));
+
+    expect(paystack.createCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      email: 'user@example.com',
+      plan: Plan.PRO,
+      successUrl: 'https://joinjubily.com/billing/success',
+      cancelUrl: 'https://joinjubily.com/billing/cancel',
     }));
   });
 

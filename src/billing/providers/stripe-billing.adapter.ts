@@ -1,15 +1,17 @@
 /* eslint-disable prettier/prettier */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { BillingProvider, Plan, SubscriptionStatus } from '@prisma/client';
 import axios from 'axios';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { BillingInterval } from '../dto/start-checkout.dto';
 import { BillingPricingService } from './billing-pricing.service';
 import { CheckoutRequest, CheckoutResponse, LiveBillingProviderAdapter, ProviderWebhookResult } from './billing-provider.types';
+import { logAndThrowProviderError } from './provider-error';
 
 @Injectable()
 export class StripeBillingAdapter implements LiveBillingProviderAdapter {
   provider = BillingProvider.STRIPE;
+  private readonly logger = new Logger(StripeBillingAdapter.name);
 
   constructor(private readonly pricing: BillingPricingService) {}
 
@@ -39,12 +41,22 @@ export class StripeBillingAdapter implements LiveBillingProviderAdapter {
     params.set('subscription_data[metadata][interval]', input.interval);
     params.set('subscription_data[metadata][provider]', this.provider);
 
-    const response = await axios.post('https://api.stripe.com/v1/checkout/sessions', params, {
-      headers: {
-        Authorization: `Bearer ${this.secret()}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    });
+    let response;
+    try {
+      response = await axios.post('https://api.stripe.com/v1/checkout/sessions', params, {
+        headers: {
+          Authorization: `Bearer ${this.secret()}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+    } catch (error) {
+      logAndThrowProviderError(this.logger, error, {
+        provider: this.provider,
+        endpoint: 'checkout.sessions.create',
+        userId: input.userId,
+        workspaceId: input.workspaceId,
+      });
+    }
 
     return {
       provider: this.provider,
@@ -56,16 +68,23 @@ export class StripeBillingAdapter implements LiveBillingProviderAdapter {
 
   async cancelSubscription(subscriptionId: string) {
     if (!subscriptionId) throw new BadRequestException('Stripe subscription id is missing');
-    await axios.post(
-      `https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
-      new URLSearchParams({ cancel_at_period_end: 'true' }),
-      {
-        headers: {
-          Authorization: `Bearer ${this.secret()}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
+    try {
+      await axios.post(
+        `https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
+        new URLSearchParams({ cancel_at_period_end: 'true' }),
+        {
+          headers: {
+            Authorization: `Bearer ${this.secret()}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
         },
-      },
-    );
+      );
+    } catch (error) {
+      logAndThrowProviderError(this.logger, error, {
+        provider: this.provider,
+        endpoint: 'subscriptions.update',
+      });
+    }
     return { cancelAtPeriodEnd: true };
   }
 

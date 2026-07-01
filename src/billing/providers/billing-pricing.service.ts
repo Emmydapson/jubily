@@ -23,7 +23,7 @@ const DISPLAY_PRICES = {
     amounts: {
       [Plan.PRO]: {
         [BillingInterval.MONTHLY]: 750000,
-        [BillingInterval.YEARLY]: 8350000,
+        [BillingInterval.YEARLY]: 8250000,
       },
       [Plan.PREMIUM]: {
         [BillingInterval.MONTHLY]: 2000000,

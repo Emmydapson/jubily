@@ -126,6 +126,25 @@ describe('validateEnv', () => {
         PAYSTACK_ENABLED: 'true',
         PAYSTACK_SECRET_KEY: 'sk_test_key',
       }),
+    ).toThrow('PAYSTACK_PUBLIC_KEY is required');
+
+    expect(() =>
+      validateEnv({
+        JWT_SECRET: strongSecret,
+        PAYSTACK_ENABLED: 'true',
+        PAYSTACK_SECRET_KEY: 'sk_test_key',
+        PAYSTACK_PUBLIC_KEY: 'pk_test_key',
+      }),
+    ).toThrow('FRONTEND_URL is required');
+
+    expect(() =>
+      validateEnv({
+        JWT_SECRET: strongSecret,
+        PAYSTACK_ENABLED: 'true',
+        PAYSTACK_SECRET_KEY: 'sk_test_key',
+        PAYSTACK_PUBLIC_KEY: 'pk_test_key',
+        FRONTEND_URL: 'https://joinjubily.com',
+      }),
     ).toThrow('PAYSTACK_PRO_MONTHLY_PLAN_CODE is required');
 
     expect(() =>

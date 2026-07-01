@@ -314,8 +314,8 @@ export class BillingService {
   }
 
   private checkoutUrl(kind: 'success' | 'cancel') {
-    const base = String(process.env.BILLING_RETURN_BASE_URL || process.env.PUBLIC_API_BASE_URL || process.env.JUBILY_API_BASE_URL || '').replace(/\/+$/, '');
-    if (!base) throw new BadRequestException('BILLING_RETURN_BASE_URL or PUBLIC_API_BASE_URL is required');
+    const base = String(process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
+    if (!base) throw new BadRequestException('FRONTEND_URL is required for billing redirects');
     return `${base}/billing/${kind}`;
   }
 

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { createHmac } from 'crypto';
+import { Logger } from '@nestjs/common';
 import { BillingProvider, Plan } from '@prisma/client';
 import { BillingInterval } from '../dto/start-checkout.dto';
 import { BillingPricingService } from './billing-pricing.service';
@@ -20,6 +21,7 @@ describe('PaystackBillingAdapter', () => {
     jest.mocked(axios.post).mockReset().mockResolvedValue({
       data: { data: { authorization_url: 'https://paystack.com/pay/ref', reference: 'ref-1' } },
     });
+    jest.mocked(axios.isAxiosError).mockReset().mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -35,8 +37,8 @@ describe('PaystackBillingAdapter', () => {
       email: 'user@example.com',
       plan: Plan.PRO,
       interval: BillingInterval.MONTHLY,
-      successUrl: 'https://api.example.com/billing/success',
-      cancelUrl: 'https://api.example.com/billing/cancel',
+      successUrl: 'https://joinjubily.com/billing/success',
+      cancelUrl: 'https://joinjubily.com/billing/cancel',
     })).resolves.toEqual({
       provider: BillingProvider.PAYSTACK,
       checkoutUrl: 'https://paystack.com/pay/ref',
@@ -46,12 +48,64 @@ describe('PaystackBillingAdapter', () => {
 
     const body = jest.mocked(axios.post).mock.calls[0][1] as any;
     expect(body.plan).toBe('PLN_pro_monthly');
-    expect(body.amount).toBeUndefined();
+    expect(body.amount).toBe(750000);
+    expect(body.callback_url).toBe('https://joinjubily.com/billing/success');
     expect(body.metadata).toEqual(expect.objectContaining({
       workspaceId: 'workspace-1',
       userId: 'user-1',
+      plan: Plan.PRO,
+      interval: BillingInterval.MONTHLY,
       provider: 'PAYSTACK',
     }));
+  });
+
+  it('returns a friendly error and does not log secrets when Paystack rejects initialization', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    jest.mocked(axios.isAxiosError).mockReturnValue(true);
+    jest.mocked(axios.post).mockRejectedValueOnce({
+      isAxiosError: true,
+      message: 'Request failed with status code 400',
+      response: {
+        status: 400,
+        data: {
+          message: 'Invalid plan code',
+          reference: 'ref-provider-1',
+        },
+      },
+      config: {
+        headers: {
+          Authorization: 'Bearer sk_paystack',
+        },
+      },
+    });
+    const adapter = new PaystackBillingAdapter(new BillingPricingService());
+
+    await expect(adapter.createCheckout({
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      email: 'user@example.com',
+      plan: Plan.PRO,
+      interval: BillingInterval.MONTHLY,
+      successUrl: 'https://joinjubily.com/billing/success',
+      cancelUrl: 'https://joinjubily.com/billing/cancel',
+    })).rejects.toMatchObject({
+      response: expect.objectContaining({
+        success: false,
+        provider: BillingProvider.PAYSTACK,
+        statusCode: 400,
+        providerMessage: 'Invalid plan code',
+        reference: 'ref-provider-1',
+      }),
+    });
+
+    const logged = JSON.stringify(warnSpy.mock.calls);
+    expect(logged).toContain('Invalid plan code');
+    expect(logged).toContain('ref-provider-1');
+    expect(logged).not.toContain('sk_paystack');
+    expect(logged).not.toContain('Authorization');
+    expect(logged).not.toContain('headers');
+
+    warnSpy.mockRestore();
   });
 
   it('requires and verifies Paystack webhook signatures', () => {
