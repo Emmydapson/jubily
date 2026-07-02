@@ -59,7 +59,7 @@ describe('PublishWorker', () => {
       }),
       topic: { title: 'Morning habits for more energy' },
     },
-    offer: { name: 'Wellness Offer' },
+    offer: { name: 'AI Tool Offer', network: 'PARTNERSTACK' },
   };
 
   beforeEach(() => {
@@ -117,7 +117,7 @@ describe('PublishWorker', () => {
       'Better Morning Energy',
       expect.stringContaining('Start with water'),
       fullJob.videoUrl,
-      expect.arrayContaining(['health', 'wellness']),
+      expect.arrayContaining(['affiliatemarketing', 'productreview']),
     );
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
       where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
@@ -133,7 +133,7 @@ describe('PublishWorker', () => {
       'job-1',
       'script-1',
       'Morning habits for more energy',
-      'Wellness Offer',
+      'AI Tool Offer',
       'youtube',
       'PUBLISHED',
       'https://www.youtube.com/watch?v=youtube-1',
@@ -359,8 +359,9 @@ describe('PublishWorker', () => {
 
     expect(lines).toContain('Recommended product:');
     expect(lines).toContain(trackingUrl);
-    expect(lines[lines.indexOf('Recommended product:') + 1]).toBe(trackingUrl);
-    expect(finalDescription).toContain('Affiliate disclosure:');
+    expect(lines).toContain('Affiliate platform: PARTNERSTACK');
+    expect(lines[lines.indexOf('Recommended product:') + 2]).toBe(trackingUrl);
+    expect(finalDescription).toContain('Disclosure: This video may contain affiliate links.');
     expect(finalDescription).not.toContain(`[${trackingUrl}]`);
   });
 
@@ -382,9 +383,9 @@ describe('PublishWorker', () => {
 
     expect(finalDescription.length).toBeLessThanOrEqual(4500);
     expect(lines).toContain(trackingUrl);
-    expect(lines[lines.indexOf('Recommended product:') + 1]).toBe(trackingUrl);
+    expect(lines[lines.indexOf('Recommended product:') + 2]).toBe(trackingUrl);
     expect(finalDescription).not.toContain(`${trackingUrl.slice(0, -4)}\n`);
-    expect(finalDescription.endsWith('Affiliate disclosure: We may earn a commission if you buy through this link.')).toBe(true);
+    expect(finalDescription.endsWith('Disclosure: This video may contain affiliate links. We may earn a commission if you purchase through our link, at no extra cost to you.')).toBe(true);
   });
 
   it('publishes reviewed YouTube title, description, and hashtags when present', async () => {

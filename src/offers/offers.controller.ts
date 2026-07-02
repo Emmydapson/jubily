@@ -41,10 +41,10 @@ export class OffersController {
         items: [
           {
             id: 'd766cd09-66f7-4a22-a8d5-2cf05a2dc7d4',
-            network: 'digistore24',
-            name: 'Deep Sleep Support',
-            nicheTag: 'sleep',
-            hoplink: 'https://www.digistore24.com/redir/example/product',
+            network: 'PARTNERSTACK',
+            name: 'AI Writing Tool',
+            nicheTag: 'AI_SOFTWARE',
+            hoplink: 'https://example.partnerstack.com/ai-tool',
             active: true,
             _count: { clicks: 12, conversions: 1, videoJobs: 3 },
           },

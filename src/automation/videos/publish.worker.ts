@@ -186,11 +186,12 @@ export class PublishWorker implements OnModuleInit {
     return url.toString();
   }
 
-  private buildDescriptionWithOfferLink(baseDesc: string, trackUrl: string) {
+  private buildDescriptionWithOfferLink(baseDesc: string, trackUrl: string, platform?: string | null) {
+    const platformLine = platform ? `Affiliate platform: ${platform}\n` : '';
     const suffix = `Recommended product:
-${trackUrl}
+${platformLine}${trackUrl}
 
-Affiliate disclosure: We may earn a commission if you buy through this link.`;
+Disclosure: This video may contain affiliate links. We may earn a commission if you purchase through our link, at no extra cost to you.`;
     const separator = '\n\n';
     const maxDescriptionLength = 4500;
     const maxBaseLength = Math.max(0, maxDescriptionLength - suffix.length - separator.length);
@@ -243,14 +244,15 @@ Affiliate disclosure: We may earn a commission if you buy through this link.`;
   private buildHashtags(topicTitle: string, rawScript: string) {
     const base = [
       'shorts',
-      'health',
-      'wellness',
-      'fitness',
-      'nutrition',
-      'healthytips',
-      'selfcare',
-      'workout',
-      'mindset',
+      'affiliatemarketing',
+      'productreview',
+      'youtubeautomation',
+      'productdemo',
+      'onlinetools',
+      'buyerchecklist',
+      'digitalmarketing',
+      'sidehustle',
+      'review',
     ];
 
     const words = [...this.cleanWords(topicTitle), ...this.cleanWords(rawScript)];
@@ -291,8 +293,8 @@ Affiliate disclosure: We may earn a commission if you buy through this link.`;
     const hook = String(contentObj?.hook || '').trim();
     const cta = String(contentObj?.cta || '').trim();
 
-    const captionLine1 = hook || topicTitle || 'Quick health tip';
-    const captionLine2 = cta || 'Save this and try it today ✅';
+    const captionLine1 = hook || topicTitle || 'Quick affiliate product tip';
+    const captionLine2 = cta || 'Save this and compare it today';
 
     const { hashtags, tags } = this.buildHashtags(topicTitle, rawScript);
 
@@ -352,7 +354,7 @@ ${hashtags.join(' ')}`.slice(0, 4500),
 
     const hook = String(contentObj?.hook || '').trim();
     const cta = String(contentObj?.cta || '').trim();
-    const captionLine1 = hook || topicTitle || 'Quick health tip';
+    const captionLine1 = hook || topicTitle || 'Quick affiliate product tip';
     const captionLine2 = cta || 'Save this and try it today';
 
     return {
@@ -527,7 +529,7 @@ ${hashtags.join(' ')}`.slice(0, 4500),
               topic: { select: { title: true } },
             },
           },
-          offer: { select: { name: true } },
+          offer: { select: { name: true, network: true } },
         },
       });
 
@@ -714,7 +716,7 @@ ${hashtags.join(' ')}`.slice(0, 4500),
         const apiBase = this.publicApiBaseUrl();
         if (apiBase.url) {
           trackUrl = this.buildTrackingUrl(apiBase.url, fullJob.offerId, job.id, youtubeId);
-          finalDesc = this.buildDescriptionWithOfferLink(baseDesc, trackUrl);
+          finalDesc = this.buildDescriptionWithOfferLink(baseDesc, trackUrl, fullJob.offer?.network);
         } else {
           this.logger.warn(
             `Tracking link skipped job=${job.id}; reason=${apiBase.reason}; set PUBLIC_API_BASE_URL or JUBILY_API_BASE_URL`,

@@ -1,90 +1,66 @@
 [
   {
-    "network": "digistore24",
+    "network": "DIGISTORE24",
     "externalProductId": "478372",
     "name": "Sleep Bundle",
-    "nicheTag": "sleep",
+    "nicheTag": "HEALTH_WELLNESS",
     "hoplink": "https://www.digistore24.com/redir/478372/maxxma/",
     "active": true
   },
   {
-    "network": "digistore24",
-    "externalProductId": null,
-    "name": "Ketosana",
-    "nicheTag": "weight-loss",
-    "hoplink": "https://myketosana.com/ketosana-pdp-fe#aff=maxxma",
+    "network": "PARTNERSTACK",
+    "externalProductId": "ai-writer-demo",
+    "name": "AI Writing Tool",
+    "nicheTag": "AI_SOFTWARE",
+    "hoplink": "https://example.partnerstack.com/ai-writer",
     "active": true
   },
   {
-    "network": "digistore24",
-    "externalProductId": null,
-    "name": "Metabosana",
-    "nicheTag": "weight-loss",
-    "hoplink": "https://metabosana.com/metabosana-pdp-fe#aff=maxxma",
+    "network": "CJ_AFFILIATE",
+    "externalProductId": "finance-app-demo",
+    "name": "Budgeting App",
+    "nicheTag": "FINANCE",
+    "hoplink": "https://example.com/finance-app?aff=maxxma",
     "active": true
   },
   {
-    "network": "digistore24",
-    "externalProductId": null,
-    "name": "Feminin Bundle",
-    "nicheTag": "fitness",
-    "hoplink": "http://energetic-eternity.de/produkt/feminin-bundle/#aff=maxxma",
+    "network": "AMAZON_ASSOCIATES",
+    "externalProductId": "desk-gear-demo",
+    "name": "Home Office Desk Gear",
+    "nicheTag": "HOME_GARDEN",
+    "hoplink": "https://www.amazon.com/dp/example?tag=maxxma",
     "active": true
   },
   {
-    "network": "digistore24",
-    "externalProductId": null,
-    "name": "Season 2 Paket",
-    "nicheTag": "fitness",
-    "hoplink": "http://energetic-eternity.de/produkt/season-2-paket/#aff=maxxma",
+    "network": "IMPACT",
+    "externalProductId": "travel-card-demo",
+    "name": "Travel Rewards Offer",
+    "nicheTag": "TRAVEL",
+    "hoplink": "https://example.com/travel-rewards?irclickid=maxxma",
     "active": true
   },
   {
-    "network": "digistore24",
-    "externalProductId": "656092",
-    "name": "Hormones Offer",
-    "nicheTag": "hormones",
-    "hoplink": "https://www.checkout-ds24.com/redir/656092/maxxma/",
+    "network": "SHAREASALE",
+    "externalProductId": "beauty-kit-demo",
+    "name": "Beauty Starter Kit",
+    "nicheTag": "BEAUTY",
+    "hoplink": "https://example.com/beauty-kit?aff=maxxma",
     "active": true
   },
   {
-    "network": "clickbank",
-    "externalProductId": "brain-song",
-    "name": "The Brain Song",
-    "nicheTag": "memory",
-    "hoplink": "https://c1430dzgjx6y6p7yx1kcyg164b.hop.clickbank.net",
+    "network": "EBAY_PARTNER_NETWORK",
+    "externalProductId": "gaming-accessory-demo",
+    "name": "Gaming Accessory Deal",
+    "nicheTag": "GAMING",
+    "hoplink": "https://www.ebay.com/itm/example?campid=maxxma",
     "active": true
   },
   {
-    "network": "clickbank",
-    "externalProductId": "prostavive",
-    "name": "ProstaVive",
-    "nicheTag": "mens-health",
-    "hoplink": "https://4eb3fkyok-bz6v2dsey8-9fsd4.hop.clickbank.net",
-    "active": true
-  },
-  {
-    "network": "clickbank",
-    "externalProductId": "prodentim",
-    "name": "ProDentim",
-    "nicheTag": "dental-health",
-    "hoplink": "https://4e2a8k2djpbn6x3m4me1ppkadb.hop.clickbank.net",
-    "active": true
-  },
-  {
-    "network": "clickbank",
-    "externalProductId": "joint-genesis",
-    "name": "Joint Genesis",
-    "nicheTag": "joint-health",
-    "hoplink": "https://e32047tko-4xgwdhy2xgn6xq6z.hop.clickbank.net",
-    "active": true
-  },
-  {
-    "network": "clickbank",
-    "externalProductId": "audifort",
-    "name": "Audifort",
-    "nicheTag": "hearing-health",
-    "hoplink": "https://05d9b9tjlo9s5v1y44p6sqxm7t.hop.clickbank.net",
+    "network": "CUSTOM",
+    "externalProductId": "course-demo",
+    "name": "Online Course Offer",
+    "nicheTag": "EDUCATION",
+    "hoplink": "https://example.com/course?ref=maxxma",
     "active": true
   }
 ]

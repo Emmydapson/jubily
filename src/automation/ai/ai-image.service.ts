@@ -55,7 +55,7 @@ export class AiImageService {
   private safeVisualPrompt(raw: string) {
     const base = String(raw || '').replace(/\s+/g, ' ').trim();
     if (!base)
-      return 'clean wellness background, soft lighting, no text';
+      return 'clean product comparison background, soft lighting, no text';
 
     return `${base}, high quality, realistic, cinematic lighting, no text, no logo`;
   }
@@ -256,7 +256,7 @@ export class AiImageService {
 
   private safeThumbnailPrompt(raw: string) {
     const base = String(raw || '').replace(/\s+/g, ' ').trim();
-    const subject = base || 'clear central wellness subject, bright realistic lifestyle image';
+    const subject = base || 'clear central affiliate product or software comparison subject, bright realistic lifestyle image';
 
     return [
       subject,
@@ -271,7 +271,7 @@ export class AiImageService {
       'no captions',
       'no logo',
       'no watermark',
-      'no medical claim text',
+      'no misleading claim text',
       'not misleading',
     ].join(', ');
   }

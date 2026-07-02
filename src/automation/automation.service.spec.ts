@@ -40,21 +40,30 @@ describe('AutomationService customer wizard helpers', () => {
   it('generates a product-aware AI script for offers in the active workspace', async () => {
     prisma.offer.findUnique.mockResolvedValue({
       id: 'offer-1',
-      name: 'Sleep Support',
+      name: 'AI Writer Pro',
       hoplink: 'https://example.com',
-      nicheTag: 'sleep',
-      network: 'digistore24',
+      nicheTag: 'AI_SOFTWARE',
+      network: 'PARTNERSTACK',
       workspaceId: 'workspace-1',
+      workspace: {
+        affiliateNiches: ['AI_SOFTWARE'],
+        affiliatePlatforms: ['PARTNERSTACK'],
+        primaryAffiliateLink: 'https://workspace.example.com',
+        preferredContentTone: 'direct',
+        preferredLanguage: 'en',
+        targetAudience: 'busy founders',
+        contentGoal: 'compare product options',
+      },
     });
     prisma.topic.findFirst.mockResolvedValue(null);
     prisma.topic.create.mockResolvedValue({
       id: 'topic-1',
-      title: 'Sleep better tonight',
+      title: 'Compare AI writing tools',
       workspaceId: 'workspace-1',
     });
     prisma.topic.findUnique.mockResolvedValue({
       id: 'topic-1',
-      title: 'Sleep better tonight',
+      title: 'Compare AI writing tools',
       workspaceId: 'workspace-1',
     });
     ai.generateScriptWithOffer.mockResolvedValue('script content');
@@ -65,26 +74,36 @@ describe('AutomationService customer wizard helpers', () => {
       qualityScore: 90,
       qualityReview: {},
       titleCandidates: [],
-      selectedTitle: 'Sleep better tonight',
+      selectedTitle: 'Compare AI writing tools',
       youtubeDescription: 'desc',
-      hashtags: ['sleep'],
+      hashtags: ['aitools'],
       thumbnailPrompt: 'thumb',
       rewriteAttempts: 0,
     });
     scriptService.createReviewed.mockResolvedValue({ id: 'script-1' });
 
     await expect(
-      service.generateScriptWithAiFromOffer({ offerId: 'offer-1', topic: 'Sleep better tonight' }, 'workspace-1'),
+      service.generateScriptWithAiFromOffer({ offerId: 'offer-1', topic: 'Compare AI writing tools' }, 'workspace-1'),
     ).resolves.toEqual({ id: 'script-1' });
 
-    expect(ai.generateScriptWithOffer).toHaveBeenCalledWith('Sleep better tonight', {
-      name: 'Sleep Support',
+    expect(ai.generateScriptWithOffer).toHaveBeenCalledWith('Compare AI writing tools', {
+      name: 'AI Writer Pro',
       url: 'https://example.com',
-      bullets: ['Best for: sleep'],
+      niche: 'AI_SOFTWARE',
+      platform: 'PARTNERSTACK',
+      targetAudience: 'busy founders',
+      contentTone: 'direct',
+      language: 'en',
+      contentGoal: 'compare product options',
+      bullets: [
+        'Affiliate niche: AI_SOFTWARE',
+        'Affiliate platform: PARTNERSTACK',
+        'Target audience: busy founders',
+      ],
     });
     expect(scriptService.createReviewed).toHaveBeenCalledWith(
       'topic-1',
-      'v2-ai-offer-digistore24-reviewed',
+      'v2-ai-offer-PARTNERSTACK-reviewed',
       expect.objectContaining({ content: 'reviewed script' }),
       'workspace-1',
     );

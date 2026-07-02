@@ -212,7 +212,7 @@ export class ContentQualityService {
       reasons.push('topic keyword present');
     }
 
-    if (/(you|your|people|routine|day|morning|energy|sleep|focus|health)/i.test(t)) {
+    if (/(you|your|people|routine|day|morning|energy|sleep|focus|health|product|buyer|tool|offer|business|money|learn)/i.test(t)) {
       score += 8;
       reasons.push('viewer benefit or relevance present');
     }
@@ -232,7 +232,7 @@ export class ContentQualityService {
       ...generated,
       String(parsed.title || ''),
       `The ${topic} mistake most people miss`,
-      `Fix this before your next health routine`,
+      `Fix this before your next product pick`,
     ].filter(Boolean);
 
     const unique = Array.from(new Set(candidates.map((title) => this.clean(title)).filter(Boolean)));
@@ -265,7 +265,7 @@ export class ContentQualityService {
     const parsed = this.parse(params.content);
     return [
       this.clean(String(parsed.hook || params.title)),
-      'A quick, practical wellness tip for your daily routine.',
+      'A practical affiliate product note for your next decision.',
       params.offerName ? 'Recommended resource is linked in the description.' : 'Save this for later.',
       params.hashtags.join(' '),
     ].join('\n').slice(0, 1200);
@@ -278,7 +278,7 @@ export class ContentQualityService {
       ...parsed,
       title: this.clean(String(parsed.title || topic)),
       hook: this.clean(String(parsed.hook || scenes[0]?.narration || topic)),
-      cta: this.clean(String(parsed.cta || 'Save this and follow for more simple health tips.')),
+      cta: this.clean(String(parsed.cta || 'Check the recommended resource in the description.')),
       scenes: this.normalizeSceneDurations(scenes.map((scene) => ({
         narration: this.clean(String(scene.narration || '')),
         caption: this.clean(String(scene.caption || '')),
@@ -391,10 +391,10 @@ export class ContentQualityService {
 
   private safetyScore(content: string, issues: string[], strengths: string[]) {
     if (/(cure|guarantee|diagnose|doctor-approved|lose \d+ pounds|melts fat|reverses disease|miracle)/i.test(content)) {
-      issues.push('contains risky health claim language');
+      issues.push('contains risky claim language');
       return 45;
     }
-    strengths.push('no obvious high-risk health claims');
+    strengths.push('no obvious high-risk claims');
     return 100;
   }
 
@@ -417,8 +417,8 @@ export class ContentQualityService {
     }
 
     this.keywordWords(topic).slice(0, 3).forEach((word) => tags.add(`#${word.replace(/[^a-z0-9]/g, '')}`));
-    tags.add('#healthtips');
-    tags.add('#wellness');
+    tags.add('#affiliatemarketing');
+    tags.add('#productreview');
     return Array.from(tags).filter((tag) => tag.length > 1).slice(0, 8);
   }
 
@@ -438,7 +438,7 @@ export class ContentQualityService {
   }
 
   private ensureVisualPrompt(prompt: string) {
-    const base = this.clean(prompt) || 'person making a healthy daily choice';
+    const base = this.clean(prompt) || 'person comparing an affiliate product before buying';
     const additions = [
       /zoom|pan|push|camera|close-up|overhead/i.test(base) ? '' : 'slow push in camera movement',
       /light|lighting|sunlight|bright|cinematic|natural/i.test(base) ? '' : 'bright natural lighting',
@@ -456,7 +456,7 @@ export class ContentQualityService {
       return {
         title: lines[0] || 'Untitled',
         hook: lines[0] || '',
-        cta: 'Save this and follow for more simple health tips.',
+        cta: 'Check the recommended resource in the description.',
         scenes: lines.map((line) => ({
           narration: line,
           caption: line.split(/\s+/).slice(0, 6).join(' '),
@@ -489,7 +489,7 @@ export class ContentQualityService {
   }
 
   private safeTitle(topic: string) {
-    return this.clean(topic).slice(0, 70) || 'Simple health habit to try today';
+    return this.clean(topic).slice(0, 70) || 'Simple product pick to compare today';
   }
 
   private keywordWords(text: string) {

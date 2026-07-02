@@ -17,6 +17,15 @@ type OfferInput = {
   nicheTag?: string | null;
   network?: string | null;
   bullets?: string[];
+  workspace?: {
+    affiliateNiches?: string[] | null;
+    affiliatePlatforms?: string[] | null;
+    primaryAffiliateLink?: string | null;
+    preferredContentTone?: string | null;
+    preferredLanguage?: string | null;
+    targetAudience?: string | null;
+    contentGoal?: string | null;
+  } | null;
 };
 
 @Injectable()
@@ -250,7 +259,25 @@ export class AutomationService {
   ) {
     const offer = await this.prisma.offer.findUnique({
       where: { id: input.offerId },
-      select: { id: true, name: true, hoplink: true, nicheTag: true, network: true, workspaceId: true },
+      select: {
+        id: true,
+        name: true,
+        hoplink: true,
+        nicheTag: true,
+        network: true,
+        workspaceId: true,
+        workspace: {
+          select: {
+            affiliateNiches: true,
+            affiliatePlatforms: true,
+            primaryAffiliateLink: true,
+            preferredContentTone: true,
+            preferredLanguage: true,
+            targetAudience: true,
+            contentGoal: true,
+          },
+        },
+      },
     });
     if (!offer || (workspaceId !== undefined && offer.workspaceId !== workspaceId)) {
       throw new NotFoundException('Offer not found');
@@ -336,8 +363,18 @@ export class AutomationService {
     if (topic.workspaceId) await this.billing.consumeAiGeneration(topic.workspaceId);
     const content = await this.aiService.generateScriptWithOffer(topicTitle, {
       name: offer.name,
-      url: offer.hoplink,
-      bullets: offer.nicheTag ? [`Best for: ${offer.nicheTag}`] : [],
+      url: offer.hoplink || offer.workspace?.primaryAffiliateLink || '',
+      niche: offer.nicheTag || offer.workspace?.affiliateNiches?.[0] || null,
+      platform: offer.network || offer.workspace?.affiliatePlatforms?.[0] || null,
+      targetAudience: offer.workspace?.targetAudience,
+      contentTone: offer.workspace?.preferredContentTone,
+      language: offer.workspace?.preferredLanguage,
+      contentGoal: offer.workspace?.contentGoal,
+      bullets: [
+        offer.nicheTag ? `Affiliate niche: ${offer.nicheTag}` : null,
+        offer.network ? `Affiliate platform: ${offer.network}` : null,
+        offer.workspace?.targetAudience ? `Target audience: ${offer.workspace.targetAudience}` : null,
+      ].filter(Boolean) as string[],
     });
     const quality = await this.contentQuality.prepareScript({
       topic: topicTitle,

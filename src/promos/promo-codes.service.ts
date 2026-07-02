@@ -96,6 +96,58 @@ export class PromoCodesService {
     }
   }
 
+  private assertAdminEnums(dto: Partial<CreatePromoCodeDto>) {
+    if (dto.discountType != null && !Object.values(PromoDiscountType).includes(dto.discountType)) {
+      throw new BadRequestException('discountType must be PERCENTAGE, FIXED, or NONE');
+    }
+    if (dto.discountDuration != null && dto.discountDuration !== PromoDiscountDuration.ONE_TIME) {
+      throw new BadRequestException('discountDuration must be ONE_TIME');
+    }
+    if (dto.appliesToPlans != null && !Object.values(PromoAppliesToPlan).includes(dto.appliesToPlans)) {
+      throw new BadRequestException('appliesToPlans must be PRO, PREMIUM, or ALL');
+    }
+    if (dto.regionScope != null && !Object.values(PromoRegionScope).includes(dto.regionScope)) {
+      throw new BadRequestException('regionScope must be ALL, GLOBAL, AFRICA, NIGERIA, or CUSTOM_COUNTRIES');
+    }
+    if (dto.paystackDiscountMode != null && !Object.values(PaystackDiscountMode).includes(dto.paystackDiscountMode)) {
+      throw new BadRequestException('paystackDiscountMode must be TRACKING_ONLY, ONE_TIME_AMOUNT_DISCOUNT, or UNSUPPORTED');
+    }
+  }
+
+  private assertRegionConfig(dto: Partial<CreatePromoCodeDto>, existing?: { regionScope?: PromoRegionScope | null; allowedCountries?: string[] | null }) {
+    const scope = dto.regionScope ?? existing?.regionScope ?? PromoRegionScope.ALL;
+    if (dto.allowedCountries !== undefined && !Array.isArray(dto.allowedCountries)) {
+      throw new BadRequestException('allowedCountries must be an array of ISO 3166-1 alpha-2 country codes');
+    }
+    const countries = dto.allowedCountries !== undefined ? dto.allowedCountries : existing?.allowedCountries;
+    const normalized = this.normalizeCountries(countries);
+    if ((countries || []).length !== normalized.length || normalized.some((code) => !/^[A-Z]{2}$/.test(code))) {
+      throw new BadRequestException('allowedCountries must contain only ISO 3166-1 alpha-2 country codes');
+    }
+    if (new Set(normalized).size !== normalized.length) {
+      throw new BadRequestException('allowedCountries must not contain duplicate country codes');
+    }
+    if (scope === PromoRegionScope.CUSTOM_COUNTRIES && normalized.length === 0) {
+      throw new BadRequestException('allowedCountries is required when regionScope is CUSTOM_COUNTRIES');
+    }
+  }
+
+  private assertAdminPayload(dto: Partial<CreatePromoCodeDto>, existing?: { discountType?: PromoDiscountType | null; discountValue?: number | null; regionScope?: PromoRegionScope | null; allowedCountries?: string[] | null }) {
+    this.assertAdminEnums(dto);
+    const discountType = dto.discountType ?? existing?.discountType ?? PromoDiscountType.NONE;
+    const discountValue = dto.discountValue ?? existing?.discountValue ?? undefined;
+    this.assertDiscount({ discountType, discountValue });
+    this.assertRegionConfig(dto, existing);
+    this.assertProviderConfig(dto);
+  }
+
+  private defaultPaystackDiscountMode(discountType?: PromoDiscountType | null, paystackDiscountMode?: PaystackDiscountMode | null) {
+    if (paystackDiscountMode) return paystackDiscountMode;
+    return (discountType ?? PromoDiscountType.NONE) === PromoDiscountType.NONE
+      ? PaystackDiscountMode.TRACKING_ONLY
+      : PaystackDiscountMode.UNSUPPORTED;
+  }
+
   private normalizeOptional(value?: string | null) {
     const normalized = String(value || '').trim();
     return normalized || null;
@@ -272,26 +324,28 @@ export class PromoCodesService {
   }
 
   async create(dto: CreatePromoCodeDto, adminId?: string | null) {
-    this.assertDiscount(dto);
-    this.assertProviderConfig(dto);
+    this.assertAdminPayload(dto);
     const code = this.normalizeCode(dto.code);
     if (!code) throw new BadRequestException('code is required');
+    const influencerName = String(dto.influencerName || '').trim();
+    if (!influencerName) throw new BadRequestException('influencerName is required');
+    const discountType = dto.discountType ?? PromoDiscountType.NONE;
     try {
       return await this.prisma.promoCode.create({
         data: {
           code,
-          influencerName: String(dto.influencerName || '').trim(),
+          influencerName,
           influencerEmail: dto.influencerEmail ? String(dto.influencerEmail).trim().toLowerCase() : null,
           description: dto.description ? String(dto.description).trim() : null,
-          discountType: dto.discountType ?? PromoDiscountType.NONE,
-          discountValue: dto.discountType && dto.discountType !== PromoDiscountType.NONE ? dto.discountValue ?? null : null,
+          discountType,
+          discountValue: discountType !== PromoDiscountType.NONE ? dto.discountValue ?? null : null,
           discountDuration: PromoDiscountDuration.ONE_TIME,
           appliesToPlans: dto.appliesToPlans ?? PromoAppliesToPlan.ALL,
           regionScope: dto.regionScope ?? PromoRegionScope.ALL,
           allowedCountries: this.normalizeCountries(dto.allowedCountries),
           stripePromotionCodeId: this.normalizeOptional(dto.stripePromotionCodeId),
           stripeCouponId: this.normalizeOptional(dto.stripeCouponId),
-          paystackDiscountMode: dto.paystackDiscountMode ?? PaystackDiscountMode.UNSUPPORTED,
+          paystackDiscountMode: this.defaultPaystackDiscountMode(discountType, dto.paystackDiscountMode),
           maxRedemptions: dto.maxRedemptions ?? null,
           startsAt: this.parseDate(dto.startsAt),
           expiresAt: this.parseDate(dto.expiresAt),
@@ -300,7 +354,7 @@ export class PromoCodesService {
         },
       });
     } catch (error: any) {
-      if (error?.code === 'P2002') throw new ConflictException('Promo code already exists');
+      if (error?.code === 'P2002') throw new ConflictException(`Promo code "${code}" already exists`);
       throw error;
     }
   }
@@ -316,9 +370,9 @@ export class PromoCodesService {
   }
 
   async update(id: string, dto: UpdatePromoCodeDto) {
-    await this.get(id);
-    this.assertDiscount(dto);
-    this.assertProviderConfig(dto);
+    const existing = await this.get(id);
+    this.assertAdminPayload(dto, existing);
+    const nextDiscountType = dto.discountType ?? existing.discountType;
     const data: any = {
       influencerName: dto.influencerName != null ? String(dto.influencerName).trim() : undefined,
       influencerEmail: dto.influencerEmail != null ? String(dto.influencerEmail).trim().toLowerCase() : undefined,
@@ -331,19 +385,29 @@ export class PromoCodesService {
       allowedCountries: dto.allowedCountries !== undefined ? this.normalizeCountries(dto.allowedCountries) : undefined,
       stripePromotionCodeId: dto.stripePromotionCodeId !== undefined ? this.normalizeOptional(dto.stripePromotionCodeId) : undefined,
       stripeCouponId: dto.stripeCouponId !== undefined ? this.normalizeOptional(dto.stripeCouponId) : undefined,
-      paystackDiscountMode: dto.paystackDiscountMode,
+      paystackDiscountMode:
+        dto.paystackDiscountMode !== undefined || dto.discountType !== undefined
+          ? this.defaultPaystackDiscountMode(nextDiscountType, dto.paystackDiscountMode)
+          : undefined,
       maxRedemptions: dto.maxRedemptions,
       startsAt: dto.startsAt !== undefined ? this.parseDate(dto.startsAt) : undefined,
       expiresAt: dto.expiresAt !== undefined ? this.parseDate(dto.expiresAt) : undefined,
       isActive: dto.isActive,
     };
     if (dto.code != null) data.code = this.normalizeCode(dto.code);
+    if (dto.code != null && !data.code) throw new BadRequestException('code is required');
+    if (dto.influencerName != null && !data.influencerName) throw new BadRequestException('influencerName is required');
     try {
       return await this.prisma.promoCode.update({ where: { id }, data });
     } catch (error: any) {
-      if (error?.code === 'P2002') throw new ConflictException('Promo code already exists');
+      if (error?.code === 'P2002') throw new ConflictException(`Promo code "${data.code ?? existing.code}" already exists`);
       throw error;
     }
+  }
+
+  async remove(id: string) {
+    await this.get(id);
+    return this.prisma.promoCode.delete({ where: { id } });
   }
 
   setActive(id: string, isActive: boolean) {

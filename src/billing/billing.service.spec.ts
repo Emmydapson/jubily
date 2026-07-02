@@ -447,6 +447,51 @@ describe('BillingService', () => {
     }));
   });
 
+  it('uses stored workspace country for provider defaults and promo validation', async () => {
+    process.env.FRONTEND_URL = 'https://joinjubily.com';
+    prisma.workspace.findUnique.mockResolvedValue({ id: 'workspace-1', suspended: false, suspensionReason: null, countryCode: 'NG', countryName: 'Nigeria' });
+    prisma.user.findUnique.mockResolvedValue({ email: 'user@example.com' });
+    const promos = {
+      recordCheckoutStarted: jest.fn().mockResolvedValue({
+        promo: { code: 'NGA20', discountType: 'PERCENTAGE' },
+        metadata: {
+          promoDiscountApplied: true,
+          discountDuration: 'ONE_TIME',
+          originalAmount: 750000,
+          discountAmount: 150000,
+          finalAmount: 600000,
+        },
+        preview: { renewalAmount: 750000, currency: 'NGN' },
+        stripePromotionCodeId: null,
+      }),
+    };
+    const withPromos = new BillingService(
+      prisma,
+      new PlanLimitsService(),
+      audit as never,
+      webhookAdapter as never,
+      stripe as never,
+      paystack as never,
+      new BillingPricingService(),
+      promos as never,
+    );
+    paystack.createCheckout.mockResolvedValue({
+      provider: BillingProvider.PAYSTACK,
+      checkoutUrl: 'https://paystack.com/pay/ref',
+      reference: 'ref-1',
+      sessionId: 'ref-1',
+    });
+
+    await expect(
+      withPromos.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { promoCode: 'nga20' }),
+    ).resolves.toEqual(expect.objectContaining({ provider: BillingProvider.PAYSTACK }));
+
+    expect(promos.recordCheckoutStarted).toHaveBeenCalledWith(expect.objectContaining({
+      countryCode: 'NG',
+      provider: BillingProvider.PAYSTACK,
+    }));
+  });
+
   it('cancels through the active provider adapter', async () => {
     prisma.workspaceSubscription.findUnique.mockResolvedValue({
       id: 'sub-1',

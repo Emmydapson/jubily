@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../auth/roles.decorator';
 import { AdminGuard } from '../auth/admin.guard';
@@ -42,6 +42,12 @@ export class AdminPromoCodesController {
   @ApiOperation({ summary: 'Update a promo code' })
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePromoCodeDto) {
     return this.promos.update(id, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a promo code' })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.promos.remove(id);
   }
 
   @Post(':id/deactivate')

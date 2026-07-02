@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OFFER_NETWORKS, OFFER_NICHES } from '../offer.constants';
+import { normalizeAffiliateNiche, normalizeAffiliatePlatform } from '../../affiliates/affiliate.constants';
 
 export class ListOffersQueryDto {
   @ApiPropertyOptional({ example: 1, minimum: 1 })
@@ -27,13 +28,15 @@ export class ListOffersQueryDto {
   @Max(100)
   limit?: number;
 
-  @ApiPropertyOptional({ enum: OFFER_NETWORKS, example: 'digistore24' })
+  @ApiPropertyOptional({ enum: OFFER_NETWORKS, example: 'PARTNERSTACK' })
   @IsOptional()
+  @Transform(({ value }) => normalizeAffiliatePlatform(value) ?? value)
   @IsIn(OFFER_NETWORKS)
   network?: string;
 
-  @ApiPropertyOptional({ enum: OFFER_NICHES, example: 'sleep' })
+  @ApiPropertyOptional({ enum: OFFER_NICHES, example: 'AI_SOFTWARE' })
   @IsOptional()
+  @Transform(({ value }) => normalizeAffiliateNiche(value) ?? value)
   @IsIn(OFFER_NICHES)
   nicheTag?: string;
 
@@ -43,9 +46,8 @@ export class ListOffersQueryDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ example: 'sleep' })
+  @ApiPropertyOptional({ example: 'software' })
   @IsOptional()
   @IsString()
   q?: string;
 }
-

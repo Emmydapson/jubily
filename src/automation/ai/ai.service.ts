@@ -19,25 +19,57 @@ type ScriptJson = {
   scenes: Scene[];
 };
 
+export type AffiliateGenerationContext = {
+  niche?: string | null;
+  platform?: string | null;
+  productName?: string | null;
+  affiliateLink?: string | null;
+  targetAudience?: string | null;
+  contentTone?: string | null;
+  language?: string | null;
+  contentGoal?: string | null;
+};
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly aiMode = (process.env.AI_MODE || 'live').toLowerCase();
 
-  private openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
+  private openai?: OpenAI;
 
-  async generateTopics(count = 10): Promise<string[]> {
+  private getOpenAi() {
+    this.openai ??= new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+    return this.openai;
+  }
+
+  private contextLines(context?: AffiliateGenerationContext) {
+    return [
+      `Affiliate niche: ${context?.niche || 'general affiliate marketing'}`,
+      `Affiliate platform: ${context?.platform || 'not specified'}`,
+      `Affiliate product/link: ${context?.productName || context?.affiliateLink || 'not specified'}`,
+      `Target audience: ${context?.targetAudience || 'affiliate buyers interested in the topic'}`,
+      `Content tone: ${context?.contentTone || 'clear, practical, trustworthy'}`,
+      `Language: ${context?.language || 'English'}`,
+      `Content goal: ${context?.contentGoal || 'promote an affiliate product with useful YouTube automation content'}`,
+    ].join('\n');
+  }
+
+  private isHealthContext(context?: AffiliateGenerationContext) {
+    return String(context?.niche || '').toUpperCase() === 'HEALTH_WELLNESS';
+  }
+
+  async generateTopics(count = 10, context?: AffiliateGenerationContext): Promise<string[]> {
     if (this.aiMode === 'mock') {
       return [
-        'Why you feel tired after sleeping',
-        'The hidden cause of low energy',
-        'Morning habits ruining your day',
+        'Best affiliate tools beginners overlook',
+        'How to compare products before buying',
+        'Mistakes that waste affiliate traffic',
       ];
     }
 
-    const res = await this.openai.chat.completions.create({
+    const res = await this.getOpenAi().chat.completions.create({
       model: 'gpt-4.1-mini',
       temperature: 0.7,
       messages: [
@@ -52,7 +84,9 @@ Return ONLY JSON:
 }
 
 Rules:
-- Health + wellness niche
+- Affiliate-focused YouTube automation content
+- Use this profile context:
+${this.contextLines(context)}
 - Highly curiosity-driven
 - Max 10 words each
 - No numbering
@@ -76,12 +110,12 @@ Rules:
     }
   }
 
-  async generateScript(topic: string): Promise<string> {
+  async generateScript(topic: string, context?: AffiliateGenerationContext): Promise<string> {
     if (this.aiMode === 'mock') {
-      return JSON.stringify(this.buildMockScript(topic));
+      return JSON.stringify(this.buildMockScript(topic, context));
     }
 
-    const res = await this.openai.chat.completions.create({
+    const res = await this.getOpenAi().chat.completions.create({
       model: 'gpt-4.1-mini',
       temperature: 0.7,
       messages: [
@@ -110,6 +144,9 @@ Return ONLY JSON:
 }
 
 STRICT RULES:
+- Jubily content is affiliate-focused YouTube automation, not a general creator script.
+- Build around this affiliate profile:
+${this.contextLines(context)}
 - Target 60-90 seconds total, with 75 seconds ideal.
 - Use 8-12 scenes; prefer 9 or 10 scenes for a 60-90 second video.
 - Each scene must have "seconds" between 6 and 12.
@@ -120,7 +157,8 @@ STRICT RULES:
 - Narration should be fast, plain, concrete, and non-repetitive.
 - CTA must be soft: save, follow, comment, or see resources in the description.
 - Do not include raw URLs in narration or CTA.
-- Keep health claims cautious. No diagnosis, cures, guaranteed results, or fearmongering.
+- Do not default to health, supplements, medical products, or wellness unless the profile niche is HEALTH_WELLNESS.
+- If the profile niche is HEALTH_WELLNESS, keep claims cautious: no diagnosis, cures, guaranteed results, or fearmongering.
 - Every visualPrompt must include camera movement, subject action, lighting, mood, realism, and "no text".
 - Thumbnail prompt must describe a high-contrast vertical thumbnail image with no text.
 - YouTube description should be 2-4 concise lines and include no raw affiliate URLs.
@@ -145,70 +183,73 @@ STRICT RULES:
     }
   }
 
-  private buildMockScript(topic: string): ScriptJson {
+  private buildMockScript(topic: string, context?: AffiliateGenerationContext): ScriptJson {
+    const product = context?.productName || 'the recommended product';
+    const platform = context?.platform || 'affiliate platform';
+    const niche = context?.niche || 'affiliate marketing';
     return {
       title: topic,
-      hook: `This common habit may be draining your energy.`,
-      cta: 'Save this and follow for more simple health tips.',
-      hashtags: ['#shorts', '#healthtips', '#wellness', '#energy'],
-      youtubeDescription: `${topic}\nA quick, practical health tip you can try today.\nSave this for your next routine.`,
+      hook: `Most buyers miss this before choosing ${product}.`,
+      cta: 'Check the recommended resource in the description.',
+      hashtags: ['#shorts', '#affiliatemarketing', '#productreview', `#${String(niche).toLowerCase().replace(/[^a-z0-9]/g, '')}`],
+      youtubeDescription: `${topic}\nA practical affiliate product breakdown for ${platform} offers.\nCheck the recommended resource in the description.`,
       thumbnailPrompt:
-        'vertical YouTube Shorts thumbnail, close-up of a tired person turning energized, bright morning light, high contrast, realistic, no text',
+        'vertical YouTube Shorts thumbnail, close-up of a person comparing a product on a laptop, bright high contrast lighting, realistic, no text',
       scenes: [
         {
-          narration: `You might be doing this every morning, and it could be draining your energy.`,
-          caption: 'Stop doing this',
+          narration: `Before you buy ${product}, compare the promise with the real problem it solves.`,
+          caption: 'Check this first',
           visualPrompt:
-            'person waking up tired in bed, slow zoom in, soft morning light, concerned mood, realistic, no text',
+            'person comparing product pages on a laptop, slow zoom in camera movement, bright desk lighting, focused mood, realistic, no text',
           seconds: 9,
         },
         {
-          narration: `Before coffee, your body may need a simpler signal first.`,
-          caption: 'Start simpler',
+          narration: `Look for who the offer is actually built for, not just the headline.`,
+          caption: 'Match the buyer',
           visualPrompt:
-            'person drinking water in kitchen, close-up camera, bright natural lighting, fresh mood, realistic, no text',
+            'person highlighting audience notes beside product page, close-up camera, bright natural lighting, practical mood, realistic, no text',
           seconds: 9,
         },
         {
-          narration: `A short walk or stretch can help your brain feel more awake.`,
-          caption: 'Move first',
+          narration: `Then compare features, proof, price, and refund terms before clicking.`,
+          caption: 'Compare the details',
           visualPrompt:
-            'person stretching near window, slow pan right, sunrise lighting, optimistic mood, realistic, no text',
+            'person reviewing checklist beside ecommerce page, slow pan right, clean lighting, confident mood, realistic, no text',
           seconds: 9,
         },
         {
-          narration: `Keep it easy enough that you can repeat it tomorrow.`,
-          caption: 'Make it repeatable',
+          narration: `If it fits your goal, the link in the description is the next step.`,
+          caption: 'Next step below',
           visualPrompt:
-            'person checking a simple morning routine list, overhead camera angle, clean bright lighting, calm mood, realistic, no text',
+            'person pointing to description area on phone, overhead camera angle, clean bright lighting, helpful mood, realistic, no text',
           seconds: 9,
         },
         {
-          narration: `The second mistake is making the routine too big to repeat on a busy day.`,
-          caption: 'Keep it small',
+          narration: `Avoid buying just because a product is trending.`,
+          caption: 'Avoid hype',
           visualPrompt:
-            'person choosing one simple habit card, close-up camera, bright kitchen lighting, focused mood, realistic, no text',
+            'person closing distracting tabs and focusing on one product page, close-up camera, bright office lighting, focused mood, realistic, no text',
           seconds: 9,
         },
         {
-          narration: `Pair the habit with something you already do, like brushing your teeth or filling your bottle.`,
-          caption: 'Stack the habit',
+          narration: `A good affiliate recommendation should help you decide faster, not pressure you.`,
+          caption: 'No pressure',
           visualPrompt:
-            'person filling a water bottle beside bathroom sink, slow pan left, clean morning lighting, practical mood, realistic, no text',
+            'person reading product pros and cons on tablet, slow pan left, clean daylight, trustworthy mood, realistic, no text',
           seconds: 9,
         },
         {
-          narration: `If you miss a day, restart with the smallest version instead of quitting completely.`,
-          caption: 'Restart small',
+          narration: `Save this checklist before you compare your next offer.`,
+          caption: 'Save the checklist',
           visualPrompt:
-            'person resetting a simple checklist, overhead camera angle, soft daylight, calm determined mood, realistic, no text',
+            'person saving product comparison checklist, overhead camera angle, soft daylight, organized mood, realistic, no text',
           seconds: 9,
         },
         {
-          narration: `Save this and try the first step tomorrow morning.`,
-          caption: 'Try it tomorrow',
+          narration: `And check the description if you want the recommended resource.`,
+          caption: 'Link in description',
           visualPrompt:
-            'person smiling with morning sunlight, slow push in, warm cinematic lighting, confident mood, realistic, no text',
+            'person confidently reviewing recommended product link on phone, slow push in, warm cinematic lighting, confident mood, realistic, no text',
           seconds: 9,
         },
       ],
@@ -217,9 +258,18 @@ STRICT RULES:
 
   async generateScriptWithOffer(
   topic: string,
-  offer: { name: string; url: string; bullets?: string[] },
+  offer: { name: string; url: string; bullets?: string[]; niche?: string | null; platform?: string | null; targetAudience?: string | null; contentTone?: string | null; language?: string | null; contentGoal?: string | null },
 ): Promise<string> {
-  const script = await this.generateScript(topic);
+  const script = await this.generateScript(topic, {
+    productName: offer.name,
+    affiliateLink: offer.url,
+    niche: offer.niche,
+    platform: offer.platform,
+    targetAudience: offer.targetAudience,
+    contentTone: offer.contentTone,
+    language: offer.language,
+    contentGoal: offer.contentGoal,
+  });
   const parsed = JSON.parse(script);
 
   parsed.cta = 'See the recommended resource in the description.';
@@ -240,14 +290,14 @@ async rewriteScriptForQuality(params: {
   if (this.aiMode === 'mock') {
     const parsed = JSON.parse(params.script) as ScriptJson;
     parsed.hook = parsed.hook || `Most people miss this about ${params.topic}.`;
-    parsed.cta = 'Save this and follow for more simple health tips.';
+    parsed.cta = 'Check the recommended resource in the description.';
     parsed.scenes = parsed.scenes.length >= 5 ? parsed.scenes : [
       ...parsed.scenes,
       {
         narration: 'The first fix is simpler than most people think.',
         caption: 'Start here',
         visualPrompt:
-          'person making a simple healthy choice in kitchen, slow push in, bright natural light, optimistic mood, realistic, no text',
+          'person comparing a product page and notes on laptop, slow push in, bright natural light, optimistic mood, realistic, no text',
         seconds: 9,
       },
       {
@@ -263,7 +313,7 @@ async rewriteScriptForQuality(params: {
         narration: 'Add one small repeatable step so the routine feels realistic on a busy day.',
         caption: 'Keep it realistic',
         visualPrompt:
-          'person choosing one simple wellness habit, slow push in, bright natural light, practical calm mood, realistic, no text',
+          'person choosing between affiliate product options, slow push in, bright natural light, practical calm mood, realistic, no text',
         seconds: 9,
       });
     }
@@ -271,14 +321,14 @@ async rewriteScriptForQuality(params: {
     return JSON.stringify(parsed);
   }
 
-  const res = await this.openai.chat.completions.create({
+  const res = await this.getOpenAi().chat.completions.create({
     model: 'gpt-4.1-mini',
     temperature: 0.55,
     messages: [
       {
         role: 'system',
         content: `
-You rewrite short-form health/wellness scripts for retention.
+You rewrite short-form affiliate marketing YouTube Shorts scripts for retention.
 
 Return ONLY valid JSON in this schema:
 {
@@ -301,7 +351,7 @@ Rules:
 - The sum of all scene "seconds" must be between 60 and 90.
 - Do not rewrite into a 25-40 second script.
 - Make every scene concrete and visually distinct.
-- Keep health claims cautious; no diagnosis, cure, guaranteed result, or fearmongering.
+- Do not default to health, supplements, medical products, or wellness. If the script is health-related, keep claims cautious; no diagnosis, cure, guaranteed result, or fearmongering.
 - CTA must be soft and not include raw URLs.
 - Thumbnail prompt must be visual only, no text.
 - Do not add explanations outside JSON.
@@ -338,13 +388,13 @@ async generateTitleCandidates(params: {
     return [
       `The ${params.topic} mistake most people miss`,
       `Why ${params.topic.toLowerCase()} feels harder than it should`,
-      `Fix this before your next health routine`,
+      `Fix this before your next product pick`,
       `This simple habit can change your day`,
-      `Stop ignoring this wellness signal`,
+      `Stop ignoring this buying signal`,
     ].slice(0, count);
   }
 
-  const res = await this.openai.chat.completions.create({
+  const res = await this.getOpenAi().chat.completions.create({
     model: 'gpt-4.1-mini',
     temperature: 0.8,
     messages: [
@@ -357,7 +407,7 @@ Rules:
 - 35-70 characters when possible
 - Curiosity-driven but not misleading
 - Specific to the topic
-- No hashtags, no emojis, no all-caps, no medical guarantees
+- No hashtags, no emojis, no all-caps, no false guarantees
         `,
       },
       {
@@ -390,13 +440,13 @@ async generateYoutubeDescription(params: {
   if (this.aiMode === 'mock') {
     return [
       parsed.hook || params.title,
-      'A quick, practical health tip for your daily routine.',
+      'A practical affiliate product note for your next decision.',
       params.offerName ? 'Recommended resource is linked in the description.' : 'Save this for later.',
       params.hashtags.join(' '),
     ].join('\n');
   }
 
-  const res = await this.openai.chat.completions.create({
+  const res = await this.getOpenAi().chat.completions.create({
     model: 'gpt-4.1-mini',
     temperature: 0.45,
     messages: [
@@ -404,11 +454,12 @@ async generateYoutubeDescription(params: {
         role: 'system',
         content: `
 Return ONLY JSON: { "description": "" }
-Write a YouTube Shorts description for health/wellness content.
+Write a YouTube Shorts description for affiliate-focused product promotion.
 Rules:
 - 2-4 short lines before hashtags
 - Strong first line based on the hook
-- Include cautious wording; no diagnosis/cure promises
+- Do not include raw URLs; the backend appends affiliate links later
+- Do not default to health, supplements, medical products, or wellness
 - If an offer exists, mention "recommended resource" but do not include URLs
 - End with provided hashtags
         `,
@@ -434,7 +485,7 @@ Rules:
     this.logger.warn('[AI] Description parse failed');
     return [
       parsed.hook || params.title,
-      'A quick, practical health tip for your daily routine.',
+      'A practical affiliate product note for your next decision.',
       params.hashtags.join(' '),
     ].join('\n');
   }

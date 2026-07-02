@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -24,6 +25,7 @@ import { WorkspaceGuard } from './workspace.guard';
 import type { WorkspaceRequest } from './workspace.types';
 import { WorkspacesService } from './workspaces.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { UpdateWorkspaceProfileDto } from './dto/update-workspace-profile.dto';
 import { OAuthStateService } from '../auth/oauth-state.service';
 
 @Controller('workspaces')
@@ -59,6 +61,21 @@ export class WorkspacesController {
   @ApiOperation({ summary: 'Get workspace dashboard summary' })
   dashboard(@ActiveWorkspace() workspace: { id: string }) {
     return this.workspaces.dashboardSummary(workspace.id);
+  }
+
+  @Get(':workspaceId/profile')
+  @UseGuards(WorkspaceGuard)
+  @ApiOperation({ summary: 'Get workspace affiliate onboarding profile' })
+  profile(@ActiveWorkspace() workspace: { id: string }) {
+    return this.workspaces.getProfile(workspace.id);
+  }
+
+  @Patch(':workspaceId/profile')
+  @UseGuards(WorkspaceGuard)
+  @WorkspaceRoles('OWNER', 'ADMIN')
+  @ApiOperation({ summary: 'Update workspace affiliate onboarding profile' })
+  updateProfile(@ActiveWorkspace() workspace: { id: string }, @Body() dto: UpdateWorkspaceProfileDto) {
+    return this.workspaces.updateProfile(workspace.id, dto);
   }
 
   @Get(':workspaceId/youtube')

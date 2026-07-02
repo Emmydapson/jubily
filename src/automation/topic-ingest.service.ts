@@ -135,18 +135,18 @@ export class TopicIngestionService {
     return this.normalizeTitle(s).toLowerCase();
   }
 
-  private isHealthTopic(s: string) {
+  private isAffiliateTopic(s: string) {
   const t = String(s || '').toLowerCase();
 
-  // broader "health intent" detection
+  // Broad affiliate/product-promotion intent detection.
   const good =
-    /health|medical|medicine|disease|virus|infection|vaccine|hospital|patient|care|nutrition|diet|sleep|mental|brain|heart|immune|body|fitness|wellbeing|well-being|epidemic|outbreak|study|research|clinical/i.test(
+    /affiliate|product|review|software|ai|tool|app|finance|money|budget|business|course|education|tech|gadget|ecommerce|shop|travel|gaming|beauty|fitness|health|home|garden|automotive|diy|parenting|pets|fashion|real estate|relationship|spiritual/i.test(
       t,
     );
 
   // still block irrelevant noise
   const bad =
-    /crypto|bitcoin|forex|stock|gambl|casino|porn|sex|celebrity|giveaway|promo|discount|politic|election|war|weapon/i.test(
+    /gambl|casino|porn|sex|celebrity|politic|election|war|weapon/i.test(
       t,
     );
 
@@ -264,14 +264,14 @@ export class TopicIngestionService {
 
           const rawTitle = this.normalizeTitle(it.title || '');
           if (!rawTitle) continue;
-          if (!this.isHealthTopic(rawTitle)) continue;
+          if (!this.isAffiliateTopic(rawTitle)) continue;
 
           // Convert RSS headline into a topic title
           const topicTitle = await this.rewriteRssTitleToTopic(rawTitle);
           const cleaned = this.normalizeTitle(topicTitle);
 
           if (!cleaned || cleaned.length < 8) continue;
-          if (!this.isHealthTopic(cleaned)) continue;
+          if (!this.isAffiliateTopic(cleaned)) continue;
 
           const key = this.normalizeKey(cleaned);
           if (seen.has(key)) continue;
@@ -317,7 +317,7 @@ export class TopicIngestionService {
 
     if (/report|study|research|guideline|experts|finds|according to/i.test(t)) {
       // keep it short-ish
-      const out = `What this means for your health: ${t}`;
+      const out = `What this means for affiliate buyers: ${t}`;
       return out.slice(0, 120);
     }
 
@@ -348,7 +348,7 @@ export class TopicIngestionService {
 
       // ✅ Relaxed AI filter (FIXED LOGIC)
       const aiRelaxed =
-  /health|sleep|fitness|diet|brain|energy|body|wellness|stress|focus|routine|hydration|water|habits|daily/i.test(title);
+  /affiliate|product|review|software|ai|tool|app|finance|money|business|course|tech|gadget|ecommerce|travel|gaming|beauty|fitness|health|home|fashion|buyer|youtube/i.test(title);
 
       if (!aiRelaxed) {
         this.logger.warn(`[AI-SKIP] filtered out: "${title}"`);

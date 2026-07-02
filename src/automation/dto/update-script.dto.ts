@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsArray, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdateScriptDto {
-  @ApiPropertyOptional({ example: '3 sleep mistakes that drain your energy' })
+  @ApiPropertyOptional({ example: '3 product mistakes buyers should avoid' })
   @IsOptional()
   @IsString()
   @MaxLength(120)
@@ -13,13 +13,13 @@ export class UpdateScriptDto {
   @IsString()
   content?: string;
 
-  @ApiPropertyOptional({ example: 'A practical sleep tip for busy people.' })
+  @ApiPropertyOptional({ example: 'A practical product comparison note for busy buyers.' })
   @IsOptional()
   @IsString()
   @MaxLength(4500)
   description?: string;
 
-  @ApiPropertyOptional({ example: ['sleep', 'wellness', 'energy'] })
+  @ApiPropertyOptional({ example: ['affiliate', 'productreview', 'buyersguide'] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

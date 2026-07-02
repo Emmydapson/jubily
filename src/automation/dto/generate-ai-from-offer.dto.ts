@@ -6,7 +6,7 @@ export class GenerateAiFromOfferDto {
   @IsUUID()
   offerId!: string;
 
-  @ApiPropertyOptional({ example: 'How better sleep changes your day' })
+  @ApiPropertyOptional({ example: 'How to compare AI writing tools before buying' })
   @IsOptional()
   @IsString()
   @MinLength(1)

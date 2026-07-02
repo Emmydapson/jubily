@@ -1,7 +1,21 @@
-import { ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { YoutubeService } from '../common/youtube.service';
 import { AuditService } from '../audit/audit.service';
+import { normalizeAffiliateNiches, normalizeAffiliatePlatforms } from '../affiliates/affiliate.constants';
+
+type WorkspaceProfileInput = {
+  countryCode?: string | null;
+  countryName?: string | null;
+  affiliateNiches?: string[] | null;
+  affiliatePlatforms?: string[] | null;
+  primaryAffiliateLink?: string | null;
+  affiliateLinks?: unknown;
+  preferredContentTone?: string | null;
+  preferredLanguage?: string | null;
+  targetAudience?: string | null;
+  contentGoal?: string | null;
+};
 
 @Injectable()
 export class WorkspacesService {
@@ -25,6 +39,85 @@ export class WorkspacesService {
   private defaultWorkspaceName(name?: string | null) {
     const firstName = String(name || '').trim().split(/\s+/).filter(Boolean)[0];
     return firstName ? `${firstName}'s Workspace` : 'My Workspace';
+  }
+
+  private normalizeCountryCode(value?: string | null) {
+    return String(value || '').trim().toUpperCase();
+  }
+
+  private normalizeOptionalText(value?: string | null) {
+    const text = String(value || '').trim();
+    return text || null;
+  }
+
+  private workspaceProfileSelect() {
+    return {
+      id: true,
+      name: true,
+      slug: true,
+      countryCode: true,
+      countryName: true,
+      affiliateNiches: true,
+      affiliatePlatforms: true,
+      primaryAffiliateLink: true,
+      affiliateLinks: true,
+      preferredContentTone: true,
+      preferredLanguage: true,
+      targetAudience: true,
+      contentGoal: true,
+      createdAt: true,
+      updatedAt: true,
+    } as const;
+  }
+
+  private onboardingComplete(workspace: { countryCode?: string | null; countryName?: string | null; affiliateNiches?: string[] | null; affiliatePlatforms?: string[] | null }) {
+    return Boolean(
+      workspace.countryCode &&
+        workspace.countryName &&
+        workspace.affiliateNiches?.length &&
+        workspace.affiliatePlatforms?.length,
+    );
+  }
+
+  private serializeProfile<T extends { countryCode?: string | null; countryName?: string | null; affiliateNiches?: string[] | null; affiliatePlatforms?: string[] | null }>(workspace: T) {
+    return {
+      ...workspace,
+      countryCode: workspace.countryCode ?? null,
+      countryName: workspace.countryName ?? null,
+      affiliateNiches: workspace.affiliateNiches ?? [],
+      affiliatePlatforms: workspace.affiliatePlatforms ?? [],
+      onboardingComplete: this.onboardingComplete(workspace),
+    };
+  }
+
+  private profileCreateData(input: WorkspaceProfileInput) {
+    return {
+      countryCode: this.normalizeCountryCode(input.countryCode) || null,
+      countryName: this.normalizeOptionalText(input.countryName),
+      affiliateNiches: normalizeAffiliateNiches(input.affiliateNiches),
+      affiliatePlatforms: normalizeAffiliatePlatforms(input.affiliatePlatforms),
+      primaryAffiliateLink: this.normalizeOptionalText(input.primaryAffiliateLink),
+      affiliateLinks: input.affiliateLinks === undefined ? undefined : (input.affiliateLinks as never),
+      preferredContentTone: this.normalizeOptionalText(input.preferredContentTone),
+      preferredLanguage: this.normalizeOptionalText(input.preferredLanguage),
+      targetAudience: this.normalizeOptionalText(input.targetAudience),
+      contentGoal: this.normalizeOptionalText(input.contentGoal),
+    };
+  }
+
+  private profileUpdateData(input: WorkspaceProfileInput) {
+    const data: Record<string, unknown> = {};
+    if (input.countryCode !== undefined) data.countryCode = this.normalizeCountryCode(input.countryCode) || null;
+    if (input.countryName !== undefined) data.countryName = this.normalizeOptionalText(input.countryName);
+    if (input.affiliateNiches !== undefined) data.affiliateNiches = normalizeAffiliateNiches(input.affiliateNiches);
+    if (input.affiliatePlatforms !== undefined) data.affiliatePlatforms = normalizeAffiliatePlatforms(input.affiliatePlatforms);
+    if (input.primaryAffiliateLink !== undefined) data.primaryAffiliateLink = this.normalizeOptionalText(input.primaryAffiliateLink);
+    if (input.affiliateLinks !== undefined) data.affiliateLinks = input.affiliateLinks as never;
+    if (input.preferredContentTone !== undefined) data.preferredContentTone = this.normalizeOptionalText(input.preferredContentTone);
+    if (input.preferredLanguage !== undefined) data.preferredLanguage = this.normalizeOptionalText(input.preferredLanguage);
+    if (input.targetAudience !== undefined) data.targetAudience = this.normalizeOptionalText(input.targetAudience);
+    if (input.contentGoal !== undefined) data.contentGoal = this.normalizeOptionalText(input.contentGoal);
+    return data;
   }
 
   private async createDefaultWorkspaceForUser(user: { id: string; name?: string | null }) {
@@ -60,10 +153,14 @@ export class WorkspacesService {
     return workspace;
   }
 
-  async createWorkspace(userId: string, dto: { name: string; slug?: string }) {
+  async createWorkspace(userId: string, dto: { name: string; slug?: string } & WorkspaceProfileInput) {
     const name = String(dto.name || '').trim();
     const slug = this.normalizeSlug(dto.slug || name);
     if (!name) throw new ConflictException('Workspace name is required');
+    const profile = this.profileCreateData(dto);
+    if (!profile.countryCode || !profile.countryName) {
+      throw new BadRequestException('countryCode and countryName are required');
+    }
 
     let workspace;
     try {
@@ -72,6 +169,7 @@ export class WorkspacesService {
           name,
           slug: slug || null,
           ownerId: userId,
+          ...profile,
           members: {
             create: {
               userId,
@@ -101,7 +199,7 @@ export class WorkspacesService {
     const memberships = await this.findMemberships(userId);
 
     let workspaces = memberships.map((membership) => ({
-      ...membership.workspace,
+      ...this.serializeProfile(membership.workspace),
       role: membership.role,
     }));
 
@@ -127,7 +225,7 @@ export class WorkspacesService {
 
         const recoveredMemberships = await this.findMemberships(userId);
         workspaces = recoveredMemberships.map((membership) => ({
-          ...membership.workspace,
+          ...this.serializeProfile(membership.workspace),
           role: membership.role,
         }));
         if (workspaces.length === 0) {
@@ -154,6 +252,16 @@ export class WorkspacesService {
             slug: true,
             createdAt: true,
             updatedAt: true,
+            countryCode: true,
+            countryName: true,
+            affiliateNiches: true,
+            affiliatePlatforms: true,
+            primaryAffiliateLink: true,
+            affiliateLinks: true,
+            preferredContentTone: true,
+            preferredLanguage: true,
+            targetAudience: true,
+            contentGoal: true,
           },
         },
       },
@@ -199,6 +307,36 @@ export class WorkspacesService {
       counts: { offers, topics, scripts, videoJobs, published },
       youtube,
     };
+  }
+
+  async getProfile(workspaceId: string) {
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: this.workspaceProfileSelect(),
+    });
+    if (!workspace) throw new NotFoundException('Workspace not found');
+    return this.serializeProfile(workspace);
+  }
+
+  async updateProfile(workspaceId: string, dto: WorkspaceProfileInput) {
+    await this.requireWorkspaceExists(workspaceId);
+    const data = this.profileUpdateData(dto);
+    if (Object.keys(data).length === 0) throw new BadRequestException('At least one profile field is required');
+    const workspace = await this.prisma.workspace.update({
+      where: { id: workspaceId },
+      data,
+      select: this.workspaceProfileSelect(),
+    });
+    return this.serializeProfile(workspace);
+  }
+
+  private async requireWorkspaceExists(workspaceId: string) {
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { id: true },
+    });
+    if (!workspace) throw new NotFoundException('Workspace not found');
+    return workspace;
   }
 
   getYoutubeStatus(workspaceId: string) {

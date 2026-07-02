@@ -7,15 +7,18 @@ import {
   IsString,
   IsUrl,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { OFFER_NETWORKS, OFFER_NICHES } from '../offer.constants';
+import { normalizeAffiliateNiche, normalizeAffiliatePlatform } from '../../affiliates/affiliate.constants';
 
 export class UpdateOfferDto {
-  @ApiPropertyOptional({ enum: OFFER_NETWORKS, example: 'clickbank' })
+  @ApiPropertyOptional({ enum: OFFER_NETWORKS, example: 'CLICKBANK' })
   @IsOptional()
+  @Transform(({ value }) => normalizeAffiliatePlatform(value) ?? value)
   @IsIn(OFFER_NETWORKS)
   network?: string;
 
-  @ApiPropertyOptional({ example: 'Focus Support' })
+  @ApiPropertyOptional({ example: 'Budgeting App' })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
@@ -26,8 +29,9 @@ export class UpdateOfferDto {
   @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
   hoplink?: string;
 
-  @ApiPropertyOptional({ enum: OFFER_NICHES, example: 'focus', nullable: true })
+  @ApiPropertyOptional({ enum: OFFER_NICHES, example: 'FINANCE', nullable: true })
   @IsOptional()
+  @Transform(({ value }) => normalizeAffiliateNiche(value) ?? value)
   @IsIn(OFFER_NICHES)
   nicheTag?: string;
 
@@ -41,4 +45,3 @@ export class UpdateOfferDto {
   @IsBoolean()
   active?: boolean;
 }
-

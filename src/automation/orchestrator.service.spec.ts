@@ -3,25 +3,22 @@ import { VideoJobStatus } from './video-job-status';
 
 describe('topicToNicheCandidates', () => {
   it.each([
-    ['sleep better through insomnia habits', ['sleep']],
-    ['weight loss diet fat burn routine', ['weight-loss']],
-    ['morning energy and fatigue reset', ['energy']],
-    ['stress anxiety calm breathing', ['stress']],
-    ['gut digestion bloat support', ['gut-health']],
-    ['brain focus concentration tips', ['focus', 'memory']],
-    ['fitness workout strength body tone', ['fitness']],
-    ['hormonal menopause cycle balance', ['hormones']],
-    ['memory recall concentration training', ['focus', 'memory']],
-    ['male prostate testosterone urinary health', ['mens-health']],
-    ['teeth gum oral breath support', ['dental-health']],
-    ['joint knee pain mobility cartilage', ['joint-health']],
-    ['hearing tinnitus ear sound support', ['hearing-health']],
+    ['sleep better through insomnia habits', ['HEALTH_WELLNESS']],
+    ['budget app for new investors', ['FINANCE', 'AI_SOFTWARE']],
+    ['ai software automation tool comparison', ['AI_SOFTWARE']],
+    ['fitness workout strength body tone', ['FITNESS']],
+    ['beauty skin routine product review', ['BEAUTY']],
+    ['travel luggage deal for long flights', ['TRAVEL', 'ECOMMERCE']],
+    ['gaming controller setup for streamers', ['GAMING']],
+    ['home desk furniture buying guide', ['HOME_GARDEN']],
+    ['business course training for new managers', ['BUSINESS', 'EDUCATION']],
+    ['pet dog training product checklist', ['PETS', 'EDUCATION', 'ECOMMERCE']],
   ])('maps "%s" to expected niches', (title, expected) => {
     expect(topicToNicheCandidates(title)).toEqual(expect.arrayContaining(expected));
   });
 
   it('returns unique niche matches', () => {
-    expect(topicToNicheCandidates('memory memory recall')).toEqual(['focus', 'memory']);
+    expect(topicToNicheCandidates('focus focus productivity')).toEqual(['PERSONAL_DEVELOPMENT']);
   });
 });
 
@@ -121,7 +118,7 @@ describe('OrchestratorService force slot rerun', () => {
         findFirst: jest.fn().mockResolvedValue({ id: 'topic-1', title: 'Sleep support' }),
       },
       offer: {
-        findMany: jest.fn().mockResolvedValue([{ id: 'offer-1', name: 'Offer', hoplink: 'https://example.com', nicheTag: 'sleep', network: 'digistore24' }]),
+        findMany: jest.fn().mockResolvedValue([{ id: 'offer-1', name: 'Offer', hoplink: 'https://example.com', nicheTag: 'HEALTH_WELLNESS', network: 'DIGISTORE24' }]),
       },
     };
     const automation = {

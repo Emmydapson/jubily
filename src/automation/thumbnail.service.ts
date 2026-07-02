@@ -136,7 +136,7 @@ export class ThumbnailService {
 
     try {
       const imageUrl = await this.images.generateThumbnailImageUrl(
-        prompt || script.thumbnailPrompt || 'YouTube Shorts thumbnail, clear central wellness subject',
+        prompt || script.thumbnailPrompt || 'YouTube Shorts thumbnail, clear central affiliate product subject',
         `thumbnail-script-${scriptId}`,
       );
 
@@ -228,7 +228,7 @@ export class ThumbnailService {
 
     try {
       const imageUrl = await this.images.generateThumbnailImageUrl(
-        prompt || job.thumbnailPrompt || job.script?.thumbnailPrompt || 'YouTube Shorts thumbnail, clear central wellness subject',
+        prompt || job.thumbnailPrompt || job.script?.thumbnailPrompt || 'YouTube Shorts thumbnail, clear central affiliate product subject',
         `thumbnail-job-${jobId}`,
         jobId,
       );

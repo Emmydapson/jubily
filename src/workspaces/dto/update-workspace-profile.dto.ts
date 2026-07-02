@@ -7,24 +7,18 @@ import {
   normalizeAffiliatePlatform,
 } from '../../affiliates/affiliate.constants';
 
-export class CreateWorkspaceDto {
-  @IsString()
-  @MinLength(2)
-  name!: string;
-
+export class UpdateWorkspaceProfileDto {
   @IsOptional()
-  @IsString()
-  slug?: string;
-
   @Transform(({ value }) => String(value || '').trim().toUpperCase())
   @IsString()
   @Length(2, 2)
-  countryCode!: string;
+  countryCode?: string;
 
+  @IsOptional()
   @Transform(({ value }) => String(value || '').trim())
   @IsString()
   @MinLength(2)
-  countryName!: string;
+  countryName?: string;
 
   @IsOptional()
   @IsArray()

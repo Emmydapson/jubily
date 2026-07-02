@@ -68,7 +68,7 @@ export class BillingService {
   private async requireWorkspace(workspaceId: string) {
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { id: true, suspended: true, suspensionReason: true },
+      select: { id: true, suspended: true, suspensionReason: true, countryCode: true, countryName: true },
     });
     if (!workspace) throw new NotFoundException('Workspace not found');
     return workspace;
@@ -338,7 +338,9 @@ export class BillingService {
     const plan = requestedPlan ?? Plan.PRO;
     if (plan === Plan.FREE) throw new BadRequestException('FREE plan does not require checkout');
     if (!actor?.userId) throw new ForbiddenException('SaaS user is required for checkout');
-    const provider = this.selectProvider(options?.provider, options?.country);
+    const workspace = await this.requireWorkspace(workspaceId);
+    const country = String(options?.country || workspace.countryCode || '').trim().toUpperCase() || null;
+    const provider = this.selectProvider(options?.provider, country);
     const interval = options?.interval ?? BillingInterval.MONTHLY;
     const promo = options?.promoCode && this.promos
       ? await this.promos.recordCheckoutStarted({
@@ -348,7 +350,7 @@ export class BillingService {
           provider,
           plan: plan as Exclude<Plan, 'FREE'>,
           interval,
-          countryCode: options?.country,
+          countryCode: country,
         })
       : null;
     const checkout = await this.providerAdapter(provider).createCheckout({
@@ -366,7 +368,7 @@ export class BillingService {
       workspaceId,
       userId: actor?.userId ?? null,
       adminId: actor?.adminId ?? null,
-      metadata: { requestedPlan: plan, provider, interval, reference: checkout.reference, promoCode: promo?.promo.code ?? null },
+      metadata: { requestedPlan: plan, provider, interval, reference: checkout.reference, promoCode: promo?.promo.code ?? null, countryCode: country },
     });
     return {
       ...checkout,

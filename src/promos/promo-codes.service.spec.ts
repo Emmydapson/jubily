@@ -49,6 +49,7 @@ describe('PromoCodesService', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn(),
       },
       promoAttribution: {
         create: jest.fn(),
@@ -82,7 +83,7 @@ describe('PromoCodesService', () => {
         allowedCountries: [],
         stripePromotionCodeId: null,
         stripeCouponId: null,
-        paystackDiscountMode: PaystackDiscountMode.UNSUPPORTED,
+        paystackDiscountMode: PaystackDiscountMode.TRACKING_ONLY,
       }),
     });
   });
@@ -118,6 +119,120 @@ describe('PromoCodesService', () => {
     });
   });
 
+  it('creates discount promo codes with default admin fields', async () => {
+    prisma.promoCode.create.mockResolvedValue({
+      ...activeCode,
+      code: 'SUMMER25',
+      discountType: PromoDiscountType.PERCENTAGE,
+      discountValue: 25,
+      paystackDiscountMode: PaystackDiscountMode.UNSUPPORTED,
+    });
+
+    await expect(
+      service.create({
+        code: 'summer25',
+        influencerName: 'Summer Campaign',
+        discountType: PromoDiscountType.PERCENTAGE,
+        discountValue: 25,
+      }, 'admin-1'),
+    ).resolves.toMatchObject({ code: 'SUMMER25' });
+
+    expect(prisma.promoCode.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        discountType: PromoDiscountType.PERCENTAGE,
+        discountValue: 25,
+        discountDuration: PromoDiscountDuration.ONE_TIME,
+        regionScope: PromoRegionScope.ALL,
+        isActive: true,
+        paystackDiscountMode: PaystackDiscountMode.UNSUPPORTED,
+      }),
+    });
+  });
+
+  it('creates documented minimal payloads with sensible defaults', async () => {
+    prisma.promoCode.create.mockResolvedValue({
+      ...activeCode,
+      code: 'JANE',
+      discountType: PromoDiscountType.NONE,
+      paystackDiscountMode: PaystackDiscountMode.TRACKING_ONLY,
+      isActive: true,
+    });
+
+    await expect(
+      service.create({
+        code: 'jane',
+        influencerName: 'Jane Creator',
+      }, 'admin-1'),
+    ).resolves.toMatchObject({
+      code: 'JANE',
+      discountType: PromoDiscountType.NONE,
+      paystackDiscountMode: PaystackDiscountMode.TRACKING_ONLY,
+      isActive: true,
+    });
+
+    expect(prisma.promoCode.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        code: 'JANE',
+        discountType: PromoDiscountType.NONE,
+        discountValue: null,
+        discountDuration: PromoDiscountDuration.ONE_TIME,
+        appliesToPlans: PromoAppliesToPlan.ALL,
+        regionScope: PromoRegionScope.ALL,
+        allowedCountries: [],
+        paystackDiscountMode: PaystackDiscountMode.TRACKING_ONLY,
+        isActive: true,
+      }),
+    });
+  });
+
+  it('creates documented discount payloads with explicit provider configuration', async () => {
+    prisma.promoCode.create.mockResolvedValue({
+      ...activeCode,
+      code: 'BLACKFRIDAY50',
+      discountType: PromoDiscountType.PERCENTAGE,
+      discountValue: 50,
+      regionScope: PromoRegionScope.NIGERIA,
+      allowedCountries: ['NG'],
+      stripePromotionCodeId: 'promo_123',
+      stripeCouponId: 'coupon_123',
+      paystackDiscountMode: PaystackDiscountMode.ONE_TIME_AMOUNT_DISCOUNT,
+    });
+
+    await expect(
+      service.create({
+        code: 'BLACKFRIDAY50',
+        influencerName: 'Black Friday Campaign',
+        discountType: PromoDiscountType.PERCENTAGE,
+        discountValue: 50,
+        discountDuration: PromoDiscountDuration.ONE_TIME,
+        appliesToPlans: PromoAppliesToPlan.ALL,
+        regionScope: PromoRegionScope.NIGERIA,
+        allowedCountries: ['ng'],
+        stripePromotionCodeId: 'promo_123',
+        stripeCouponId: 'coupon_123',
+        paystackDiscountMode: PaystackDiscountMode.ONE_TIME_AMOUNT_DISCOUNT,
+        expiresAt: '2026-12-01T00:00:00.000Z',
+      }, 'admin-1'),
+    ).resolves.toMatchObject({
+      code: 'BLACKFRIDAY50',
+      regionScope: PromoRegionScope.NIGERIA,
+      allowedCountries: ['NG'],
+    });
+
+    expect(prisma.promoCode.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        discountType: PromoDiscountType.PERCENTAGE,
+        discountValue: 50,
+        discountDuration: PromoDiscountDuration.ONE_TIME,
+        regionScope: PromoRegionScope.NIGERIA,
+        allowedCountries: ['NG'],
+        stripePromotionCodeId: 'promo_123',
+        stripeCouponId: 'coupon_123',
+        paystackDiscountMode: PaystackDiscountMode.ONE_TIME_AMOUNT_DISCOUNT,
+      }),
+    });
+  });
+
   it('rejects invalid Stripe provider ids', async () => {
     await expect(
       service.create({
@@ -143,7 +258,106 @@ describe('PromoCodesService', () => {
   it('rejects duplicate codes', async () => {
     prisma.promoCode.create.mockRejectedValue({ code: 'P2002' });
 
+    await expect(service.create({ code: 'JANE20', influencerName: 'Jane' })).rejects.toThrow('Promo code "JANE20" already exists');
     await expect(service.create({ code: 'JANE20', influencerName: 'Jane' })).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects bad admin create payloads with clear messages', async () => {
+    await expect(
+      service.create({
+        code: 'bad',
+        influencerName: 'Bad Campaign',
+        discountType: PromoDiscountType.PERCENTAGE,
+      }),
+    ).rejects.toThrow('discountValue is required for discount promo codes');
+
+    await expect(
+      service.create({
+        code: 'bad',
+        influencerName: 'Bad Campaign',
+        discountDuration: 'FOREVER' as any,
+      }),
+    ).rejects.toThrow('discountDuration must be ONE_TIME');
+
+    await expect(
+      service.create({
+        code: 'bad',
+        influencerName: 'Bad Campaign',
+        regionScope: 'LOCAL' as any,
+      }),
+    ).rejects.toThrow('regionScope must be ALL, GLOBAL, AFRICA, NIGERIA, or CUSTOM_COUNTRIES');
+
+    await expect(
+      service.create({
+        code: 'bad',
+        influencerName: 'Bad Campaign',
+        regionScope: PromoRegionScope.CUSTOM_COUNTRIES,
+        allowedCountries: [],
+      }),
+    ).rejects.toThrow('allowedCountries is required when regionScope is CUSTOM_COUNTRIES');
+
+    await expect(
+      service.create({
+        code: 'bad',
+        influencerName: 'Bad Campaign',
+        allowedCountries: ['USA'],
+      }),
+    ).rejects.toThrow('allowedCountries must contain only ISO 3166-1 alpha-2 country codes');
+
+    await expect(
+      service.create({
+        code: 'bad',
+        influencerName: 'Bad Campaign',
+        allowedCountries: ['us', 'US'],
+      }),
+    ).rejects.toThrow('allowedCountries must not contain duplicate country codes');
+
+    await expect(
+      service.create({
+        code: 'bad',
+        influencerName: 'Bad Campaign',
+        paystackDiscountMode: 'DISCOUNT' as any,
+      }),
+    ).rejects.toThrow('paystackDiscountMode must be TRACKING_ONLY, ONE_TIME_AMOUNT_DISCOUNT, or UNSUPPORTED');
+  });
+
+  it('validates update payloads against existing promo values', async () => {
+    prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, discountType: PromoDiscountType.NONE, discountValue: null });
+
+    await expect(service.update('promo-1', { discountType: PromoDiscountType.FIXED })).rejects.toThrow('discountValue is required for discount promo codes');
+
+    prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, discountType: PromoDiscountType.PERCENTAGE, discountValue: 20 });
+    prisma.promoCode.update.mockResolvedValue({ ...activeCode, regionScope: PromoRegionScope.CUSTOM_COUNTRIES, allowedCountries: ['US', 'CA'] });
+
+    await expect(service.update('promo-1', { regionScope: PromoRegionScope.CUSTOM_COUNTRIES, allowedCountries: ['us', 'ca'] })).resolves.toMatchObject({
+      regionScope: PromoRegionScope.CUSTOM_COUNTRIES,
+    });
+
+    expect(prisma.promoCode.update).toHaveBeenCalledWith({
+      where: { id: 'promo-1' },
+      data: expect.objectContaining({
+        allowedCountries: ['US', 'CA'],
+        discountDuration: PromoDiscountDuration.ONE_TIME,
+      }),
+    });
+  });
+
+  it('rejects duplicate codes on update', async () => {
+    prisma.promoCode.findUnique.mockResolvedValueOnce(activeCode);
+    prisma.promoCode.update.mockRejectedValue({ code: 'P2002' });
+
+    const update = service.update('promo-1', { code: 'jane20' });
+
+    await expect(update).rejects.toThrow('Promo code "JANE20" already exists');
+    await expect(update).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('deletes promo codes by id after verifying they exist', async () => {
+    prisma.promoCode.findUnique.mockResolvedValue(activeCode);
+    prisma.promoCode.delete.mockResolvedValue(activeCode);
+
+    await expect(service.remove('promo-1')).resolves.toMatchObject({ id: 'promo-1' });
+    expect(prisma.promoCode.delete).toHaveBeenCalledWith({ where: { id: 'promo-1' } });
   });
 
   it('rejects expired and inactive codes', async () => {

@@ -50,7 +50,7 @@ describe('OffersService', () => {
     for (const nicheTag of OFFER_NICHES) {
       expect(
         normalizeAndValidateOfferInput({
-          network: 'clickbank',
+          network: 'CLICKBANK',
           name: `${nicheTag} offer`,
           hoplink: 'https://vendor.example/path',
           nicheTag,
@@ -60,37 +60,37 @@ describe('OffersService', () => {
 
     expect(
       normalizeAndValidateOfferInput({
-        network: 'DIGISTORE24',
-        name: ' Sleep Offer ',
+        network: 'digistore24',
+        name: ' AI Offer ',
         hoplink: 'https://vendor.example/path',
-        nicheTag: 'sleep',
+        nicheTag: 'ai-software',
         active: true,
       }),
     ).toMatchObject({
-      network: 'digistore24',
-      name: 'Sleep Offer',
+      network: 'DIGISTORE24',
+      name: 'AI Offer',
       hoplink: 'https://vendor.example/path',
-      nicheTag: 'sleep',
+      nicheTag: 'AI_SOFTWARE',
       active: true,
     });
 
     expect(() =>
       normalizeAndValidateOfferInput({
-        network: 'amazon',
+        network: 'bad-network',
         name: 'Bad',
         hoplink: 'https://example.com',
       }),
     ).toThrow(BadRequestException);
     expect(() =>
       normalizeAndValidateOfferInput({
-        network: 'clickbank',
+        network: 'CLICKBANK',
         name: 'Bad',
         hoplink: 'not-a-url',
       }),
     ).toThrow(BadRequestException);
     expect(() =>
       normalizeAndValidateOfferInput({
-        network: 'clickbank',
+        network: 'CLICKBANK',
         name: 'Bad',
         hoplink: 'https://example.com',
         nicheTag: 'unknown',
@@ -102,19 +102,19 @@ describe('OffersService', () => {
     prisma.offer.findFirst.mockResolvedValue(null);
     prisma.offer.create.mockResolvedValue({
       id: 'offer-1',
-      network: 'clickbank',
-      name: 'Focus Offer',
-      hoplink: 'https://vendor.example/focus',
-      nicheTag: 'focus',
+      network: 'PARTNERSTACK',
+      name: 'AI Offer',
+      hoplink: 'https://vendor.example/ai',
+      nicheTag: 'AI_SOFTWARE',
       active: true,
     });
 
     await expect(
       service.create({
-        network: 'clickbank',
-        name: 'Focus Offer',
-        hoplink: 'https://vendor.example/focus',
-        nicheTag: 'focus',
+        network: 'partnerstack',
+        name: 'AI Offer',
+        hoplink: 'https://vendor.example/ai',
+        nicheTag: 'ai-software',
       }),
     ).resolves.toMatchObject({ id: 'offer-1', active: true });
 
@@ -136,7 +136,7 @@ describe('OffersService', () => {
   });
 
   it('aggregates performance from clicks, conversions, and video jobs', async () => {
-    const offer = { id: 'offer-1', network: 'digistore24', name: 'Sleep' };
+    const offer = { id: 'offer-1', network: 'PARTNERSTACK', name: 'AI Writer Pro' };
     prisma.offer.findUnique.mockResolvedValue(offer);
     prisma.click.count.mockResolvedValue(10);
     prisma.conversion.count.mockResolvedValue(2);
@@ -170,7 +170,7 @@ describe('OffersService', () => {
   it('previews redirect URLs without creating clicks', async () => {
     prisma.offer.findUnique.mockResolvedValue({
       id: 'offer-1',
-      network: 'clickbank',
+      network: 'CLICKBANK',
       hoplink: 'https://vendor.example',
     });
     tracking.buildOfferUrl.mockResolvedValue(

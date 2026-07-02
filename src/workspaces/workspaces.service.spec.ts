@@ -4,7 +4,7 @@ import { WorkspacesService } from './workspaces.service';
 describe('WorkspacesService', () => {
   let prisma: {
     user: { findUnique: jest.Mock };
-    workspace: { create: jest.Mock; findUnique: jest.Mock };
+    workspace: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
     workspaceMember: { findMany: jest.Mock; findUnique: jest.Mock };
     offer: { count: jest.Mock };
     topic: { count: jest.Mock };
@@ -18,7 +18,7 @@ describe('WorkspacesService', () => {
   beforeEach(() => {
     prisma = {
       user: { findUnique: jest.fn() },
-      workspace: { create: jest.fn(), findUnique: jest.fn() },
+      workspace: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
       workspaceMember: { findMany: jest.fn(), findUnique: jest.fn() },
       offer: { count: jest.fn() },
       topic: { count: jest.fn() },
@@ -36,13 +36,29 @@ describe('WorkspacesService', () => {
   it('creates an owner membership when creating a workspace', async () => {
     prisma.workspace.create.mockResolvedValue({ id: 'workspace-1', name: 'Acme' });
 
-    await service.createWorkspace('user-1', { name: 'Acme Team' });
+    await service.createWorkspace('user-1', {
+      name: 'Acme Team',
+      countryCode: 'us',
+      countryName: 'United States',
+      affiliateNiches: ['ai-software'],
+      affiliatePlatforms: ['partnerstack', 'amazon'],
+    });
 
     expect(prisma.workspace.create).toHaveBeenCalledWith({
       data: {
         name: 'Acme Team',
         slug: 'acme-team',
         ownerId: 'user-1',
+        countryCode: 'US',
+        countryName: 'United States',
+        affiliateNiches: ['AI_SOFTWARE'],
+        affiliatePlatforms: ['PARTNERSTACK', 'AMAZON_ASSOCIATES'],
+        primaryAffiliateLink: null,
+        affiliateLinks: undefined,
+        preferredContentTone: null,
+        preferredLanguage: null,
+        targetAudience: null,
+        contentGoal: null,
         members: {
           create: {
             userId: 'user-1',
@@ -65,7 +81,14 @@ describe('WorkspacesService', () => {
     ]);
 
     await expect(service.listMine('user-1')).resolves.toEqual([
-      { id: 'workspace-1', name: 'One', role: 'OWNER' },
+      expect.objectContaining({
+        id: 'workspace-1',
+        name: 'One',
+        role: 'OWNER',
+        affiliateNiches: [],
+        affiliatePlatforms: [],
+        onboardingComplete: false,
+      }),
     ]);
     expect(prisma.workspaceMember.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'user-1' } }),
@@ -98,7 +121,13 @@ describe('WorkspacesService', () => {
     });
 
     await expect(service.listMine('fresh-user-1')).resolves.toEqual([
-      { id: 'workspace-1', name: "Fresh's Workspace", slug: 'fresh-s-workspace-fresh-us', role: 'OWNER' },
+      expect.objectContaining({
+        id: 'workspace-1',
+        name: "Fresh's Workspace",
+        slug: 'fresh-s-workspace-fresh-us',
+        role: 'OWNER',
+        onboardingComplete: false,
+      }),
     ]);
 
     expect(prisma.workspace.create).toHaveBeenCalledWith({
@@ -142,7 +171,7 @@ describe('WorkspacesService', () => {
     });
 
     await expect(
-      service.createWorkspace('fresh-user-1', { name: 'Fresh Workspace' }),
+      service.createWorkspace('fresh-user-1', { name: 'Fresh Workspace', countryCode: 'NG', countryName: 'Nigeria' }),
     ).resolves.toMatchObject({
       id: 'workspace-1',
       slug: 'fresh-workspace',
@@ -153,6 +182,16 @@ describe('WorkspacesService', () => {
         name: 'Fresh Workspace',
         slug: 'fresh-workspace',
         ownerId: 'fresh-user-1',
+        countryCode: 'NG',
+        countryName: 'Nigeria',
+        affiliateNiches: [],
+        affiliatePlatforms: [],
+        primaryAffiliateLink: null,
+        affiliateLinks: undefined,
+        preferredContentTone: null,
+        preferredLanguage: null,
+        targetAudience: null,
+        contentGoal: null,
         members: {
           create: {
             userId: 'fresh-user-1',
@@ -167,9 +206,68 @@ describe('WorkspacesService', () => {
   it('maps duplicate workspace slug errors to a clean conflict response', async () => {
     prisma.workspace.create.mockRejectedValue({ code: 'P2002' });
 
-    await expect(service.createWorkspace('user-1', { name: 'Acme Team' })).rejects.toBeInstanceOf(
+    await expect(service.createWorkspace('user-1', { name: 'Acme Team', countryCode: 'US', countryName: 'United States' })).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+
+  it('updates affiliate onboarding profile and keeps legacy profiles readable', async () => {
+    prisma.workspace.findUnique.mockResolvedValueOnce({ id: 'workspace-1' });
+    prisma.workspace.update.mockResolvedValue({
+      id: 'workspace-1',
+      name: 'Acme',
+      slug: 'acme',
+      countryCode: 'GB',
+      countryName: 'United Kingdom',
+      affiliateNiches: ['FINANCE'],
+      affiliatePlatforms: ['CJ_AFFILIATE', 'IMPACT'],
+      primaryAffiliateLink: 'https://example.com',
+      affiliateLinks: { CJ_AFFILIATE: 'https://example.com' },
+      preferredContentTone: 'Practical',
+      preferredLanguage: 'en',
+      targetAudience: 'new investors',
+      contentGoal: 'compare tools',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await expect(
+      service.updateProfile('workspace-1', {
+        countryCode: 'gb',
+        countryName: 'United Kingdom',
+        affiliateNiches: ['finance'],
+        affiliatePlatforms: ['cj', 'impact'],
+        primaryAffiliateLink: 'https://example.com',
+        affiliateLinks: { CJ_AFFILIATE: 'https://example.com' },
+        preferredContentTone: 'Practical',
+        preferredLanguage: 'en',
+        targetAudience: 'new investors',
+        contentGoal: 'compare tools',
+      }),
+    ).resolves.toMatchObject({
+      countryCode: 'GB',
+      affiliateNiches: ['FINANCE'],
+      affiliatePlatforms: ['CJ_AFFILIATE', 'IMPACT'],
+      onboardingComplete: true,
+    });
+
+    prisma.workspace.findUnique.mockResolvedValueOnce({
+      id: 'legacy-workspace',
+      name: 'Legacy',
+      slug: 'legacy',
+      countryCode: null,
+      countryName: null,
+      affiliateNiches: [],
+      affiliatePlatforms: [],
+    });
+
+    await expect(service.getProfile('legacy-workspace')).resolves.toMatchObject({
+      countryCode: null,
+      countryName: null,
+      affiliateNiches: [],
+      affiliatePlatforms: [],
+      onboardingComplete: false,
+    });
   });
 
   it('blocks non-members and allows owners/admins for YouTube ownership actions', async () => {

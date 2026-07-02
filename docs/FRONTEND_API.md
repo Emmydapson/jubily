@@ -129,6 +129,51 @@ type RunSlot = "MORNING" | "AFTERNOON" | "EVENING";
 type VideoJobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "FAILED_PERMANENT" | "FAILED_QUOTA" | "FAILED_PUBLISH" | "CANCELLED";
 type ScriptReviewStatus = "PENDING" | "APPROVED" | "NEEDS_REVIEW" | "REJECTED";
 type ThumbnailStatus = "PENDING" | "GENERATING" | "READY" | "FAILED";
+
+type AffiliateNiche =
+  | "HEALTH_WELLNESS"
+  | "FINANCE"
+  | "AI_SOFTWARE"
+  | "TECHNOLOGY"
+  | "BUSINESS"
+  | "EDUCATION"
+  | "FITNESS"
+  | "BEAUTY"
+  | "TRAVEL"
+  | "GAMING"
+  | "ECOMMERCE"
+  | "REAL_ESTATE"
+  | "PARENTING"
+  | "PETS"
+  | "PERSONAL_DEVELOPMENT"
+  | "FOOD"
+  | "FASHION"
+  | "HOME_GARDEN"
+  | "AUTOMOTIVE"
+  | "DIY"
+  | "RELATIONSHIPS"
+  | "SPIRITUALITY"
+  | "OTHER";
+
+type AffiliatePlatform =
+  | "CLICKBANK"
+  | "DIGISTORE24"
+  | "WARRIORPLUS"
+  | "JVZOO"
+  | "AMAZON_ASSOCIATES"
+  | "TEMU"
+  | "ALIEXPRESS"
+  | "IMPACT"
+  | "PARTNERSTACK"
+  | "CJ_AFFILIATE"
+  | "SHAREASALE"
+  | "RAKUTEN"
+  | "AWIN"
+  | "FLEXOFFERS"
+  | "AVANGATE"
+  | "EBAY_PARTNER_NETWORK"
+  | "SHOPIFY_COLLABS"
+  | "CUSTOM";
 ```
 
 Paginated response:
@@ -359,7 +404,20 @@ Auth: customer JWT. Email must be verified.
 Request:
 
 ```ts
-{ name: string; slug?: string } // name min length 2
+{
+  name: string;                       // min length 2
+  slug?: string;
+  countryCode: string;                // required ISO alpha-2, stored uppercase
+  countryName: string;                // required display name
+  affiliateNiches?: AffiliateNiche[]; // health is supported but not defaulted
+  affiliatePlatforms?: AffiliatePlatform[];
+  primaryAffiliateLink?: string;      // optional http(s) URL
+  affiliateLinks?: Record<string, unknown> | unknown[];
+  preferredContentTone?: string;
+  preferredLanguage?: string;
+  targetAudience?: string;
+  contentGoal?: string;
+}
 ```
 
 Response:
@@ -369,6 +427,16 @@ Response:
   id: string;
   name: string;
   slug: string | null;
+  countryCode: string;
+  countryName: string;
+  affiliateNiches: AffiliateNiche[];
+  affiliatePlatforms: AffiliatePlatform[];
+  primaryAffiliateLink: string | null;
+  affiliateLinks: unknown | null;
+  preferredContentTone: string | null;
+  preferredLanguage: string | null;
+  targetAudience: string | null;
+  contentGoal: string | null;
   ownerId: string;
   suspended: boolean;
   suspendedAt: string | null;
@@ -379,7 +447,24 @@ Response:
 }
 ```
 
-Notes: `slug` is normalized to lowercase kebab-case, max 80 chars.
+Notes: `slug` is normalized to lowercase kebab-case, max 80 chars. Country is required for new workspace onboarding and is later used for promo region targeting, billing provider defaults, and analytics. Legacy workspaces may still have `countryCode: null` until their profile is completed.
+
+Example:
+
+```json
+{
+  "name": "Creator Growth Lab",
+  "countryCode": "US",
+  "countryName": "United States",
+  "affiliateNiches": ["AI_SOFTWARE", "BUSINESS"],
+  "affiliatePlatforms": ["PARTNERSTACK", "AMAZON_ASSOCIATES"],
+  "primaryAffiliateLink": "https://partner.example.com/demo",
+  "preferredContentTone": "practical",
+  "preferredLanguage": "en",
+  "targetAudience": "solo founders comparing software",
+  "contentGoal": "drive affiliate product trials"
+}
+```
 
 ### `GET /workspaces`
 
@@ -392,6 +477,17 @@ Array<{
   id: string;
   name: string;
   slug: string | null;
+  countryCode: string | null;
+  countryName: string | null;
+  affiliateNiches: AffiliateNiche[];
+  affiliatePlatforms: AffiliatePlatform[];
+  primaryAffiliateLink: string | null;
+  affiliateLinks: unknown | null;
+  preferredContentTone: string | null;
+  preferredLanguage: string | null;
+  targetAudience: string | null;
+  contentGoal: string | null;
+  onboardingComplete: boolean;
   createdAt: string;
   updatedAt: string;
   role: WorkspaceRole;
@@ -403,6 +499,75 @@ Array<{
 Auth: customer JWT and workspace membership.
 
 Response: `{ id: string; role: WorkspaceRole }`
+
+### `GET /workspaces/:workspaceId/profile`
+
+Auth: customer JWT and workspace membership.
+
+Response:
+
+```ts
+{
+  id: string;
+  name: string;
+  slug: string | null;
+  countryCode: string | null;
+  countryName: string | null;
+  affiliateNiches: AffiliateNiche[];
+  affiliatePlatforms: AffiliatePlatform[];
+  primaryAffiliateLink: string | null;
+  affiliateLinks: unknown | null;
+  preferredContentTone: string | null;
+  preferredLanguage: string | null;
+  targetAudience: string | null;
+  contentGoal: string | null;
+  onboardingComplete: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### `PATCH /workspaces/:workspaceId/profile`
+
+Auth: workspace `OWNER` or `ADMIN`.
+
+Request: any subset of profile fields.
+
+```ts
+{
+  countryCode?: string;
+  countryName?: string;
+  affiliateNiches?: AffiliateNiche[];
+  affiliatePlatforms?: AffiliatePlatform[];
+  primaryAffiliateLink?: string;
+  affiliateLinks?: Record<string, unknown> | unknown[];
+  preferredContentTone?: string;
+  preferredLanguage?: string;
+  targetAudience?: string;
+  contentGoal?: string;
+}
+```
+
+Response: same as `GET /workspaces/:workspaceId/profile`.
+
+Example:
+
+```json
+{
+  "countryCode": "NG",
+  "countryName": "Nigeria",
+  "affiliateNiches": ["FINANCE", "AI_SOFTWARE"],
+  "affiliatePlatforms": ["IMPACT", "PARTNERSTACK"],
+  "affiliateLinks": {
+    "IMPACT": "https://impact.example.com/demo",
+    "PARTNERSTACK": "https://partnerstack.example.com/demo"
+  },
+  "preferredContentTone": "direct",
+  "preferredLanguage": "en",
+  "targetAudience": "freelancers comparing business tools",
+  "contentGoal": "generate qualified affiliate clicks"
+}
+```
 
 ### `GET /workspaces/:workspaceId/dashboard`
 
@@ -489,37 +654,24 @@ Notes: state expires after 10 minutes and validates that the original user still
 
 All `/offers` routes require customer JWT, verified email, workspace membership, and `x-workspace-id`.
 
-Supported networks:
+Supported networks/platforms:
 
 ```ts
-type OfferNetwork = "digistore24" | "clickbank";
+type OfferNetwork = AffiliatePlatform;
 ```
 
 Supported niches/categories:
 
 ```ts
-type OfferNiche =
-  | "sleep"
-  | "weight-loss"
-  | "energy"
-  | "stress"
-  | "gut-health"
-  | "focus"
-  | "fitness"
-  | "hormones"
-  | "memory"
-  | "mens-health"
-  | "dental-health"
-  | "joint-health"
-  | "hearing-health";
+type OfferNiche = AffiliateNiche;
 ```
 
 Beginner-facing meanings:
 
 - Affiliate link: `hoplink`, the product URL that receives viewer traffic.
-- Network: `network`, the affiliate provider. ClickBank tracking uses `tid`; Digistore24 uses `custom`.
+- Network: `network`, the affiliate provider/platform. ClickBank tracking uses `tid`; Digistore24 uses `custom`; other networks use the stored affiliate link as-is unless platform-specific tracking is implemented.
 - Niche/category: `nicheTag`, used for filtering and topic-offer matching.
-- Product description: no backend field exists. Use `name`, `nicheTag`, and wizard `prompt` for positioning copy.
+- Product description: no backend field exists. Use `name`, `nicheTag`, workspace profile, and wizard `prompt` for positioning copy.
 
 Offer shape:
 
@@ -763,7 +915,11 @@ Request:
 
 Response: `Script`.
 
-Notes: creates/reuses a `Topic` with `source: "wizard"` and consumes one AI generation for billable workspaces.
+Notes:
+
+- Creates/reuses a `Topic` with `source: "wizard"` and consumes one AI generation for billable workspaces.
+- AI generation uses the offer plus workspace profile context: `nicheTag`, `network`, `hoplink`, `affiliateNiches`, `affiliatePlatforms`, `primaryAffiliateLink`, `targetAudience`, `preferredContentTone`, `preferredLanguage`, and `contentGoal`.
+- The backend does not default to health, supplements, medical products, or wellness unless the selected offer/profile niche is `HEALTH_WELLNESS`.
 
 ### `PATCH /automation/scripts/:id`
 
@@ -879,6 +1035,15 @@ Rules:
 - Billing video-generation limit is enforced before the render provider is called.
 - Uses the same render service path as `POST /admin/manual-ops/videos/:scriptId/render`.
 - Response is intentionally customer-safe and does not include `renderId`, worker lease fields, provider debug paths, or admin-only internals.
+
+Publishing metadata:
+
+- YouTube title/description generation is affiliate-product oriented and may include the affiliate link, CTA, and platform note.
+- When a tracking/affiliate link is inserted, the description includes:
+
+```text
+Disclosure: This video may contain affiliate links. We may earn a commission if you purchase through our link, at no extra cost to you.
+```
 
 ### `GET /automation/videos/:id`
 
@@ -1175,7 +1340,7 @@ Request:
   plan?: "PRO" | "PREMIUM";       // defaults to PRO; FREE rejected
   provider?: "PAYSTACK" | "STRIPE";
   interval?: "monthly" | "yearly"; // defaults monthly
-  country?: string;                // 2 letters; used for provider auto-select and promo region validation
+  country?: string;                // optional override; otherwise stored workspace countryCode is used
   promoCode?: string;              // optional; normalized and validated server-side
 }
 ```
@@ -1183,7 +1348,8 @@ Request:
 Provider selection:
 
 - Explicit provider must be `PAYSTACK` or `STRIPE`.
-- Omitted provider selects `PAYSTACK` for `NG`, `GH`, `ZA`, `KE`, `CI`, `EG`, `RW`; otherwise `STRIPE`.
+- Omitted provider selects from `country || workspace.countryCode`: `PAYSTACK` for `NG`, `GH`, `ZA`, `KE`, `CI`, `EG`, `RW`; otherwise `STRIPE`.
+- Promo region validation and checkout attribution use the same country value. Do not rely on IP for checkout country.
 
 Response:
 
@@ -1211,6 +1377,7 @@ Promo behavior:
 
 - Invalid, inactive, expired, over-limit, plan-inapplicable, region-inapplicable, or already-used promo codes return `400`.
 - Checkout records `CHECKOUT_STARTED` attribution before provider checkout is created.
+- If the checkout request omits `country`, the backend uses the stored workspace `countryCode` for promo validation and analytics.
 - Stripe checkout metadata and subscription metadata include promo attribution fields. Discount promos require backend promotion-code mapping.
 - Paystack checkout metadata includes promo attribution fields. `TRACKING_ONLY` codes do not reduce price, `ONE_TIME_AMOUNT_DISCOUNT` sends `finalAmount`, and `UNSUPPORTED` discount codes return the friendly unsupported error instead of silently charging full price.
 - For all discount promos, `renewalAmount` is the standard subscription price after the one-time checkout payment.
@@ -1452,7 +1619,11 @@ type UpdateSettingsDto = {
 
 ### `/admin/promo-codes/*`
 
-Promo code management is admin-only. Codes are normalized to uppercase on create/update. Duplicate codes return `409`.
+Promo code management is admin-only. Codes are normalized to uppercase on create/update. Duplicate codes return `409` with `Promo code "<CODE>" already exists`.
+
+Required on create: `code` and `influencerName`.
+
+Defaulted on create when omitted: `discountType: "NONE"`, `discountDuration: "ONE_TIME"`, `appliesToPlans: "ALL"`, `regionScope: "ALL"`, `allowedCountries: []`, `isActive: true`, and `paystackDiscountMode: "TRACKING_ONLY"` for tracking-only codes or `"UNSUPPORTED"` for discount codes.
 
 | Method | Path | Purpose | Role | Request | Response |
 | --- | --- | --- | --- | --- | --- |
@@ -1460,25 +1631,26 @@ Promo code management is admin-only. Codes are normalized to uppercase on create
 | `GET` | `/admin/promo-codes` | List promo codes | Admin role | none | `PromoCode[]` |
 | `GET` | `/admin/promo-codes/:id` | Get promo code | Admin role | UUID | `PromoCode` |
 | `PATCH` | `/admin/promo-codes/:id` | Update promo code | Admin role | `UpdatePromoCodeDto` | `PromoCode` |
+| `DELETE` | `/admin/promo-codes/:id` | Delete promo code | Admin role | UUID | `PromoCode` |
 | `POST` | `/admin/promo-codes/:id/deactivate` | Deactivate promo code | Admin role | UUID | `PromoCode` |
 | `POST` | `/admin/promo-codes/:id/reactivate` | Reactivate promo code | Admin role | UUID | `PromoCode` |
 | `GET` | `/admin/promo-codes/:id/performance` | Promo attribution/revenue performance | Admin role | UUID | `PromoCodePerformance` |
 
 ```ts
 type CreatePromoCodeDto = {
-  code: string;
-  influencerName: string;
+  code: string;                    // required, trimmed and uppercased
+  influencerName: string;          // required
   influencerEmail?: string;
   description?: string;
   discountType?: PromoDiscountType; // default NONE
   discountValue?: number;           // required when discountType is PERCENTAGE or FIXED
-  discountDuration?: PromoDiscountDuration; // server enforces ONE_TIME
+  discountDuration?: PromoDiscountDuration; // default ONE_TIME; only ONE_TIME is accepted
   appliesToPlans?: PromoAppliesToPlan; // default ALL
   regionScope?: PromoRegionScope;       // default ALL
-  allowedCountries?: string[];          // required for CUSTOM_COUNTRIES
+  allowedCountries?: string[];          // ISO 3166-1 alpha-2; required for CUSTOM_COUNTRIES
   stripePromotionCodeId?: string;       // must start with promo_
   stripeCouponId?: string;              // must start with coupon_
-  paystackDiscountMode?: PaystackDiscountMode; // default UNSUPPORTED
+  paystackDiscountMode?: PaystackDiscountMode; // default TRACKING_ONLY when discountType is NONE, otherwise UNSUPPORTED
   maxRedemptions?: number;
   startsAt?: string;
   expiresAt?: string;
@@ -1488,7 +1660,53 @@ type CreatePromoCodeDto = {
 type UpdatePromoCodeDto = Partial<CreatePromoCodeDto>;
 ```
 
-Example create payload:
+Patch requests may include any subset of `CreatePromoCodeDto`. When changing `discountType` from `NONE` to `PERCENTAGE` or `FIXED`, include `discountValue` unless the existing promo already has one. When changing `regionScope` to `CUSTOM_COUNTRIES`, include at least one ISO alpha-2 country in `allowedCountries`.
+
+Validation errors are returned as `400` unless noted:
+
+```json
+{ "statusCode": 400, "message": "discountValue is required for discount promo codes", "error": "Bad Request" }
+```
+
+Important admin validation messages:
+
+- Duplicate code: `409` with `Promo code "<CODE>" already exists`
+- Invalid or unsupported `discountDuration`: `discountDuration must be ONE_TIME`
+- Invalid `regionScope`: `regionScope must be ALL, GLOBAL, AFRICA, NIGERIA, or CUSTOM_COUNTRIES`
+- Invalid `allowedCountries`: `allowedCountries must contain only ISO 3166-1 alpha-2 country codes`
+- Empty custom country scope: `allowedCountries is required when regionScope is CUSTOM_COUNTRIES`
+- Invalid `paystackDiscountMode`: `paystackDiscountMode must be TRACKING_ONLY, ONE_TIME_AMOUNT_DISCOUNT, or UNSUPPORTED`
+- Invalid `stripePromotionCodeId`: `stripePromotionCodeId must start with "promo_"`
+- Invalid `stripeCouponId`: `stripeCouponId must start with "coupon_"`
+- Missing discount value for discount promos: `discountValue is required for discount promo codes`
+
+Example tracking-only create payload:
+
+```json
+{
+  "code": "JANE",
+  "influencerName": "Jane Creator"
+}
+```
+
+Creates the same persisted defaults as:
+
+```json
+{
+  "code": "JANE",
+  "influencerName": "Jane Creator",
+  "discountType": "NONE",
+  "discountValue": null,
+  "discountDuration": "ONE_TIME",
+  "appliesToPlans": "ALL",
+  "regionScope": "ALL",
+  "allowedCountries": [],
+  "paystackDiscountMode": "TRACKING_ONLY",
+  "isActive": true
+}
+```
+
+Example discount create payload:
 
 ```json
 {
@@ -1496,6 +1714,7 @@ Example create payload:
   "influencerName": "Black Friday Campaign",
   "discountType": "PERCENTAGE",
   "discountValue": 50,
+  "discountDuration": "ONE_TIME",
   "appliesToPlans": "ALL",
   "regionScope": "NIGERIA",
   "allowedCountries": ["NG"],
@@ -1503,6 +1722,21 @@ Example create payload:
   "stripeCouponId": "coupon_123",
   "paystackDiscountMode": "ONE_TIME_AMOUNT_DISCOUNT",
   "expiresAt": "2026-12-01T00:00:00.000Z"
+}
+```
+
+Example update payload:
+
+```json
+{
+  "discountType": "FIXED",
+  "discountValue": 500,
+  "regionScope": "CUSTOM_COUNTRIES",
+  "allowedCountries": ["US", "CA"],
+  "stripePromotionCodeId": "promo_456",
+  "stripeCouponId": "coupon_456",
+  "paystackDiscountMode": "TRACKING_ONLY",
+  "isActive": true
 }
 ```
 

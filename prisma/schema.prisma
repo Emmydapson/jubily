@@ -158,10 +158,10 @@ model VideoJob {
 model Offer {
   id                String       @id @default(uuid())
   workspaceId       String?
-  network           String       @default("digistore24") // future-proof
+  network           String       @default("DIGISTORE24")
   externalProductId String?
   name              String
-  nicheTag          String? // "sleep", "fat-loss", "gut", etc
+  nicheTag          String?
   hoplink           String // your affiliate link or promo link base
   active            Boolean      @default(true)
   createdAt         DateTime     @default(now())
@@ -389,15 +389,25 @@ model UserSession {
 }
 
 model Workspace {
-  id               String    @id @default(uuid())
-  name             String
-  slug             String?   @unique
-  ownerId          String?
-  suspended        Boolean   @default(false)
-  suspendedAt      DateTime?
-  suspensionReason String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                   String    @id @default(uuid())
+  name                 String
+  slug                 String?   @unique
+  ownerId              String?
+  countryCode          String?
+  countryName          String?
+  affiliateNiches      String[]  @default([])
+  affiliatePlatforms   String[]  @default([])
+  primaryAffiliateLink String?
+  affiliateLinks       Json?
+  preferredContentTone String?
+  preferredLanguage    String?
+  targetAudience       String?
+  contentGoal          String?
+  suspended            Boolean   @default(false)
+  suspendedAt          DateTime?
+  suspensionReason     String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   owner              User?                        @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   members            WorkspaceMember[]

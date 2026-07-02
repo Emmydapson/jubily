@@ -14,9 +14,9 @@ describe('ContentQualityService duration gate', () => {
       hook: 'Most people miss this simple morning energy signal.',
       cta: 'Save this and try it tomorrow.',
       scenes: Array.from({ length: sceneCount }, (_, index) => ({
-        narration: `Scene ${index + 1} gives one practical wellness step you can repeat on a busy day.`,
+        narration: `Scene ${index + 1} gives one practical product comparison step you can repeat before buying.`,
         caption: `Step ${index + 1}`,
-        visualPrompt: 'person doing a simple wellness habit, slow push in camera movement, bright natural lighting, realistic lifestyle mood, no text',
+        visualPrompt: 'person comparing affiliate products, slow push in camera movement, bright natural lighting, realistic lifestyle mood, no text',
         seconds,
       })),
     });
@@ -69,5 +69,19 @@ describe('ContentQualityService duration gate', () => {
     expect(ai.rewriteScriptForQuality).toHaveBeenCalledTimes(2);
     expect(result.reviewStatus).toBe('REJECTED');
     expect(result.qualityReview.issues).toContain('script should use 8-12 scenes');
+  });
+
+  it('uses affiliate-oriented fallback metadata', async () => {
+    ai.generateTitleCandidates.mockResolvedValue([]);
+    ai.generateYoutubeDescription.mockResolvedValue('');
+
+    const result = await service.prepareScript({
+      topic: 'Compare AI software tools',
+      content: script(8, 9),
+    });
+
+    expect(result.youtubeDescription).toContain('affiliate product');
+    expect(result.hashtags).toContain('#affiliatemarketing');
+    expect(result.hashtags).toContain('#productreview');
   });
 });

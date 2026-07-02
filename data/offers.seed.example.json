@@ -1,25 +1,34 @@
 [
   {
-    "network": "digistore24",
+    "network": "DIGISTORE24",
     "externalProductId": "DIGISTORE_PRODUCT_ID",
-    "name": "Example Digistore24 Sleep Offer",
-    "nicheTag": "sleep",
+    "name": "Example Health and Wellness Offer",
+    "nicheTag": "HEALTH_WELLNESS",
     "hoplink": "https://www.digistore24.com/redir/example/product",
     "active": true
   },
   {
-    "network": "clickbank",
-    "name": "Example ClickBank Focus Offer",
-    "nicheTag": "memory",
-    "hoplink": "https://example.hop.clickbank.net",
+    "network": "PARTNERSTACK",
+    "externalProductId": "AI_SOFTWARE_TOOL",
+    "name": "Example AI Writing Tool",
+    "nicheTag": "AI_SOFTWARE",
+    "hoplink": "https://example.partnerstack.com/ai-tool",
     "active": true
   },
   {
-    "network": "digistore24",
-    "externalProductId": "DIGISTORE_JOINT_PRODUCT_ID",
-    "name": "Example Digistore24 Joint Health Offer",
-    "nicheTag": "joint-health",
-    "hoplink": "https://www.digistore24.com/redir/example/joint-product",
+    "network": "AMAZON_ASSOCIATES",
+    "externalProductId": "HOME_OFFICE_GEAR",
+    "name": "Example Home Office Product",
+    "nicheTag": "HOME_GARDEN",
+    "hoplink": "https://www.amazon.com/dp/example?tag=affiliate",
+    "active": true
+  },
+  {
+    "network": "CUSTOM",
+    "externalProductId": "COURSE_101",
+    "name": "Example Education Course",
+    "nicheTag": "EDUCATION",
+    "hoplink": "https://example.com/course?ref=affiliate",
     "active": true
   }
 ]
