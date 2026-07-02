@@ -89,7 +89,7 @@ function brandedEmail(input: {
             </tr>
             <tr>
               <td align="center" style="padding: 18px 8px 0;">
-                <p style="margin: 0; color: ${PALETTE.muted}; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 18px;">Jubily by Oneverse Technologies</p>
+                <p style="margin: 0; color: ${PALETTE.muted}; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 18px;">Jubily</p>
                 <p style="margin: 4px 0 0; color: ${PALETTE.muted}; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 18px;">Contact: <a href="mailto:${contact}" style="color: ${PALETTE.accent}; text-decoration: underline;">${contact}</a></p>
               </td>
             </tr>
@@ -104,7 +104,7 @@ function brandedEmail(input: {
 export function verificationEmailTemplate(input: AccountEmailInput) {
   return {
     subject: 'Verify your Jubily email',
-    text: `Hi ${displayName(input.name)},\n\nVerify your email to finish setting up your Jubily account:\n${input.url}\n\nIf you did not create this account, you can ignore this email.\n\nJubily by Oneverse Technologies\nContact: ${supportEmail()}`,
+    text: `Hi ${displayName(input.name)},\n\nVerify your email to finish setting up your Jubily account:\n${input.url}\n\nIf you did not create this account, you can ignore this email.\n\nJubily\nContact: ${supportEmail()}`,
     html: brandedEmail({
       preheader: 'Verify your email to finish setting up Jubily.',
       title: 'Verify your email',
@@ -119,7 +119,7 @@ export function verificationEmailTemplate(input: AccountEmailInput) {
 export function passwordResetEmailTemplate(input: AccountEmailInput) {
   return {
     subject: 'Reset your Jubily password',
-    text: `Hi ${displayName(input.name)},\n\nReset your Jubily password here:\n${input.url}\n\nThis link expires soon. If you did not request it, you can ignore this email.\n\nJubily by Oneverse Technologies\nContact: ${supportEmail()}`,
+    text: `Hi ${displayName(input.name)},\n\nReset your Jubily password here:\n${input.url}\n\nThis link expires soon. If you did not request it, you can ignore this email.\n\nJubily\nContact: ${supportEmail()}`,
     html: brandedEmail({
       preheader: 'Reset your Jubily password.',
       title: 'Reset your password',
@@ -134,7 +134,7 @@ export function passwordResetEmailTemplate(input: AccountEmailInput) {
 export function passwordChangedEmailTemplate(name?: string | null) {
   return {
     subject: 'Your Jubily password was changed',
-    text: `Hi ${displayName(name)},\n\nYour Jubily password was changed. If this was not you, reset your password immediately and contact support.\n\nJubily by Oneverse Technologies\nContact: ${supportEmail()}`,
+    text: `Hi ${displayName(name)},\n\nYour Jubily password was changed. If this was not you, reset your password immediately and contact support.\n\nJubily\nContact: ${supportEmail()}`,
     html: brandedEmail({
       preheader: 'Your Jubily password was changed.',
       title: 'Password changed',

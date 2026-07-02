@@ -348,6 +348,7 @@ export class BillingService {
           provider,
           plan: plan as Exclude<Plan, 'FREE'>,
           interval,
+          countryCode: options?.country,
         })
       : null;
     const checkout = await this.providerAdapter(provider).createCheckout({
@@ -373,7 +374,13 @@ export class BillingService {
         ? {
             code: promo.promo.code,
             discountType: promo.promo.discountType,
-            discountApplied: Boolean(promo.stripePromotionCodeId),
+            discountApplied: Boolean(promo.metadata.promoDiscountApplied),
+            discountDuration: promo.metadata.discountDuration,
+            originalAmount: promo.metadata.originalAmount,
+            discountAmount: promo.metadata.discountAmount,
+            finalAmount: promo.metadata.finalAmount,
+            renewalAmount: promo.preview.renewalAmount,
+            currency: promo.preview.currency,
           }
         : null,
     };
@@ -471,7 +478,14 @@ export class BillingService {
             plan: parsed.subscriptionUpdate.plan ?? subscription.plan,
             interval: parsed.subscriptionUpdate.interval,
             amount: parsed.subscriptionUpdate.amount,
+            originalAmount: parsed.subscriptionUpdate.originalAmount,
+            discountAmount: parsed.subscriptionUpdate.discountAmount,
+            finalAmount: parsed.subscriptionUpdate.finalAmount,
+            renewalAmount: parsed.subscriptionUpdate.renewalAmount,
             currency: parsed.subscriptionUpdate.currency,
+            countryCode: parsed.subscriptionUpdate.countryCode,
+            regionScope: parsed.subscriptionUpdate.regionScope,
+            discountDuration: parsed.subscriptionUpdate.discountDuration,
           });
         }
         await this.prisma.billingWebhookEvent.update({

@@ -22,7 +22,7 @@ export class PaystackBillingAdapter implements LiveBillingProviderAdapter {
 
   async createCheckout(input: CheckoutRequest): Promise<CheckoutResponse> {
     const planCode = this.pricing.getPriceId(this.provider, input.plan, input.interval);
-    const amount = this.pricing.getDisplayPrice(this.provider, input.plan, input.interval).amountMinor;
+    const amount = input.promo?.finalAmount ?? this.pricing.getDisplayPrice(this.provider, input.plan, input.interval).amountMinor;
     try {
       const response = await axios.post(
         'https://api.paystack.co/transaction/initialize',
@@ -41,7 +41,16 @@ export class PaystackBillingAdapter implements LiveBillingProviderAdapter {
           promoCode: input.promo?.promoCode,
           promoAttributionId: input.promo?.promoAttributionId,
           promoDiscountType: input.promo?.promoDiscountType,
-          promoDiscountApplied: false,
+          promoDiscountApplied: Boolean(input.promo?.promoDiscountApplied),
+          discountDuration: input.promo?.discountDuration,
+          originalAmount: input.promo?.originalAmount,
+          discountAmount: input.promo?.discountAmount,
+          finalAmount: input.promo?.finalAmount,
+          renewalAmount: input.promo?.renewalAmount,
+          currency: input.promo?.currency,
+          countryCode: input.promo?.countryCode,
+          regionScope: input.promo?.regionScope,
+          paystackDiscountMode: input.promo?.paystackDiscountMode,
         },
       },
         { headers: { Authorization: `Bearer ${this.secret()}` } },
@@ -132,7 +141,14 @@ export class PaystackBillingAdapter implements LiveBillingProviderAdapter {
           promoAttributionId: String(metadata.promoAttributionId || ''),
           interval: String(metadata.interval || ''),
           amount: data.amount == null ? null : Number(data.amount),
+          originalAmount: metadata.originalAmount == null ? null : Number(metadata.originalAmount),
+          discountAmount: metadata.discountAmount == null ? null : Number(metadata.discountAmount),
+          finalAmount: metadata.finalAmount == null ? null : Number(metadata.finalAmount),
+          renewalAmount: metadata.renewalAmount == null ? null : Number(metadata.renewalAmount),
           currency: data.currency ? String(data.currency).toUpperCase() : null,
+          countryCode: String(metadata.countryCode || ''),
+          regionScope: String(metadata.regionScope || ''),
+          discountDuration: String(metadata.discountDuration || ''),
           currentPeriodStart: this.parseDate(data.created_at || data.period_start),
           currentPeriodEnd: this.parseDate(data.next_payment_date || data.period_end),
           cancelAtPeriodEnd: false,

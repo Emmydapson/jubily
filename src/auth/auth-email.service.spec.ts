@@ -31,7 +31,8 @@ describe('account email templates', () => {
     expect(verification.html).not.toContain('#B94A48');
     expect(verification.html).not.toMatch(/#(?:ff6b6b|ff7f50|ff5a5f|e85d75|ef4444|dc2626)/i);
     expect(verification.html).toContain('Jubily');
-    expect(verification.html).toContain('Jubily by Oneverse Technologies');
+    expect(verification.html).not.toContain('Oneverse');
+    expect(verification.text).not.toContain('Oneverse');
     expect(verification.html).toContain('Contact: <a href="mailto:info@joinjubily.com"');
     expect(verification.text).toContain('info@joinjubily.com');
     expect(verification.html).toContain('If the button does not work');
@@ -49,7 +50,8 @@ describe('account email templates', () => {
     expect(changed.subject).toBe('Your Jubily password was changed');
     expect(changed.text).toContain('Your Jubily password was changed');
     expect(changed.html).toContain('Jubily');
-    expect(changed.html).toContain('Oneverse');
+    expect(changed.html).not.toContain('Oneverse');
+    expect(changed.text).not.toContain('Oneverse');
   });
 });
 

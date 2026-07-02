@@ -514,23 +514,47 @@ enum PromoAttributionStatus {
   CANCELLED
 }
 
+enum PromoDiscountDuration {
+  ONE_TIME
+}
+
+enum PromoRegionScope {
+  ALL
+  GLOBAL
+  AFRICA
+  NIGERIA
+  CUSTOM_COUNTRIES
+}
+
+enum PaystackDiscountMode {
+  TRACKING_ONLY
+  ONE_TIME_AMOUNT_DISCOUNT
+  UNSUPPORTED
+}
+
 model PromoCode {
-  id               String             @id @default(uuid())
-  code             String             @unique
-  influencerName   String
-  influencerEmail  String?
-  description      String?
-  discountType     PromoDiscountType  @default(NONE)
-  discountValue    Float?
-  appliesToPlans   PromoAppliesToPlan @default(ALL)
-  maxRedemptions   Int?
-  redemptionCount  Int                @default(0)
-  startsAt         DateTime?
-  expiresAt        DateTime?
-  isActive         Boolean            @default(true)
-  createdByAdminId String?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  id                    String                @id @default(uuid())
+  code                  String                @unique
+  influencerName        String
+  influencerEmail       String?
+  description           String?
+  discountType          PromoDiscountType     @default(NONE)
+  discountValue         Float?
+  discountDuration      PromoDiscountDuration @default(ONE_TIME)
+  appliesToPlans        PromoAppliesToPlan    @default(ALL)
+  regionScope           PromoRegionScope      @default(ALL)
+  allowedCountries      String[]              @default([])
+  stripePromotionCodeId String?
+  stripeCouponId        String?
+  paystackDiscountMode  PaystackDiscountMode  @default(UNSUPPORTED)
+  maxRedemptions        Int?
+  redemptionCount       Int                   @default(0)
+  startsAt              DateTime?
+  expiresAt             DateTime?
+  isActive              Boolean               @default(true)
+  createdByAdminId      String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
 
   createdByAdmin AdminUser?         @relation("PromoCodeCreator", fields: [createdByAdminId], references: [id], onDelete: SetNull)
   attributions   PromoAttribution[]
@@ -541,19 +565,27 @@ model PromoCode {
 }
 
 model PromoAttribution {
-  id             String                 @id @default(uuid())
-  promoCodeId    String
-  userId         String
-  workspaceId    String?
-  subscriptionId String?
-  provider       BillingProvider?
-  plan           Plan?
-  interval       BillingInterval?
-  amount         Float?
-  currency       String?
-  status         PromoAttributionStatus
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  id               String                 @id @default(uuid())
+  promoCodeId      String
+  userId           String
+  workspaceId      String?
+  subscriptionId   String?
+  provider         BillingProvider?
+  plan             Plan?
+  interval         BillingInterval?
+  amount           Float?
+  originalAmount   Float?
+  discountAmount   Float?
+  finalAmount      Float?
+  renewalAmount    Float?
+  currency         String?
+  countryCode      String?
+  regionScope      PromoRegionScope?
+  discountDuration PromoDiscountDuration?
+  redeemedAt       DateTime?
+  status           PromoAttributionStatus
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   promoCode    PromoCode              @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
   user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -561,6 +593,8 @@ model PromoAttribution {
   subscription WorkspaceSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 
   @@index([promoCodeId, status])
+  @@index([promoCodeId, userId, status])
+  @@index([promoCodeId, workspaceId, status])
   @@index([userId, createdAt])
   @@index([workspaceId, createdAt])
   @@index([subscriptionId])

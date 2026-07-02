@@ -1,5 +1,6 @@
 import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { Plan } from '@prisma/client';
+import { BillingProvider, Plan } from '@prisma/client';
+import { BillingInterval } from '../../billing/dto/start-checkout.dto';
 
 export class ValidatePromoCodeDto {
   @IsString()
@@ -8,4 +9,16 @@ export class ValidatePromoCodeDto {
   @IsOptional()
   @IsEnum(Plan)
   plan?: Plan;
+
+  @IsOptional()
+  @IsEnum(BillingProvider)
+  provider?: BillingProvider;
+
+  @IsOptional()
+  @IsEnum(BillingInterval)
+  interval?: BillingInterval;
+
+  @IsOptional()
+  @IsString()
+  countryCode?: string;
 }

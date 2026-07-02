@@ -77,9 +77,6 @@ STRIPE_PRO_MONTHLY_PRICE_ID=<stripe price id>
 STRIPE_PRO_YEARLY_PRICE_ID=<stripe price id>
 STRIPE_PREMIUM_MONTHLY_PRICE_ID=<stripe price id>
 STRIPE_PREMIUM_YEARLY_PRICE_ID=<stripe price id>
-# Optional - only needed when a Jubily promo code should apply a real Stripe discount.
-# Replace JANE20 with the normalized uppercase promo code.
-STRIPE_PROMO_JANE20_PROMOTION_CODE_ID=<stripe promotion code id>
 
 PAYSTACK_ENABLED=true|false
 PAYSTACK_SECRET_KEY=<paystack sandbox secret key>
@@ -123,7 +120,10 @@ type SubscriptionStatus = "ACTIVE" | "TRIALING" | "PAST_DUE" | "CANCELED" | "EXP
 type BillingProvider = "PAYSTACK" | "STRIPE";
 type BillingInterval = "monthly" | "yearly";
 type PromoDiscountType = "PERCENTAGE" | "FIXED" | "NONE";
+type PromoDiscountDuration = "ONE_TIME";
 type PromoAppliesToPlan = "PRO" | "PREMIUM" | "ALL";
+type PromoRegionScope = "ALL" | "GLOBAL" | "AFRICA" | "NIGERIA" | "CUSTOM_COUNTRIES";
+type PaystackDiscountMode = "TRACKING_ONLY" | "ONE_TIME_AMOUNT_DISCOUNT" | "UNSUPPORTED";
 type PromoAttributionStatus = "SIGNUP" | "CHECKOUT_STARTED" | "SUBSCRIBED" | "FAILED" | "CANCELLED";
 type RunSlot = "MORNING" | "AFTERNOON" | "EVENING";
 type VideoJobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "FAILED_PERMANENT" | "FAILED_QUOTA" | "FAILED_PUBLISH" | "CANCELLED";
@@ -974,9 +974,12 @@ Promo codes are normalized server-side by trimming whitespace and uppercasing. T
 Discount behavior:
 
 - `discountType: "NONE"` means tracking-only.
-- Stripe discounts are applied only when the backend has `STRIPE_PROMO_<CODE>_PROMOTION_CODE_ID` configured and the provider checkout request includes the real Stripe promotion code id.
-- Paystack promo codes are attribution/tracking-only unless a real adjusted-plan strategy is configured server-side later. The backend does not fake a discount.
+- All promo discounts are one-time checkout discounts. Renewals continue at the normal subscription price.
+- A user/workspace can only successfully redeem the same promo code once. Repeat paid redemption returns `400` with `This promo code has already been used on this account.`
+- Stripe discount promo codes use `promoCode.stripePromotionCodeId`, managed in the admin API. Missing Stripe promotion-code configuration returns `400` with `This promo code is not configured for Stripe checkout yet.`
+- Paystack behavior is controlled by `paystackDiscountMode`: `TRACKING_ONLY` records attribution without changing price, `ONE_TIME_AMOUNT_DISCOUNT` charges `finalAmount`, and `UNSUPPORTED` blocks discount checkout with `Paystack one-time subscription discounts are not yet supported.`
 - `redemptionCount` increments only after a successful subscription webhook marks an attribution `SUBSCRIBED`.
+- Region targeting is enforced by `countryCode`: `ALL` applies everywhere, `NIGERIA` only `NG`, `AFRICA` only African country codes, `GLOBAL` outside Africa, and `CUSTOM_COUNTRIES` only `allowedCountries`.
 
 Promo code shape:
 
@@ -989,7 +992,14 @@ type PromoCode = {
   description: string | null;
   discountType: PromoDiscountType;
   discountValue: number | null;
+  discountDuration: PromoDiscountDuration; // always ONE_TIME
   appliesToPlans: PromoAppliesToPlan;
+  regionScope: PromoRegionScope;
+  allowedCountries: string[]; // ISO alpha-2 country codes
+  stripePromotionCodeId: string | null; // starts with promo_
+  stripeCouponId: string | null;        // starts with coupon_
+  stripeDiscountConfigured: boolean;    // derived by frontend as Boolean(stripePromotionCodeId)
+  paystackDiscountMode: PaystackDiscountMode;
   maxRedemptions: number | null;
   redemptionCount: number;
   startsAt: string | null;
@@ -1013,6 +1023,9 @@ Request:
 {
   code: string;
   plan?: "PRO" | "PREMIUM" | "FREE";
+  provider?: "PAYSTACK" | "STRIPE";
+  interval?: "monthly" | "yearly";
+  countryCode?: string; // ISO alpha-2; used for regional targeting and pricing preview
 }
 ```
 
@@ -1021,16 +1034,52 @@ Response:
 ```ts
 {
   valid: true;
-  promo: {
-    code: string;
-    influencerName: string;
-    discountType: PromoDiscountType;
-    discountValue: number | null;
-    appliesToPlans: PromoAppliesToPlan;
-    planApplies: boolean;
-    trackingOnly: boolean;
-    stripeDiscountConfigured: boolean;
-  };
+  code: string;
+  influencerName: string;
+  discountType: PromoDiscountType;
+  discountValue: number | null;
+  discountDuration: "ONE_TIME";
+  originalAmount: number;
+  discountAmount: number;
+  finalAmount: number;
+  currency: string;
+  discountLabel: string;
+  renewalAmount: number;
+  renewalNotice: "Discount applies to this payment only. Renewals continue at the standard price.";
+  regionScope: PromoRegionScope;
+  allowedCountries: string[];
+  appliesToPlans: PromoAppliesToPlan;
+  planApplies: boolean;
+  trackingOnly: boolean;
+  stripeDiscountConfigured: boolean;
+  paystackDiscountMode: PaystackDiscountMode;
+  providerSupported: boolean;
+  providerError: string | null;
+}
+```
+
+Example validation response:
+
+```json
+{
+  "valid": true,
+  "code": "BLACKFRIDAY50",
+  "discountType": "PERCENTAGE",
+  "discountValue": 50,
+  "discountDuration": "ONE_TIME",
+  "originalAmount": 2000000,
+  "discountAmount": 1000000,
+  "finalAmount": 1000000,
+  "currency": "NGN",
+  "discountLabel": "50% off",
+  "renewalAmount": 2000000,
+  "renewalNotice": "Discount applies to this payment only. Renewals continue at the standard price.",
+  "regionScope": "NIGERIA",
+  "allowedCountries": ["NG"],
+  "stripeDiscountConfigured": false,
+  "paystackDiscountMode": "ONE_TIME_AMOUNT_DISCOUNT",
+  "providerSupported": true,
+  "providerError": null
 }
 ```
 
@@ -1126,7 +1175,7 @@ Request:
   plan?: "PRO" | "PREMIUM";       // defaults to PRO; FREE rejected
   provider?: "PAYSTACK" | "STRIPE";
   interval?: "monthly" | "yearly"; // defaults monthly
-  country?: string;                // 2 letters; used for provider auto-select
+  country?: string;                // 2 letters; used for provider auto-select and promo region validation
   promoCode?: string;              // optional; normalized and validated server-side
 }
 ```
@@ -1148,16 +1197,23 @@ Response:
     code: string;
     discountType: PromoDiscountType;
     discountApplied: boolean; // true only when a real provider discount was attached
+    discountDuration: PromoDiscountDuration;
+    originalAmount: number;
+    discountAmount: number;
+    finalAmount: number;
+    renewalAmount: number;
+    currency: string;
   };
 }
 ```
 
 Promo behavior:
 
-- Invalid, inactive, expired, over-limit, or plan-inapplicable promo codes return `400`.
+- Invalid, inactive, expired, over-limit, plan-inapplicable, region-inapplicable, or already-used promo codes return `400`.
 - Checkout records `CHECKOUT_STARTED` attribution before provider checkout is created.
-- Stripe checkout metadata and subscription metadata include promo attribution fields.
-- Paystack checkout metadata includes promo attribution fields, but `discountApplied` remains `false` unless the payment amount is actually adjusted server-side.
+- Stripe checkout metadata and subscription metadata include promo attribution fields. Discount promos require backend promotion-code mapping.
+- Paystack checkout metadata includes promo attribution fields. `TRACKING_ONLY` codes do not reduce price, `ONE_TIME_AMOUNT_DISCOUNT` sends `finalAmount`, and `UNSUPPORTED` discount codes return the friendly unsupported error instead of silently charging full price.
+- For all discount promos, `renewalAmount` is the standard subscription price after the one-time checkout payment.
 
 Return URLs sent to the provider:
 
@@ -1416,7 +1472,13 @@ type CreatePromoCodeDto = {
   description?: string;
   discountType?: PromoDiscountType; // default NONE
   discountValue?: number;           // required when discountType is PERCENTAGE or FIXED
+  discountDuration?: PromoDiscountDuration; // server enforces ONE_TIME
   appliesToPlans?: PromoAppliesToPlan; // default ALL
+  regionScope?: PromoRegionScope;       // default ALL
+  allowedCountries?: string[];          // required for CUSTOM_COUNTRIES
+  stripePromotionCodeId?: string;       // must start with promo_
+  stripeCouponId?: string;              // must start with coupon_
+  paystackDiscountMode?: PaystackDiscountMode; // default UNSUPPORTED
   maxRedemptions?: number;
   startsAt?: string;
   expiresAt?: string;
@@ -1424,6 +1486,34 @@ type CreatePromoCodeDto = {
 };
 
 type UpdatePromoCodeDto = Partial<CreatePromoCodeDto>;
+```
+
+Example create payload:
+
+```json
+{
+  "code": "BLACKFRIDAY50",
+  "influencerName": "Black Friday Campaign",
+  "discountType": "PERCENTAGE",
+  "discountValue": 50,
+  "appliesToPlans": "ALL",
+  "regionScope": "NIGERIA",
+  "allowedCountries": ["NG"],
+  "stripePromotionCodeId": "promo_123",
+  "stripeCouponId": "coupon_123",
+  "paystackDiscountMode": "ONE_TIME_AMOUNT_DISCOUNT",
+  "expiresAt": "2026-12-01T00:00:00.000Z"
+}
+```
+
+Provider setup notes:
+
+- Create the actual Stripe coupon/promotion code in Stripe, then paste the Stripe promotion code id into `stripePromotionCodeId`.
+- The backend no longer reads `STRIPE_PROMO_<CODE>_PROMOTION_CODE_ID` environment variables.
+- Paystack discount promos should use `UNSUPPORTED` unless the admin deliberately enables `TRACKING_ONLY` or `ONE_TIME_AMOUNT_DISCOUNT`.
+- `TRACKING_ONLY` discount promos can attribute signups/checkouts but do not reduce the payment amount.
+
+```ts
 
 type PromoAttribution = {
   id: string;
@@ -1434,8 +1524,16 @@ type PromoAttribution = {
   provider: BillingProvider | null;
   plan: Plan | null;
   interval: "MONTHLY" | "YEARLY" | null;
-  amount: number | null;   // provider minor amount when available
+  amount: number | null;         // provider minor amount when available
+  originalAmount: number | null; // standard checkout amount before promo
+  discountAmount: number | null;
+  finalAmount: number | null;    // amount charged for this checkout
+  renewalAmount: number | null;  // normal renewal amount after one-time discount
   currency: string | null; // uppercased when available
+  countryCode: string | null;
+  regionScope: PromoRegionScope | null;
+  discountDuration: PromoDiscountDuration | null;
+  redeemedAt: string | null;
   status: PromoAttributionStatus;
   createdAt: string;
   updatedAt: string;
@@ -1450,8 +1548,21 @@ type PromoCodePerformance = {
   successfulSubscriptions: number;
   conversionRate: number;
   revenueAttributed: number;
+  revenueBeforeDiscount: number;
+  revenueAfterDiscount: number;
+  discountTotal: number;
+  discountGiven: number;
+  stripeConfigured: {
+    configured: boolean;
+    count: 0 | 1;
+  };
+  paystackDiscountMode: PaystackDiscountMode;
   revenueByProvider: Record<string, number>;
   revenueByPlan: Record<string, number>;
+  redemptionUniqueness: {
+    uniqueUsers: number;
+    uniqueWorkspaces: number;
+  };
   latestRedemptions: PromoAttribution[];
 };
 ```

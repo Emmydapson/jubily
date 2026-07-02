@@ -1,5 +1,5 @@
-import { IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
-import { PromoAppliesToPlan, PromoDiscountType } from '@prisma/client';
+import { ArrayUnique, IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { PaystackDiscountMode, PromoAppliesToPlan, PromoDiscountType, PromoRegionScope } from '@prisma/client';
 
 export class CreatePromoCodeDto {
   @IsString()
@@ -29,6 +29,29 @@ export class CreatePromoCodeDto {
   @IsOptional()
   @IsEnum(PromoAppliesToPlan)
   appliesToPlans?: PromoAppliesToPlan;
+
+  @IsOptional()
+  @IsEnum(PromoRegionScope)
+  regionScope?: PromoRegionScope;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @Length(2, 2, { each: true })
+  allowedCountries?: string[];
+
+  @IsOptional()
+  @IsString()
+  stripePromotionCodeId?: string;
+
+  @IsOptional()
+  @IsString()
+  stripeCouponId?: string;
+
+  @IsOptional()
+  @IsEnum(PaystackDiscountMode)
+  paystackDiscountMode?: PaystackDiscountMode;
 
   @IsOptional()
   @IsInt()

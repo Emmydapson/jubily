@@ -16,6 +16,6 @@ export class PromoCodesController {
   @Post('validate')
   @ApiOperation({ summary: 'Validate a promo code without exposing attribution data' })
   validate(@Body() dto: ValidatePromoCodeDto) {
-    return this.promos.validatePublic(dto.code, dto.plan);
+    return this.promos.validatePublic(dto.code, dto.plan, dto.provider, dto.interval, dto.countryCode);
   }
 }

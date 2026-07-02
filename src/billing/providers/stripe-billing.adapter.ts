@@ -46,11 +46,27 @@ export class StripeBillingAdapter implements LiveBillingProviderAdapter {
       params.set('metadata[promoAttributionId]', input.promo.promoAttributionId);
       params.set('metadata[promoDiscountType]', input.promo.promoDiscountType);
       params.set('metadata[promoDiscountApplied]', String(input.promo.promoDiscountApplied));
+      params.set('metadata[discountDuration]', input.promo.discountDuration);
+      params.set('metadata[originalAmount]', String(input.promo.originalAmount));
+      params.set('metadata[discountAmount]', String(input.promo.discountAmount));
+      params.set('metadata[finalAmount]', String(input.promo.finalAmount));
+      params.set('metadata[renewalAmount]', String(input.promo.renewalAmount));
+      params.set('metadata[promoCurrency]', input.promo.currency);
+      if (input.promo.countryCode) params.set('metadata[countryCode]', input.promo.countryCode);
+      if (input.promo.regionScope) params.set('metadata[regionScope]', input.promo.regionScope);
       params.set('subscription_data[metadata][promoCodeId]', input.promo.promoCodeId);
       params.set('subscription_data[metadata][promoCode]', input.promo.promoCode);
       params.set('subscription_data[metadata][promoAttributionId]', input.promo.promoAttributionId);
       params.set('subscription_data[metadata][promoDiscountType]', input.promo.promoDiscountType);
       params.set('subscription_data[metadata][promoDiscountApplied]', String(input.promo.promoDiscountApplied));
+      params.set('subscription_data[metadata][discountDuration]', input.promo.discountDuration);
+      params.set('subscription_data[metadata][originalAmount]', String(input.promo.originalAmount));
+      params.set('subscription_data[metadata][discountAmount]', String(input.promo.discountAmount));
+      params.set('subscription_data[metadata][finalAmount]', String(input.promo.finalAmount));
+      params.set('subscription_data[metadata][renewalAmount]', String(input.promo.renewalAmount));
+      params.set('subscription_data[metadata][promoCurrency]', input.promo.currency);
+      if (input.promo.countryCode) params.set('subscription_data[metadata][countryCode]', input.promo.countryCode);
+      if (input.promo.regionScope) params.set('subscription_data[metadata][regionScope]', input.promo.regionScope);
       if (input.promo.stripePromotionCodeId) {
         params.set('discounts[0][promotion_code]', input.promo.stripePromotionCodeId);
       }
@@ -167,7 +183,14 @@ export class StripeBillingAdapter implements LiveBillingProviderAdapter {
           promoAttributionId: String(metadata.promoAttributionId || ''),
           interval: String(metadata.interval || ''),
           amount: this.amountFromObject(object),
+          originalAmount: metadata.originalAmount == null ? null : Number(metadata.originalAmount),
+          discountAmount: metadata.discountAmount == null ? null : Number(metadata.discountAmount),
+          finalAmount: metadata.finalAmount == null ? null : Number(metadata.finalAmount),
+          renewalAmount: metadata.renewalAmount == null ? null : Number(metadata.renewalAmount),
           currency: object.currency ? String(object.currency).toUpperCase() : null,
+          countryCode: String(metadata.countryCode || ''),
+          regionScope: String(metadata.regionScope || ''),
+          discountDuration: String(metadata.discountDuration || ''),
           currentPeriodStart: this.fromUnix(object.current_period_start),
           currentPeriodEnd: this.fromUnix(object.current_period_end),
           cancelAtPeriodEnd: Boolean(object.cancel_at_period_end),
@@ -205,7 +228,14 @@ export class StripeBillingAdapter implements LiveBillingProviderAdapter {
           promoAttributionId: String(invoiceMetadata.promoAttributionId || ''),
           interval: String(invoiceMetadata.interval || ''),
           amount: this.amountFromObject(object),
+          originalAmount: invoiceMetadata.originalAmount == null ? null : Number(invoiceMetadata.originalAmount),
+          discountAmount: invoiceMetadata.discountAmount == null ? null : Number(invoiceMetadata.discountAmount),
+          finalAmount: invoiceMetadata.finalAmount == null ? null : Number(invoiceMetadata.finalAmount),
+          renewalAmount: invoiceMetadata.renewalAmount == null ? null : Number(invoiceMetadata.renewalAmount),
           currency: object.currency ? String(object.currency).toUpperCase() : null,
+          countryCode: String(invoiceMetadata.countryCode || ''),
+          regionScope: String(invoiceMetadata.regionScope || ''),
+          discountDuration: String(invoiceMetadata.discountDuration || ''),
         },
       };
     }
