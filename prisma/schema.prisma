@@ -8,18 +8,18 @@ datasource db {
 }
 
 model Topic {
-  id     String      @id @default(uuid())
+  id          String      @id @default(uuid())
   workspaceId String?
-  title  String
-  source String
-  score  Int
-  status TopicStatus @default(PENDING)
+  title       String
+  source      String
+  score       Int
+  status      TopicStatus @default(PENDING)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  scripts Script[]
-  videos  Video[]
+  scripts   Script[]
+  videos    Video[]
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId])
@@ -32,31 +32,32 @@ enum TopicStatus {
 }
 
 model Script {
-  id                 String   @id @default(uuid())
-  workspaceId        String?
-  topicId            String
-  promptVer          String
-  content            String
-  outputHash         String
-  reviewStatus       String   @default("PENDING")
-  qualityScore       Int?
-  qualityReview      Json?
-  titleCandidates    Json?
-  selectedTitle      String?
-  youtubeDescription String?
-  hashtags           String[] @default([])
-  thumbnailPrompt    String?
-  thumbnailImageUrl  String?
-  thumbnailStatus    String   @default("PENDING")
-  thumbnailError     String?
+  id                   String    @id @default(uuid())
+  workspaceId          String?
+  topicId              String
+  promptVer            String
+  content              String
+  outputHash           String
+  reviewStatus         String    @default("PENDING")
+  qualityScore         Int?
+  qualityReview        Json?
+  titleCandidates      Json?
+  selectedTitle        String?
+  youtubeDescription   String?
+  hashtags             String[]  @default([])
+  thumbnailPrompt      String?
+  thumbnailImageUrl    String?
+  thumbnailStatus      String    @default("PENDING")
+  thumbnailError       String?
   thumbnailGeneratedAt DateTime?
-  rewriteAttempts    Int      @default(0)
-  createdAt          DateTime @default(now())
+  rewriteAttempts      Int       @default(0)
+  createdAt            DateTime  @default(now())
 
   topic     Topic      @relation(fields: [topicId], references: [id])
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   videos    Video[]
   videoJobs VideoJob[] // 👈 ADD THIS
+
   @@index([workspaceId])
 }
 
@@ -104,41 +105,41 @@ enum RunSlot {
 }
 
 model VideoJob {
-  id           String   @id @default(uuid())
-  workspaceId  String?
-  scriptId     String
-  offerId      String? // ✅ NEW (store product used for the video)
-  status       String   @default("PENDING")
-  provider String? // 'shotstack' | 'replicate'
-  videoUrl     String?
-  youtubeVideoId String? 
-  publishStage String?   // optional: UPLOADED | METADATA_DONE | CAPTIONS_DONE
-  renderId     String?
-  error        String?
-  youtubeUrl   String?
-  slot         RunSlot
-  scheduledFor DateTime
-  published    Boolean  @default(false)
-  attempts     Int      @default(0)
-  createdAt    DateTime @default(now())
-  videoSrt     String?
-  workerLockedAt DateTime?
-  workerLockedBy String?
-  workerStage    String?
-  thumbnailPrompt String?
-  thumbnailImageUrl String?
-  thumbnailStatus String @default("PENDING")
-  thumbnailError String?
-  thumbnailGeneratedAt DateTime?
-  durationSeconds Float?
-  sceneCount Int?
-  hasBurnedSubtitles Boolean @default(false)
-  hasTrackingLink Boolean @default(false)
+  id                        String    @id @default(uuid())
+  workspaceId               String?
+  scriptId                  String
+  offerId                   String? // ✅ NEW (store product used for the video)
+  status                    String    @default("PENDING")
+  provider                  String? // 'shotstack' | 'replicate'
+  videoUrl                  String?
+  youtubeVideoId            String?
+  publishStage              String? // optional: UPLOADED | METADATA_DONE | CAPTIONS_DONE
+  renderId                  String?
+  error                     String?
+  youtubeUrl                String?
+  slot                      RunSlot
+  scheduledFor              DateTime
+  published                 Boolean   @default(false)
+  attempts                  Int       @default(0)
+  createdAt                 DateTime  @default(now())
+  videoSrt                  String?
+  workerLockedAt            DateTime?
+  workerLockedBy            String?
+  workerStage               String?
+  thumbnailPrompt           String?
+  thumbnailImageUrl         String?
+  thumbnailStatus           String    @default("PENDING")
+  thumbnailError            String?
+  thumbnailGeneratedAt      DateTime?
+  durationSeconds           Float?
+  sceneCount                Int?
+  hasBurnedSubtitles        Boolean   @default(false)
+  hasTrackingLink           Boolean   @default(false)
   shotstackPayloadDebugPath String?
 
-  script Script @relation(fields: [scriptId], references: [id])
+  script    Script     @relation(fields: [scriptId], references: [id])
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  offer  Offer? @relation(fields: [offerId], references: [id]) // ✅ NEW relation
+  offer     Offer?     @relation(fields: [offerId], references: [id]) // ✅ NEW relation
 
   clicks      Click[]
   conversions Conversion[]
@@ -155,32 +156,32 @@ model VideoJob {
 }
 
 model Offer {
-  id          String       @id @default(uuid())
-  workspaceId String?
-  network     String       @default("digistore24") // future-proof
+  id                String       @id @default(uuid())
+  workspaceId       String?
+  network           String       @default("digistore24") // future-proof
   externalProductId String?
-  name        String
-  nicheTag    String? // "sleep", "fat-loss", "gut", etc
-  hoplink     String // your affiliate link or promo link base
-  active      Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  clicks      Click[]
-  conversions Conversion[]
-  videoJobs   VideoJob[]
-  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  name              String
+  nicheTag          String? // "sleep", "fat-loss", "gut", etc
+  hoplink           String // your affiliate link or promo link base
+  active            Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  clicks            Click[]
+  conversions       Conversion[]
+  videoJobs         VideoJob[]
+  workspace         Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
-  @@index([workspaceId])
   @@unique([workspaceId, externalProductId])
   @@unique([workspaceId, network, hoplink])
+  @@index([workspaceId])
 }
 
 model Click {
-  id      String @id @default(uuid())
+  id          String     @id @default(uuid())
   workspaceId String?
-  offerId String
-  offer   Offer  @relation(fields: [offerId], references: [id])
-  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  offerId     String
+  offer       Offer      @relation(fields: [offerId], references: [id])
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   videoJobId String?
   videoJob   VideoJob? @relation(fields: [videoJobId], references: [id], onDelete: SetNull)
@@ -197,11 +198,11 @@ model Click {
 }
 
 model Conversion {
-  id      String @id @default(uuid())
+  id          String     @id @default(uuid())
   workspaceId String?
-  offerId String
-  offer   Offer  @relation(fields: [offerId], references: [id])
-  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  offerId     String
+  offer       Offer      @relation(fields: [offerId], references: [id])
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   clickId    String?
   videoJobId String?
@@ -244,21 +245,21 @@ enum PipelineSeverity {
 }
 
 model PipelineEvent {
-  id        String           @id @default(uuid())
+  id          String           @id @default(uuid())
   workspaceId String?
-  stage     PipelineStage
-  severity  PipelineSeverity @default(INFO)
-  status    String
-  message   String
-  jobId     String?
-  offerId   String?
-  clickId   String?
-  topicId   String?
-  scriptId  String?
-  provider  String?
-  meta      Json?
-  createdAt DateTime         @default(now())
-  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  stage       PipelineStage
+  severity    PipelineSeverity @default(INFO)
+  status      String
+  message     String
+  jobId       String?
+  offerId     String?
+  clickId     String?
+  topicId     String?
+  scriptId    String?
+  provider    String?
+  meta        Json?
+  createdAt   DateTime         @default(now())
+  workspace   Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@index([stage, createdAt])
   @@index([workspaceId, createdAt])
@@ -270,32 +271,32 @@ model PipelineEvent {
 }
 
 model AppSettings {
-  id               String   @id @default("app") // singleton row
+  id                String  @id @default("app") // singleton row
   automationEnabled Boolean @default(true)
   verticalEnabled   Boolean @default(true)
   autoPublish       Boolean @default(true)
 
-  timezone          String   @default("America/New_York")
-  videosPerDay      Int      @default(3)
+  timezone     String @default("America/New_York")
+  videosPerDay Int    @default(3)
 
   // store 3 daily run hours (0-23) in the chosen timezone
-  runHours          Int[]    @default([9, 13, 18])
+  runHours Int[] @default([9, 13, 18])
 
-  updatedAt         DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 }
 
 model IntegrationKey {
-  id          String              @id @default(uuid())
-  provider    IntegrationProvider @unique
+  id       String              @id @default(uuid())
+  provider IntegrationProvider @unique
 
   // encrypted blob (AES-256-GCM)
-  encrypted   String
+  encrypted String
 
   // for UI masking: "....ABCD"
-  last4       String
+  last4 String
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum AdminRole {
@@ -305,46 +306,49 @@ enum AdminRole {
 }
 
 model AdminUser {
-  id           String   @id @default(uuid())
-  email        String   @unique
+  id           String    @id @default(uuid())
+  email        String    @unique
   passwordHash String
   role         AdminRole @default(ADMIN)
-  active       Boolean  @default(true)
+  active       Boolean   @default(true)
   lastLoginAt  DateTime?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  promoCodes PromoCode[] @relation("PromoCodeCreator")
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  name         String?
-  active       Boolean  @default(true)
-  emailVerified Boolean @default(false)
-  emailVerifiedAt DateTime?
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String
+  name              String?
+  active            Boolean   @default(true)
+  emailVerified     Boolean   @default(false)
+  emailVerifiedAt   DateTime?
   passwordChangedAt DateTime?
-  lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  memberships WorkspaceMember[]
-  ownedWorkspaces Workspace[] @relation("WorkspaceOwner")
-  invitesSent WorkspaceInvite[] @relation("WorkspaceInviteSender")
-  auditLogs AuditLog[]
+  memberships             WorkspaceMember[]
+  ownedWorkspaces         Workspace[]              @relation("WorkspaceOwner")
+  invitesSent             WorkspaceInvite[]        @relation("WorkspaceInviteSender")
+  auditLogs               AuditLog[]
   emailVerificationTokens EmailVerificationToken[]
-  passwordResetTokens PasswordResetToken[]
-  sessions UserSession[]
+  passwordResetTokens     PasswordResetToken[]
+  sessions                UserSession[]
+  promoAttributions       PromoAttribution[]
 }
 
 model EmailVerificationToken {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -353,12 +357,12 @@ model EmailVerificationToken {
 }
 
 model PasswordResetToken {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -367,15 +371,15 @@ model PasswordResetToken {
 }
 
 model UserSession {
-  id               String   @id @default(uuid())
+  id               String    @id @default(uuid())
   userId           String
-  refreshTokenHash String   @unique
+  refreshTokenHash String    @unique
   userAgent        String?
   ip               String?
   expiresAt        DateTime
   revokedAt        DateTime?
   rotatedAt        DateTime?
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -385,30 +389,31 @@ model UserSession {
 }
 
 model Workspace {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String?  @unique
-  ownerId   String?
-  suspended Boolean  @default(false)
-  suspendedAt DateTime?
+  id               String    @id @default(uuid())
+  name             String
+  slug             String?   @unique
+  ownerId          String?
+  suspended        Boolean   @default(false)
+  suspendedAt      DateTime?
   suspensionReason String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  owner User? @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  members WorkspaceMember[]
-  invites WorkspaceInvite[]
-  subscription WorkspaceSubscription?
-  usages WorkspaceUsage[]
+  owner              User?                        @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  members            WorkspaceMember[]
+  invites            WorkspaceInvite[]
+  subscription       WorkspaceSubscription?
+  usages             WorkspaceUsage[]
   youtubeConnections WorkspaceYoutubeConnection[]
-  topics Topic[]
-  scripts Script[]
-  offers Offer[]
-  videoJobs VideoJob[]
-  clicks Click[]
-  conversions Conversion[]
-  pipelineEvents PipelineEvent[]
-  auditLogs AuditLog[]
+  topics             Topic[]
+  scripts            Script[]
+  offers             Offer[]
+  videoJobs          VideoJob[]
+  clicks             Click[]
+  conversions        Conversion[]
+  pipelineEvents     PipelineEvent[]
+  auditLogs          AuditLog[]
+  promoAttributions  PromoAttribution[]
 }
 
 model WorkspaceMember {
@@ -438,7 +443,7 @@ model WorkspaceInvite {
   createdAt   DateTime      @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  invitedBy User? @relation("WorkspaceInviteSender", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedBy User?     @relation("WorkspaceInviteSender", fields: [invitedById], references: [id], onDelete: SetNull)
 
   @@index([workspaceId])
   @@index([email])
@@ -484,22 +489,101 @@ enum BillingProvider {
   STRIPE
 }
 
-model WorkspaceSubscription {
-  id                 String             @id @default(uuid())
-  workspaceId        String             @unique
-  plan               Plan               @default(FREE)
-  status             SubscriptionStatus @default(ACTIVE)
-  billingProvider    BillingProvider?
-  providerCustomerId String?
-  providerSubscriptionId String?
-  currentPeriodStart DateTime
-  currentPeriodEnd   DateTime
-  cancelAtPeriodEnd  Boolean            @default(false)
-  trialEndsAt        DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+enum PromoDiscountType {
+  PERCENTAGE
+  FIXED
+  NONE
+}
+
+enum PromoAppliesToPlan {
+  PRO
+  PREMIUM
+  ALL
+}
+
+enum PromoAttributionStatus {
+  SIGNUP
+  CHECKOUT_STARTED
+  SUBSCRIBED
+  FAILED
+  CANCELLED
+}
+
+model PromoCode {
+  id               String             @id @default(uuid())
+  code             String             @unique
+  influencerName   String
+  influencerEmail  String?
+  description      String?
+  discountType     PromoDiscountType  @default(NONE)
+  discountValue    Float?
+  appliesToPlans   PromoAppliesToPlan @default(ALL)
+  maxRedemptions   Int?
+  redemptionCount  Int                @default(0)
+  startsAt         DateTime?
+  expiresAt        DateTime?
+  isActive         Boolean            @default(true)
+  createdByAdminId String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  createdByAdmin AdminUser?         @relation("PromoCodeCreator", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  attributions   PromoAttribution[]
+
+  @@index([isActive])
+  @@index([createdByAdminId])
+  @@index([createdAt])
+}
+
+model PromoAttribution {
+  id             String                 @id @default(uuid())
+  promoCodeId    String
+  userId         String
+  workspaceId    String?
+  subscriptionId String?
+  provider       BillingProvider?
+  plan           Plan?
+  interval       BillingInterval?
+  amount         Float?
+  currency       String?
+  status         PromoAttributionStatus
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  promoCode    PromoCode              @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace?             @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  subscription WorkspaceSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([promoCodeId, status])
+  @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([subscriptionId])
+  @@index([provider, createdAt])
+}
+
+model WorkspaceSubscription {
+  id                     String             @id @default(uuid())
+  workspaceId            String             @unique
+  plan                   Plan               @default(FREE)
+  status                 SubscriptionStatus @default(ACTIVE)
+  billingProvider        BillingProvider?
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  currentPeriodStart     DateTime
+  currentPeriodEnd       DateTime
+  cancelAtPeriodEnd      Boolean            @default(false)
+  trialEndsAt            DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  promoAttributions PromoAttribution[]
 
   @@index([plan])
   @@index([status])
@@ -576,13 +660,13 @@ model AuditLog {
 }
 
 model BillingWebhookEvent {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   provider        String
   providerEventId String
   eventType       String?
-  status          String   @default("RECEIVED")
+  status          String    @default("RECEIVED")
   payload         Json?
-  receivedAt      DateTime @default(now())
+  receivedAt      DateTime  @default(now())
   processedAt     DateTime?
 
   @@unique([provider, providerEventId])
@@ -591,8 +675,8 @@ model BillingWebhookEvent {
 }
 
 model OAuthState {
-  id          String   @id @default(uuid())
-  stateHash   String   @unique
+  id          String    @id @default(uuid())
+  stateHash   String    @unique
   purpose     String
   workspaceId String?
   userId      String?
@@ -600,7 +684,7 @@ model OAuthState {
   adminEmail  String?
   expiresAt   DateTime
   usedAt      DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   @@index([purpose, expiresAt])
   @@index([workspaceId])
@@ -609,32 +693,31 @@ model OAuthState {
 }
 
 model EmailOutbox {
-  id             String   @id @default(uuid())
-  userId         String?
-  to             String
-  type           String
-  subject        String
-  text           String
-  html           String
-  status         String   @default("PENDING")
-  attempts       Int      @default(0)
-  lastError      String?
+  id                String    @id @default(uuid())
+  userId            String?
+  to                String
+  type              String
+  subject           String
+  text              String
+  html              String
+  status            String    @default("PENDING")
+  attempts          Int       @default(0)
+  lastError         String?
   providerMessageId String?
-  nextAttemptAt  DateTime?
-  sentAt         DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  nextAttemptAt     DateTime?
+  sentAt            DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([status, nextAttemptAt])
   @@index([userId, createdAt])
   @@index([to, createdAt])
 }
- 
- model GeneratedImage {
-  id          String   @id @default(cuid())
-  promptHash  String   @unique
-  imageUrl    String
-  createdAt   DateTime @default(now())
-   promptText  String
+
+model GeneratedImage {
+  id         String   @id @default(cuid())
+  promptHash String   @unique
+  imageUrl   String
+  createdAt  DateTime @default(now())
+  promptText String
 }
- 

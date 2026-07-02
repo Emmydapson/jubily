@@ -40,6 +40,21 @@ export class StripeBillingAdapter implements LiveBillingProviderAdapter {
     params.set('subscription_data[metadata][plan]', input.plan);
     params.set('subscription_data[metadata][interval]', input.interval);
     params.set('subscription_data[metadata][provider]', this.provider);
+    if (input.promo) {
+      params.set('metadata[promoCodeId]', input.promo.promoCodeId);
+      params.set('metadata[promoCode]', input.promo.promoCode);
+      params.set('metadata[promoAttributionId]', input.promo.promoAttributionId);
+      params.set('metadata[promoDiscountType]', input.promo.promoDiscountType);
+      params.set('metadata[promoDiscountApplied]', String(input.promo.promoDiscountApplied));
+      params.set('subscription_data[metadata][promoCodeId]', input.promo.promoCodeId);
+      params.set('subscription_data[metadata][promoCode]', input.promo.promoCode);
+      params.set('subscription_data[metadata][promoAttributionId]', input.promo.promoAttributionId);
+      params.set('subscription_data[metadata][promoDiscountType]', input.promo.promoDiscountType);
+      params.set('subscription_data[metadata][promoDiscountApplied]', String(input.promo.promoDiscountApplied));
+      if (input.promo.stripePromotionCodeId) {
+        params.set('discounts[0][promotion_code]', input.promo.stripePromotionCodeId);
+      }
+    }
 
     let response;
     try {
@@ -119,6 +134,11 @@ export class StripeBillingAdapter implements LiveBillingProviderAdapter {
     return plan === Plan.PRO || plan === Plan.PREMIUM || plan === Plan.FREE ? (plan as Plan) : undefined;
   }
 
+  private amountFromObject(object: any) {
+    const amount = object.amount_paid ?? object.amount_total ?? object.total ?? object.amount_due;
+    return amount == null ? null : Number(amount);
+  }
+
   parseWebhook(payload: any): ProviderWebhookResult {
     const eventType = String(payload?.type || '');
     const object = payload?.data?.object || {};
@@ -142,6 +162,12 @@ export class StripeBillingAdapter implements LiveBillingProviderAdapter {
           status: object.status === 'trialing' ? SubscriptionStatus.TRIALING : object.status === 'past_due' ? SubscriptionStatus.PAST_DUE : SubscriptionStatus.ACTIVE,
           providerCustomerId: String(object.customer || ''),
           providerSubscriptionId: String(subscription || object.id || ''),
+          userId: String(metadata.userId || ''),
+          promoCodeId: String(metadata.promoCodeId || ''),
+          promoAttributionId: String(metadata.promoAttributionId || ''),
+          interval: String(metadata.interval || ''),
+          amount: this.amountFromObject(object),
+          currency: object.currency ? String(object.currency).toUpperCase() : null,
           currentPeriodStart: this.fromUnix(object.current_period_start),
           currentPeriodEnd: this.fromUnix(object.current_period_end),
           cancelAtPeriodEnd: Boolean(object.cancel_at_period_end),
@@ -174,6 +200,12 @@ export class StripeBillingAdapter implements LiveBillingProviderAdapter {
           status: eventType === 'invoice.payment_failed' ? SubscriptionStatus.PAST_DUE : SubscriptionStatus.ACTIVE,
           providerCustomerId: String(object.customer || ''),
           providerSubscriptionId: String(object.subscription || ''),
+          userId: String(invoiceMetadata.userId || ''),
+          promoCodeId: String(invoiceMetadata.promoCodeId || ''),
+          promoAttributionId: String(invoiceMetadata.promoAttributionId || ''),
+          interval: String(invoiceMetadata.interval || ''),
+          amount: this.amountFromObject(object),
+          currency: object.currency ? String(object.currency).toUpperCase() : null,
         },
       };
     }

@@ -21,24 +21,35 @@ describe('account email templates', () => {
         html: expect.stringContaining('Verify email'),
       }),
     );
-    expect(verification.html).toContain('#FFF8F0');
-    expect(verification.html).toContain('#FF5A3D');
-    expect(verification.html).toContain('#EAD8C8');
+    expect(verification.html).toContain('#FFFDF7');
+    expect(verification.html).toContain('#FFFFFF');
+    expect(verification.html).toContain('#2B211D');
+    expect(verification.html).toContain('#5F4A3F');
+    expect(verification.html).toContain('#D99A29');
+    expect(verification.html).toContain('#E8D8C6');
+    expect(verification.html).toContain('#1F766E');
+    expect(verification.html).not.toContain('#B94A48');
+    expect(verification.html).not.toMatch(/#(?:ff6b6b|ff7f50|ff5a5f|e85d75|ef4444|dc2626)/i);
     expect(verification.html).toContain('Jubily');
-    expect(verification.html).not.toContain('Oneverse');
+    expect(verification.html).toContain('Jubily by Oneverse Technologies');
+    expect(verification.html).toContain('Contact: <a href="mailto:info@joinjubily.com"');
+    expect(verification.text).toContain('info@joinjubily.com');
     expect(verification.html).toContain('If the button does not work');
+    expect(verification.html).toContain('https://app.test/verify');
     expect(verification.html).not.toMatch(/^<p>/);
 
     const reset = passwordResetEmailTemplate({ name: 'Jane', url: 'https://app.test/reset' });
     expect(reset.text).toContain('https://app.test/reset');
-    expect(reset.html).toContain('#FFF8F0');
+    expect(reset.html).toContain('#FFFDF7');
     expect(reset.html).toContain('Reset password');
+    expect(reset.html).toContain('If the button does not work');
+    expect(reset.html).not.toContain('#B94A48');
 
     const changed = passwordChangedEmailTemplate('Jane');
     expect(changed.subject).toBe('Your Jubily password was changed');
     expect(changed.text).toContain('Your Jubily password was changed');
     expect(changed.html).toContain('Jubily');
-    expect(changed.html).not.toContain('Oneverse');
+    expect(changed.html).toContain('Oneverse');
   });
 });
 
@@ -58,8 +69,8 @@ describe('AuthEmailService SMTP delivery', () => {
       SMTP_SECURE: 'false',
       SMTP_USER: 'smtp-user',
       SMTP_PASSWORD: 'smtp-password',
-      FROM_EMAIL: 'hello@jubily.test',
-      FROM_NAME: 'Jubily',
+      EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
+      SUPPORT_EMAIL: 'info@joinjubily.com',
     };
     sendMail = jest.fn().mockResolvedValue({ messageId: 'message-1' });
     jest.mocked(nodemailer.createTransport).mockReset();
@@ -85,7 +96,7 @@ describe('AuthEmailService SMTP delivery', () => {
     });
     expect(sendMail).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: { name: 'Jubily', address: 'hello@jubily.test' },
+        from: { name: 'Jubily', address: 'noreply@joinjubily.com' },
         to: 'user@example.com',
         subject: 'Verify your Jubily email',
         text: expect.stringContaining('https://joinjubily.com/verify-email?token=verify-token'),
@@ -201,8 +212,7 @@ describe('AuthEmailService SMTP delivery', () => {
   it('sends with Resend and never logs the API key', async () => {
     process.env.EMAIL_PROVIDER = 'resend';
     process.env.RESEND_API_KEY = 're_secret_123';
-    process.env.FROM_EMAIL = 'hello@jubily.test';
-    process.env.FROM_NAME = 'Jubily';
+    process.env.EMAIL_FROM = 'Jubily <noreply@joinjubily.com>';
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -234,8 +244,7 @@ describe('AuthEmailService SMTP delivery', () => {
   it('records Resend delivery failures in the outbox without leaking secrets', async () => {
     process.env.EMAIL_PROVIDER = 'resend';
     process.env.RESEND_API_KEY = 're_secret_456';
-    process.env.FROM_EMAIL = 'hello@jubily.test';
-    process.env.FROM_NAME = 'Jubily';
+    process.env.EMAIL_FROM = 'Jubily <noreply@joinjubily.com>';
     const fetchMock = jest.fn().mockResolvedValue({
       ok: false,
       status: 401,

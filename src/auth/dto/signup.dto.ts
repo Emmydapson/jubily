@@ -11,4 +11,8 @@ export class SignupDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  promoCode?: string;
 }

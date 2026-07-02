@@ -23,7 +23,8 @@ function providerMessage(data: unknown, fallback: unknown) {
 
 function providerReference(data: unknown) {
   const payload = data && typeof data === 'object' ? (data as Record<string, any>) : {};
-  return payload.reference || payload.data?.reference || payload.id || payload.request_id || null;
+  const reference = payload.reference || payload.data?.reference || payload.id || payload.request_id || null;
+  return reference == null ? null : safeErrorMessage(reference);
 }
 
 export function logAndThrowProviderError(logger: Logger, error: unknown, context: ProviderErrorContext): never {

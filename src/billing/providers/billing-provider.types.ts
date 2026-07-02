@@ -9,6 +9,14 @@ export type CheckoutRequest = {
   interval: BillingInterval;
   successUrl: string;
   cancelUrl: string;
+  promo?: {
+    promoCodeId: string;
+    promoCode: string;
+    promoAttributionId: string;
+    promoDiscountType: string;
+    promoDiscountApplied: boolean;
+    stripePromotionCodeId?: string | null;
+  } | null;
 };
 
 export type CheckoutResponse = {
@@ -24,6 +32,12 @@ export type ProviderSubscriptionUpdate = {
   status: SubscriptionStatus;
   providerCustomerId?: string | null;
   providerSubscriptionId?: string | null;
+  userId?: string | null;
+  promoCodeId?: string | null;
+  promoAttributionId?: string | null;
+  interval?: BillingInterval | string | null;
+  amount?: number | null;
+  currency?: string | null;
   currentPeriodStart?: Date;
   currentPeriodEnd?: Date;
   cancelAtPeriodEnd?: boolean;

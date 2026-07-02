@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { BillingProvider, Plan, SubscriptionStatus, WorkspaceSubscription, WorkspaceUsage } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlanLimitsService } from './plan-limits.service';
@@ -11,6 +11,7 @@ import { StripeBillingAdapter } from './providers/stripe-billing.adapter';
 import { PaystackBillingAdapter } from './providers/paystack-billing.adapter';
 import { LiveBillingProviderAdapter, ProviderSubscriptionUpdate } from './providers/billing-provider.types';
 import { BillingPricingService } from './providers/billing-pricing.service';
+import { PromoCodesService } from '../promos/promo-codes.service';
 
 type UsageIncrement = {
   videoGenerations?: number;
@@ -44,6 +45,7 @@ export class BillingService {
     private readonly stripe: StripeBillingAdapter,
     private readonly paystack: PaystackBillingAdapter,
     private readonly pricing: BillingPricingService,
+    @Optional() private readonly promos?: PromoCodesService,
   ) {}
 
   private startOfMonth(date = new Date()) {
@@ -329,7 +331,7 @@ export class BillingService {
     workspaceId: string,
     requestedPlan?: Plan,
     actor?: { userId?: string | null; adminId?: string | null },
-    options?: { provider?: BillingProvider | string | null; interval?: BillingInterval | null; country?: string | null },
+    options?: { provider?: BillingProvider | string | null; interval?: BillingInterval | null; country?: string | null; promoCode?: string | null },
   ) {
     await this.assertWorkspaceActive(workspaceId);
     await this.getOrCreateSubscription(workspaceId);
@@ -338,6 +340,16 @@ export class BillingService {
     if (!actor?.userId) throw new ForbiddenException('SaaS user is required for checkout');
     const provider = this.selectProvider(options?.provider, options?.country);
     const interval = options?.interval ?? BillingInterval.MONTHLY;
+    const promo = options?.promoCode && this.promos
+      ? await this.promos.recordCheckoutStarted({
+          code: options.promoCode,
+          userId: actor.userId,
+          workspaceId,
+          provider,
+          plan: plan as Exclude<Plan, 'FREE'>,
+          interval,
+        })
+      : null;
     const checkout = await this.providerAdapter(provider).createCheckout({
       workspaceId,
       userId: actor.userId,
@@ -346,15 +358,25 @@ export class BillingService {
       interval,
       successUrl: this.checkoutUrl('success'),
       cancelUrl: this.checkoutUrl('cancel'),
+      promo: promo ? { ...promo.metadata, stripePromotionCodeId: promo.stripePromotionCodeId } : null,
     });
     await this.audit.record({
       action: 'BILLING_CHECKOUT_REQUESTED',
       workspaceId,
       userId: actor?.userId ?? null,
       adminId: actor?.adminId ?? null,
-      metadata: { requestedPlan: plan, provider, interval, reference: checkout.reference },
+      metadata: { requestedPlan: plan, provider, interval, reference: checkout.reference, promoCode: promo?.promo.code ?? null },
     });
-    return checkout;
+    return {
+      ...checkout,
+      promo: promo
+        ? {
+            code: promo.promo.code,
+            discountType: promo.promo.discountType,
+            discountApplied: Boolean(promo.stripePromotionCodeId),
+          }
+        : null,
+    };
   }
 
   async cancel(workspaceId: string, actor?: { userId?: string | null; adminId?: string | null }) {
@@ -437,7 +459,21 @@ export class BillingService {
         },
       });
       if (normalizedProvider && parsed?.subscriptionUpdate && !parsed.ignored) {
-        await this.applyProviderSubscriptionUpdate(normalizedProvider, parsed.subscriptionUpdate);
+        const subscription = await this.applyProviderSubscriptionUpdate(normalizedProvider, parsed.subscriptionUpdate);
+        if (this.promos && subscription.status === SubscriptionStatus.ACTIVE) {
+          await this.promos.markSubscribed({
+            promoCodeId: parsed.subscriptionUpdate.promoCodeId,
+            promoAttributionId: parsed.subscriptionUpdate.promoAttributionId,
+            userId: parsed.subscriptionUpdate.userId,
+            workspaceId: parsed.subscriptionUpdate.workspaceId,
+            subscriptionId: subscription.id,
+            provider: normalizedProvider,
+            plan: parsed.subscriptionUpdate.plan ?? subscription.plan,
+            interval: parsed.subscriptionUpdate.interval,
+            amount: parsed.subscriptionUpdate.amount,
+            currency: parsed.subscriptionUpdate.currency,
+          });
+        }
         await this.prisma.billingWebhookEvent.update({
           where: { id: event.id },
           data: { status: 'PROCESSED', processedAt: new Date() },

@@ -23,4 +23,8 @@ export class StartCheckoutDto {
   @IsString()
   @Length(2, 2)
   country?: string;
+
+  @IsOptional()
+  @IsString()
+  promoCode?: string;
 }

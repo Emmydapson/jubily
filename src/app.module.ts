@@ -16,6 +16,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
 import { BillingModule } from './billing/billing.module';
 import { validateEnv } from './config/env.validation';
 import { AuditModule } from './audit/audit.module';
+import { PromosModule } from './promos/promos.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AuditModule } from './audit/audit.module';
     MonitoringModule,
     OffersModule,
     WorkspacesModule,
+    PromosModule,
     BillingModule,
   ],
 })

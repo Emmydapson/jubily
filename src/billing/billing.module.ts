@@ -11,9 +11,10 @@ import { BillingPricingService } from './providers/billing-pricing.service';
 import { StripeBillingAdapter } from './providers/stripe-billing.adapter';
 import { PaystackBillingAdapter } from './providers/paystack-billing.adapter';
 import { AdminGuard } from '../auth/admin.guard';
+import { PromosModule } from '../promos/promos.module';
 
 @Module({
-  imports: [WorkspacesModule, AuditModule],
+  imports: [WorkspacesModule, AuditModule, PromosModule],
   controllers: [BillingController, PlatformAdminController],
   providers: [
     BillingService,

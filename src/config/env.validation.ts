@@ -40,6 +40,22 @@ function assertEmail(env: Record<string, unknown>, name: string) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw new Error(`${name} must be a valid email address`);
 }
 
+function emailFromAddress(env: Record<string, unknown>) {
+  const emailFrom = String(env.EMAIL_FROM || '').trim();
+  const parsed = /^(.+?)\s*<([^<>]+)>$/.exec(emailFrom);
+  return parsed ? parsed[2].trim() : emailFrom;
+}
+
+function assertEmailFrom(env: Record<string, unknown>) {
+  const address = emailFromAddress(env);
+  if (address) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('EMAIL_FROM must contain a valid email address');
+    return;
+  }
+  assertEmail(env, 'FROM_EMAIL');
+  requireValue(env, 'FROM_NAME');
+}
+
 function assertPort(env: Record<string, unknown>, name: string) {
   const raw = requireValue(env, name);
   const port = Number(raw);
@@ -57,8 +73,7 @@ function requireSmtp(env: Record<string, unknown>) {
   assertBooleanString(env, 'SMTP_SECURE');
   requireValue(env, 'SMTP_USER');
   requireValue(env, 'SMTP_PASSWORD');
-  assertEmail(env, 'FROM_EMAIL');
-  requireValue(env, 'FROM_NAME');
+  assertEmailFrom(env);
 }
 
 function emailProvider(env: Record<string, unknown>) {
@@ -77,11 +92,11 @@ function requireEmailProvider(env: Record<string, unknown>, requireExplicit: boo
     requireSmtp(env);
     return;
   }
-  assertEmail(env, 'FROM_EMAIL');
-  requireValue(env, 'FROM_NAME');
+  assertEmailFrom(env);
   if (provider === 'resend') {
     requireValue(env, 'RESEND_API_KEY');
   }
+  if (env.SUPPORT_EMAIL) assertEmail(env, 'SUPPORT_EMAIL');
 }
 
 function assertBase64Key(env: Record<string, unknown>, name: string) {
@@ -137,6 +152,8 @@ export function validateEnv(config: Record<string, unknown>) {
   if (env.EMAIL_PROVIDER || env.RESEND_API_KEY || env.SMTP_HOST) {
     requireEmailProvider(env, false);
   }
+  if (env.EMAIL_FROM) assertEmailFrom(env);
+  if (env.SUPPORT_EMAIL) assertEmail(env, 'SUPPORT_EMAIL');
 
   if (isEnabled(env, 'STRIPE_ENABLED')) {
     requireValue(env, 'STRIPE_SECRET_KEY');

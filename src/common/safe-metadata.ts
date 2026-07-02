@@ -19,6 +19,6 @@ export function safeErrorMessage(error: unknown) {
   return raw
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
     .replace(/(access_token|refresh_token|client_secret|api_key|password)=([^&\s]+)/gi, '$1=[REDACTED]')
-    .replace(/\b(sk|pk|rk|whsec|re|AIza)[A-Za-z0-9_./+=-]{8,}\b/g, '[REDACTED]')
+    .replace(/\b(sk|pk|rk|whsec|re_|AIza)[A-Za-z0-9_./+=-]{8,}\b/g, '[REDACTED]')
     .slice(0, 500);
 }

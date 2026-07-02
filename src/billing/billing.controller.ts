@@ -47,6 +47,7 @@ export class BillingController {
       provider: dto?.provider,
       interval: dto?.interval,
       country: dto?.country,
+      promoCode: dto?.promoCode,
     });
   }
 

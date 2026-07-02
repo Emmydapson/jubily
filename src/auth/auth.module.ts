@@ -13,6 +13,7 @@ import { AuthEmailService } from './auth-email.service';
 import { OAuthStateService } from './oauth-state.service';
 import { EmailOutboxWorker } from './email-outbox.worker';
 import { AdminGuard } from './admin.guard';
+import { PromosModule } from '../promos/promos.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { AdminGuard } from './admin.guard';
     }),
     VideosModule,
     AuditModule,
+    PromosModule,
   ],
   controllers: [AuthController, AdminAuthController],
   providers: [AuthService, JwtStrategy, AuthEmailService, OAuthStateService, EmailOutboxWorker, AdminGuard],

@@ -67,8 +67,8 @@ YOUTUBE_CUSTOMER_REDIRECT_URI=https://<api-host>/workspaces/youtube/callback
 
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=<resend sandbox/live api key>
-FROM_EMAIL=<verified sender email>
-FROM_NAME=Jubily
+EMAIL_FROM="Jubily <noreply@joinjubily.com>"
+SUPPORT_EMAIL=info@joinjubily.com
 
 STRIPE_ENABLED=true|false
 STRIPE_SECRET_KEY=<stripe sandbox secret key>
@@ -77,6 +77,9 @@ STRIPE_PRO_MONTHLY_PRICE_ID=<stripe price id>
 STRIPE_PRO_YEARLY_PRICE_ID=<stripe price id>
 STRIPE_PREMIUM_MONTHLY_PRICE_ID=<stripe price id>
 STRIPE_PREMIUM_YEARLY_PRICE_ID=<stripe price id>
+# Optional - only needed when a Jubily promo code should apply a real Stripe discount.
+# Replace JANE20 with the normalized uppercase promo code.
+STRIPE_PROMO_JANE20_PROMOTION_CODE_ID=<stripe promotion code id>
 
 PAYSTACK_ENABLED=true|false
 PAYSTACK_SECRET_KEY=<paystack sandbox secret key>
@@ -93,6 +96,7 @@ PUBLIC_API_BASE_URL=https://<api-host>
 Notes:
 
 - Production/staging requires the split YouTube redirect vars. Legacy `YOUTUBE_REDIRECT` is only a local/dev fallback.
+- Resend sends mail from verified sender addresses; receiving mail for `info@joinjubily.com` still requires an actual mailbox provider.
 - Enable only configured billing providers. If `STRIPE_ENABLED=true`, all Stripe keys and price IDs above are required. If `PAYSTACK_ENABLED=true`, Paystack secret and all plan codes above are required.
 - Paystack webhook verification uses `PAYSTACK_WEBHOOK_SECRET` when set, otherwise `PAYSTACK_SECRET_KEY`.
 - Billing checkout success/cancel URLs are built from `BILLING_RETURN_BASE_URL || PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL`.
@@ -118,6 +122,9 @@ type Plan = "FREE" | "PRO" | "PREMIUM";
 type SubscriptionStatus = "ACTIVE" | "TRIALING" | "PAST_DUE" | "CANCELED" | "EXPIRED";
 type BillingProvider = "PAYSTACK" | "STRIPE";
 type BillingInterval = "monthly" | "yearly";
+type PromoDiscountType = "PERCENTAGE" | "FIXED" | "NONE";
+type PromoAppliesToPlan = "PRO" | "PREMIUM" | "ALL";
+type PromoAttributionStatus = "SIGNUP" | "CHECKOUT_STARTED" | "SUBSCRIBED" | "FAILED" | "CANCELLED";
 type RunSlot = "MORNING" | "AFTERNOON" | "EVENING";
 type VideoJobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "FAILED_PERMANENT" | "FAILED_QUOTA" | "FAILED_PUBLISH" | "CANCELLED";
 type ScriptReviewStatus = "PENDING" | "APPROVED" | "NEEDS_REVIEW" | "REJECTED";
@@ -139,7 +146,7 @@ Auth: public. Throttled at 5/min.
 Request:
 
 ```ts
-{ email: string; password: string; name?: string } // password min length 8
+{ email: string; password: string; name?: string; promoCode?: string } // password min length 8
 ```
 
 Response:
@@ -158,7 +165,7 @@ Response:
 }
 ```
 
-Notes: sends verification email; workspace creation is blocked until verification. Duplicate email returns `409`.
+Notes: sends verification email; duplicate email returns `409`. If `promoCode` is sent, the backend normalizes it to uppercase, validates it, and records `SIGNUP` attribution against the new user/workspace without requiring payment.
 
 ### `POST /auth/login`
 
@@ -960,6 +967,73 @@ Already handled response:
 
 Preconditions: script `APPROVED`, job `COMPLETED`, `renderId` present, workspace YouTube connected, publish limit available.
 
+## Promo Codes
+
+Promo codes are normalized server-side by trimming whitespace and uppercasing. The public validation endpoint only returns safe promo metadata; it does not expose users, workspaces, attribution rows, or revenue.
+
+Discount behavior:
+
+- `discountType: "NONE"` means tracking-only.
+- Stripe discounts are applied only when the backend has `STRIPE_PROMO_<CODE>_PROMOTION_CODE_ID` configured and the provider checkout request includes the real Stripe promotion code id.
+- Paystack promo codes are attribution/tracking-only unless a real adjusted-plan strategy is configured server-side later. The backend does not fake a discount.
+- `redemptionCount` increments only after a successful subscription webhook marks an attribution `SUBSCRIBED`.
+
+Promo code shape:
+
+```ts
+type PromoCode = {
+  id: string;
+  code: string; // normalized uppercase
+  influencerName: string;
+  influencerEmail: string | null;
+  description: string | null;
+  discountType: PromoDiscountType;
+  discountValue: number | null;
+  appliesToPlans: PromoAppliesToPlan;
+  maxRedemptions: number | null;
+  redemptionCount: number;
+  startsAt: string | null;
+  expiresAt: string | null;
+  isActive: boolean;
+  createdByAdminId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+### `POST /promo-codes/validate`
+
+Auth: public. Throttled at 30/min.
+
+Use this on signup/pricing forms before submitting signup or checkout. Invalid, inactive, expired, over-limit, or plan-inapplicable codes return `400`.
+
+Request:
+
+```ts
+{
+  code: string;
+  plan?: "PRO" | "PREMIUM" | "FREE";
+}
+```
+
+Response:
+
+```ts
+{
+  valid: true;
+  promo: {
+    code: string;
+    influencerName: string;
+    discountType: PromoDiscountType;
+    discountValue: number | null;
+    appliesToPlans: PromoAppliesToPlan;
+    planApplies: boolean;
+    trackingOnly: boolean;
+    stripeDiscountConfigured: boolean;
+  };
+}
+```
+
 ## Billing
 
 ### `GET /billing/plans`
@@ -1053,6 +1127,7 @@ Request:
   provider?: "PAYSTACK" | "STRIPE";
   interval?: "monthly" | "yearly"; // defaults monthly
   country?: string;                // 2 letters; used for provider auto-select
+  promoCode?: string;              // optional; normalized and validated server-side
 }
 ```
 
@@ -1069,8 +1144,20 @@ Response:
   checkoutUrl: string;
   reference: string;
   sessionId?: string | null;
+  promo: null | {
+    code: string;
+    discountType: PromoDiscountType;
+    discountApplied: boolean; // true only when a real provider discount was attached
+  };
 }
 ```
+
+Promo behavior:
+
+- Invalid, inactive, expired, over-limit, or plan-inapplicable promo codes return `400`.
+- Checkout records `CHECKOUT_STARTED` attribution before provider checkout is created.
+- Stripe checkout metadata and subscription metadata include promo attribution fields.
+- Paystack checkout metadata includes promo attribution fields, but `discountApplied` remains `false` unless the payment amount is actually adjusted server-side.
 
 Return URLs sent to the provider:
 
@@ -1307,6 +1394,68 @@ type UpdateSettingsDto = {
 };
 ```
 
+### `/admin/promo-codes/*`
+
+Promo code management is admin-only. Codes are normalized to uppercase on create/update. Duplicate codes return `409`.
+
+| Method | Path | Purpose | Role | Request | Response |
+| --- | --- | --- | --- | --- | --- |
+| `POST` | `/admin/promo-codes` | Create influencer promo code | Admin role | `CreatePromoCodeDto` | `PromoCode` |
+| `GET` | `/admin/promo-codes` | List promo codes | Admin role | none | `PromoCode[]` |
+| `GET` | `/admin/promo-codes/:id` | Get promo code | Admin role | UUID | `PromoCode` |
+| `PATCH` | `/admin/promo-codes/:id` | Update promo code | Admin role | `UpdatePromoCodeDto` | `PromoCode` |
+| `POST` | `/admin/promo-codes/:id/deactivate` | Deactivate promo code | Admin role | UUID | `PromoCode` |
+| `POST` | `/admin/promo-codes/:id/reactivate` | Reactivate promo code | Admin role | UUID | `PromoCode` |
+| `GET` | `/admin/promo-codes/:id/performance` | Promo attribution/revenue performance | Admin role | UUID | `PromoCodePerformance` |
+
+```ts
+type CreatePromoCodeDto = {
+  code: string;
+  influencerName: string;
+  influencerEmail?: string;
+  description?: string;
+  discountType?: PromoDiscountType; // default NONE
+  discountValue?: number;           // required when discountType is PERCENTAGE or FIXED
+  appliesToPlans?: PromoAppliesToPlan; // default ALL
+  maxRedemptions?: number;
+  startsAt?: string;
+  expiresAt?: string;
+  isActive?: boolean; // default true
+};
+
+type UpdatePromoCodeDto = Partial<CreatePromoCodeDto>;
+
+type PromoAttribution = {
+  id: string;
+  promoCodeId: string;
+  userId: string;
+  workspaceId: string | null;
+  subscriptionId: string | null;
+  provider: BillingProvider | null;
+  plan: Plan | null;
+  interval: "MONTHLY" | "YEARLY" | null;
+  amount: number | null;   // provider minor amount when available
+  currency: string | null; // uppercased when available
+  status: PromoAttributionStatus;
+  createdAt: string;
+  updatedAt: string;
+  user?: { id: string; email: string; name: string | null };
+  workspace?: { id: string; name: string };
+};
+
+type PromoCodePerformance = {
+  promoCode: PromoCode;
+  signups: number;
+  checkoutStarts: number;
+  successfulSubscriptions: number;
+  conversionRate: number;
+  revenueAttributed: number;
+  revenueByProvider: Record<string, number>;
+  revenueByPlan: Record<string, number>;
+  latestRedemptions: PromoAttribution[];
+};
+```
+
 ### `/admin/users`, `/admin/workspaces/*`, `/admin/billing/workspaces/:workspaceId/subscription`
 
 | Method | Path | Purpose | Role | Request | Response |
@@ -1362,6 +1511,8 @@ Not frontend routes:
 - `POST /webhooks/digistore24`
 - `POST /webhooks/clickbank?key=:key`
 
+Billing provider webhooks complete promo attribution: successful subscription events mark matching promo attribution rows `SUBSCRIBED`, attach subscription/payment metadata, and increment `PromoCode.redemptionCount`.
+
 ## Removed / Deprecated Frontend Route Usage
 
 - Customer app must not call `/admin/*`.
@@ -1378,10 +1529,13 @@ Not frontend routes:
 ## Frontend Migration Checklist
 
 - Update customer auth helpers for signup, login, me, verify email, resend verification, forgot/reset password, refresh, logout, logout-all.
+- Add optional `promoCode` support to signup and billing checkout forms.
+- Add public promo validation with `POST /promo-codes/validate` on signup/pricing screens.
 - Add admin auth helpers for `/admin/auth/login` and `/admin/auth/me`.
 - Separate customer/admin sessions.
 - Add `x-workspace-id` handling to customer API helpers.
 - Update admin API paths to the new `/admin/*` routes.
+- Add admin promo-code CRUD and performance pages under `/admin/promo-codes`.
 - Remove old operator route usage from the customer app.
 - Update customer and admin navigation.
 - Update command palette commands to separate customer/admin destinations.

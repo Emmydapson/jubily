@@ -5,6 +5,7 @@ import {
   passwordResetEmailTemplate,
   verificationEmailTemplate,
 } from './email-templates';
+import { safeErrorMessage } from '../common/safe-metadata';
 import { PrismaService } from '../prisma/prisma.service';
 
 type AccountEmailUser = {
@@ -96,6 +97,13 @@ export class AuthEmailService {
   }
 
   private fromAddress() {
+    const emailFrom = String(process.env.EMAIL_FROM || '').trim();
+    const parsed = /^(.+?)\s*<([^<>]+)>$/.exec(emailFrom);
+    if (parsed) {
+      return { name: parsed[1].trim().replace(/^"|"$/g, '') || 'Jubily', address: parsed[2].trim() };
+    }
+    if (emailFrom) return { name: 'Jubily', address: emailFrom };
+
     const fromEmail = String(process.env.FROM_EMAIL || '').trim();
     const fromName = String(process.env.FROM_NAME || 'Jubily').trim();
     return fromEmail ? { name: fromName, address: fromEmail } : undefined;
@@ -103,7 +111,7 @@ export class AuthEmailService {
 
   private resendFromAddress() {
     const from = this.fromAddress();
-    if (!from?.address) throw new BadRequestException('FROM_EMAIL is required for email delivery');
+    if (!from?.address) throw new BadRequestException('EMAIL_FROM is required for email delivery');
     return from.name ? `${from.name} <${from.address}>` : from.address;
   }
 
@@ -225,7 +233,7 @@ export class AuthEmailService {
       }
       return { sent: true, messageId: result.messageId ?? null };
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Email delivery failed';
+      const message = safeErrorMessage(error);
       this.logger.warn({
         message: 'Account email delivery failed',
         provider: this.getProvider(),
@@ -276,7 +284,7 @@ export class AuthEmailService {
       this.safeLog(input, 'Outbox email retry sent', { emailId: email.id, messageId: result.messageId ?? null });
       return { sent: true, messageId: result.messageId ?? null };
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Email delivery failed';
+      const message = safeErrorMessage(error);
       const nextAttempts = email.attempts + 1;
       const permanent = nextAttempts >= maxAttempts;
       if (this.prisma) {

@@ -49,8 +49,8 @@ describe('validateEnv', () => {
         SHOTSTACK_API_KEY: 'shotstack',
         SHOTSTACK_OWNER_ID: 'owner',
         EMAIL_PROVIDER: 'log',
-        FROM_EMAIL: 'hello@example.com',
-        FROM_NAME: 'Jubily',
+        EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
+        SUPPORT_EMAIL: 'info@joinjubily.com',
       }),
     ).toThrow('YOUTUBE_ADMIN_REDIRECT_URI is required');
 
@@ -72,8 +72,8 @@ describe('validateEnv', () => {
         SHOTSTACK_API_KEY: 'shotstack',
         SHOTSTACK_OWNER_ID: 'owner',
         EMAIL_PROVIDER: 'log',
-        FROM_EMAIL: 'hello@example.com',
-        FROM_NAME: 'Jubily',
+        EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
+        SUPPORT_EMAIL: 'info@joinjubily.com',
       }),
     ).not.toThrow();
   });
@@ -160,8 +160,7 @@ describe('validateEnv', () => {
       validateEnv({
         JWT_SECRET: strongSecret,
         EMAIL_PROVIDER: 'resend',
-        FROM_EMAIL: 'hello@example.com',
-        FROM_NAME: 'Jubily',
+        EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
       }),
     ).toThrow('RESEND_API_KEY is required');
 
@@ -169,8 +168,8 @@ describe('validateEnv', () => {
       validateEnv({
         JWT_SECRET: strongSecret,
         EMAIL_PROVIDER: 'resend',
-        FROM_EMAIL: 'hello@example.com',
-        FROM_NAME: 'Jubily',
+        EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
+        SUPPORT_EMAIL: 'info@joinjubily.com',
         RESEND_API_KEY: 're_test',
       }),
     ).not.toThrow();

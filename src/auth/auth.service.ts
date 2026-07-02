@@ -16,6 +16,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthEmailService } from './auth-email.service';
+import { PromoCodesService } from '../promos/promo-codes.service';
 
 type ClientMeta = {
   ip?: string;
@@ -47,6 +48,7 @@ export class AuthService {
     private jwt: JwtService,
     private audit: AuditService,
     private emails: AuthEmailService,
+    private promos?: PromoCodesService,
   ) {}
 
   private normalizeEmail(email: string) {
@@ -343,7 +345,7 @@ export class AuthService {
     return true;
   }
 
-  async signup(email: string, password: string, name?: string, meta?: ClientMeta) {
+  async signup(email: string, password: string, name?: string, meta?: ClientMeta, promoCode?: string) {
     const normalizedEmail = this.normalizeEmail(email);
     if (!normalizedEmail) throw new UnauthorizedException('Invalid email');
 
@@ -370,7 +372,10 @@ export class AuthService {
       targetType: 'User',
       targetId: user.id,
     });
-    await this.createDefaultWorkspaceForUser(user);
+    const workspace = await this.createDefaultWorkspaceForUser(user);
+    if (promoCode && this.promos) {
+      await this.promos.recordSignup(promoCode, user.id, workspace.id);
+    }
     await this.createVerificationToken(user);
     return this.verificationRequiredResponse(user, true);
   }
