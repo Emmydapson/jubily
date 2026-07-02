@@ -128,7 +128,7 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
 @Injectable()
 export class ShotstackService {
   private readonly logger = new Logger(ShotstackService.name);
-  private readonly baseUrl = 'https://api.shotstack.io/stage';
+  private readonly baseUrl = 'https://api.shotstack.io/edit/v1/render';
   private readonly targetVideoSeconds = Number(process.env.VIDEO_TARGET_SECONDS || 75);
   private payloadDebugSequence = 0;
 
