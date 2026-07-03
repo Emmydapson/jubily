@@ -66,6 +66,8 @@ YOUTUBE_ADMIN_REDIRECT_URI=https://<api-host>/admin/auth/youtube/callback
 YOUTUBE_CUSTOMER_REDIRECT_URI=https://<api-host>/workspaces/youtube/callback
 
 SHOTSTACK_BASE_URL=https://api.shotstack.io/edit/v1
+TERMS_VERSION=terms-2026-07
+PRIVACY_POLICY_VERSION=privacy-2026-07
 
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=<resend sandbox/live api key>
@@ -96,6 +98,7 @@ Notes:
 
 - Production/staging requires the split YouTube redirect vars. Legacy `YOUTUBE_REDIRECT` is only a local/dev fallback.
 - `SHOTSTACK_BASE_URL` should normally be the Shotstack edit API base (`https://api.shotstack.io/edit/v1`). If an environment includes `/render`, the backend normalizes it and still posts to exactly `/edit/v1/render`, never `/render/render`.
+- `TERMS_VERSION` and `PRIVACY_POLICY_VERSION` are optional. When set, signup stores the current versions with the consent timestamps.
 - Resend sends mail from verified sender addresses; receiving mail for `info@joinjubily.com` still requires an actual mailbox provider.
 - Enable only configured billing providers. If `STRIPE_ENABLED=true`, all Stripe keys and price IDs above are required. If `PAYSTACK_ENABLED=true`, Paystack secret and all plan codes above are required.
 - Paystack webhook verification uses `PAYSTACK_WEBHOOK_SECRET` when set, otherwise `PAYSTACK_SECRET_KEY`.
@@ -200,26 +203,54 @@ Auth: public. Throttled at 5/min.
 Request:
 
 ```ts
-{ email: string; password: string; name?: string; promoCode?: string } // password min length 8
+{
+  email: string;
+  password: string; // min length 8
+  name?: string;
+  promoCode?: string;
+  acceptedTerms: true;
+  acceptedPrivacyPolicy: true;
+}
 ```
 
 Response:
 
 ```ts
 {
-  accessToken: string;
-  refreshToken: string;
+  success: false;
+  code: "EMAIL_NOT_VERIFIED";
+  message: "Email verification required. Verification email sent.";
+  requiresEmailVerification: true;
+  emailVerified: false;
   user: {
     id: string;
     email: string;
     name: string | null;
     emailVerified: false;
     emailVerifiedAt: null;
+    acceptedTermsAt: string;
+    acceptedPrivacyPolicyAt: string;
   };
 }
 ```
 
-Notes: sends verification email; duplicate email returns `409`. If `promoCode` is sent, the backend normalizes it to uppercase, validates it, and records `SIGNUP` attribution against the new user/workspace without requiring payment.
+Consent behavior:
+
+- Signup is rejected unless both `acceptedTerms === true` and `acceptedPrivacyPolicy === true`.
+- Rejection returns `400` with message `You must accept the Terms of Service and Privacy Policy to create an account.`
+- On success, the backend stores `acceptedTermsAt`, `acceptedPrivacyPolicyAt`, and any configured legal document versions.
+
+Example consent error:
+
+```json
+{
+  "statusCode": 400,
+  "message": "You must accept the Terms of Service and Privacy Policy to create an account.",
+  "error": "Bad Request"
+}
+```
+
+Notes: sends verification email and does not issue tokens until email verification/login. Duplicate email returns `409`. If `promoCode` is sent, the backend normalizes it to uppercase, validates it, and records `SIGNUP` attribution against the new user/workspace without requiring payment.
 
 ### `POST /auth/login`
 
@@ -265,6 +296,8 @@ Response:
     active: boolean;
     emailVerified: boolean;
     emailVerifiedAt: string | null;
+    acceptedTermsAt: string | null;
+    acceptedPrivacyPolicyAt: string | null;
     passwordChangedAt: string | null;
     lastLoginAt: string | null;
     createdAt: string;

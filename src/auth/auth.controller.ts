@@ -64,7 +64,10 @@ export class AuthController {
     schema: { example: { accessToken: 'eyJhbGciOi...', user: { id: '7f8d41e2-0dd8-48ea-a143-b2f8dfc21bcb', email: 'user@example.com', name: 'Jane' } } },
   })
   signup(@Req() req: Request, @Body() dto: SignupDto) {
-    return this.auth.signup(dto.email, dto.password, dto.name, requestMeta(req), dto.promoCode);
+    return this.auth.signup(dto.email, dto.password, dto.name, requestMeta(req), dto.promoCode, {
+      acceptedTerms: dto.acceptedTerms,
+      acceptedPrivacyPolicy: dto.acceptedPrivacyPolicy,
+    });
   }
 
   @Public()

@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 
@@ -29,7 +29,12 @@ describe('AuthService', () => {
   let service: AuthService;
 
   beforeEach(() => {
-    process.env = { ...originalEnv, ADMIN_EMAILS: 'admin@joinjubily.com, ops@joinjubily.com' };
+    process.env = {
+      ...originalEnv,
+      ADMIN_EMAILS: 'admin@joinjubily.com, ops@joinjubily.com',
+      TERMS_VERSION: 'terms-2026-07',
+      PRIVACY_POLICY_VERSION: 'privacy-2026-07',
+    };
     prisma = {
       $transaction: jest.fn().mockResolvedValue([]),
       adminUser: {
@@ -154,6 +159,8 @@ describe('AuthService', () => {
         name: 'User',
         emailVerified: true,
         emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+        acceptedTermsAt: null,
+        acceptedPrivacyPolicyAt: null,
       },
       workspaces: [{ id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' }],
       workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' },
@@ -208,6 +215,8 @@ describe('AuthService', () => {
         name: 'User',
         emailVerified: false,
         emailVerifiedAt: null,
+        acceptedTermsAt: null,
+        acceptedPrivacyPolicyAt: null,
       },
     });
 
@@ -230,22 +239,65 @@ describe('AuthService', () => {
     expect(jwt.signAsync).not.toHaveBeenCalled();
   });
 
-  it('signs up SaaS users, creates a default workspace, sends verification email, and returns no tokens', async () => {
+  it('rejects signup without acceptedTerms', async () => {
+    await expect(
+      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
+        acceptedTerms: false,
+        acceptedPrivacyPolicy: true,
+      }),
+    ).rejects.toThrow('You must accept the Terms of Service and Privacy Policy to create an account.');
+
+    await expect(
+      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
+        acceptedPrivacyPolicy: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.user.create).not.toHaveBeenCalled();
+    expect(jest.mocked(bcrypt.hash)).not.toHaveBeenCalled();
+  });
+
+  it('rejects signup without acceptedPrivacyPolicy', async () => {
+    await expect(
+      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
+        acceptedTerms: true,
+        acceptedPrivacyPolicy: false,
+      }),
+    ).rejects.toThrow('You must accept the Terms of Service and Privacy Policy to create an account.');
+
+    await expect(
+      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
+        acceptedTerms: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.user.create).not.toHaveBeenCalled();
+    expect(jest.mocked(bcrypt.hash)).not.toHaveBeenCalled();
+  });
+
+  it('signs up SaaS users, stores legal consent, creates a default workspace, sends verification email, and returns no tokens', async () => {
     prisma.user.findUnique.mockResolvedValue(null);
     jest.mocked(bcrypt.hash).mockResolvedValue('hashed-password' as never);
+    const acceptedTermsAt = new Date('2026-07-03T08:00:00.000Z');
+    const acceptedPrivacyPolicyAt = new Date('2026-07-03T08:00:00.000Z');
     prisma.user.create.mockResolvedValue({
       id: 'user-123456789',
       email: 'user@example.com',
       name: 'User',
       emailVerified: false,
       emailVerifiedAt: null,
+      acceptedTermsAt,
+      acceptedPrivacyPolicyAt,
     });
     prisma.workspace.create.mockResolvedValue({
       id: 'workspace-1',
       slug: 'user-s-workspace-user-123',
     });
 
-    await expect(service.signup('USER@example.com', 'password123', 'User')).resolves.toEqual({
+    await expect(
+      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
+        acceptedTerms: true,
+        acceptedPrivacyPolicy: true,
+      }),
+    ).resolves.toEqual({
       success: false,
       code: 'EMAIL_NOT_VERIFIED',
       message: 'Email verification required. Verification email sent.',
@@ -257,6 +309,8 @@ describe('AuthService', () => {
         name: 'User',
         emailVerified: false,
         emailVerifiedAt: null,
+        acceptedTermsAt,
+        acceptedPrivacyPolicyAt,
       },
     });
 
@@ -266,9 +320,23 @@ describe('AuthService', () => {
         passwordHash: 'hashed-password',
         name: 'User',
         emailVerified: false,
+        acceptedTermsAt: expect.any(Date),
+        acceptedPrivacyPolicyAt: expect.any(Date),
+        termsVersion: 'terms-2026-07',
+        privacyPolicyVersion: 'privacy-2026-07',
       },
-      select: { id: true, email: true, name: true, emailVerified: true, emailVerifiedAt: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        emailVerified: true,
+        emailVerifiedAt: true,
+        acceptedTermsAt: true,
+        acceptedPrivacyPolicyAt: true,
+      },
     });
+    const createData = prisma.user.create.mock.calls[0][0].data;
+    expect(createData.acceptedTermsAt).toBe(createData.acceptedPrivacyPolicyAt);
     expect(prisma.workspace.create).toHaveBeenCalledWith({
       data: {
         name: "User's Workspace",
@@ -485,6 +553,8 @@ describe('AuthService', () => {
         active: true,
         emailVerified: true,
         emailVerifiedAt: null,
+        acceptedTermsAt: null,
+        acceptedPrivacyPolicyAt: null,
       },
     });
     prisma.workspaceMember.findMany.mockResolvedValue([
@@ -504,6 +574,8 @@ describe('AuthService', () => {
         name: 'User',
         emailVerified: true,
         emailVerifiedAt: null,
+        acceptedTermsAt: null,
+        acceptedPrivacyPolicyAt: null,
       },
       workspaces: [{ id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' }],
       workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' },

@@ -320,17 +320,21 @@ model AdminUser {
 }
 
 model User {
-  id                String    @id @default(uuid())
-  email             String    @unique
-  passwordHash      String
-  name              String?
-  active            Boolean   @default(true)
-  emailVerified     Boolean   @default(false)
-  emailVerifiedAt   DateTime?
-  passwordChangedAt DateTime?
-  lastLoginAt       DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                      String    @id @default(uuid())
+  email                   String    @unique
+  passwordHash            String
+  name                    String?
+  active                  Boolean   @default(true)
+  emailVerified           Boolean   @default(false)
+  emailVerifiedAt         DateTime?
+  acceptedTermsAt         DateTime?
+  acceptedPrivacyPolicyAt DateTime?
+  termsVersion            String?
+  privacyPolicyVersion    String?
+  passwordChangedAt       DateTime?
+  lastLoginAt             DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   memberships             WorkspaceMember[]
   ownedWorkspaces         Workspace[]              @relation("WorkspaceOwner")

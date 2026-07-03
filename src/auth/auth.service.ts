@@ -29,6 +29,8 @@ type SaasUser = {
   name?: string | null;
   emailVerified?: boolean;
   emailVerifiedAt?: Date | null;
+  acceptedTermsAt?: Date | null;
+  acceptedPrivacyPolicyAt?: Date | null;
 };
 
 type FailedLoginState = {
@@ -37,6 +39,7 @@ type FailedLoginState = {
 };
 
 const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 60_000;
+const LEGAL_CONSENT_REQUIRED_MESSAGE = 'You must accept the Terms of Service and Privacy Policy to create an account.';
 
 @Injectable()
 export class AuthService {
@@ -108,6 +111,16 @@ export class AuthService {
 
   private refreshTtlDays() {
     return Number(process.env.REFRESH_TOKEN_TTL_DAYS || 30);
+  }
+
+  private legalVersion(name: 'TERMS_VERSION' | 'PRIVACY_POLICY_VERSION') {
+    return String(process.env[name] || '').trim() || null;
+  }
+
+  private assertSignupConsent(input?: { acceptedTerms?: boolean; acceptedPrivacyPolicy?: boolean }) {
+    if (input?.acceptedTerms !== true || input?.acceptedPrivacyPolicy !== true) {
+      throw new BadRequestException(LEGAL_CONSENT_REQUIRED_MESSAGE);
+    }
   }
 
   private loginBackoffMs(count: number) {
@@ -264,6 +277,8 @@ export class AuthService {
         name: user.name ?? null,
         emailVerified: Boolean(user.emailVerified),
         emailVerifiedAt: user.emailVerifiedAt ?? null,
+        acceptedTermsAt: user.acceptedTermsAt ?? null,
+        acceptedPrivacyPolicyAt: user.acceptedPrivacyPolicyAt ?? null,
       },
       emailVerified: Boolean(user.emailVerified),
       workspaces,
@@ -287,6 +302,8 @@ export class AuthService {
         name: user.name ?? null,
         emailVerified: false,
         emailVerifiedAt: user.emailVerifiedAt ?? null,
+        acceptedTermsAt: user.acceptedTermsAt ?? null,
+        acceptedPrivacyPolicyAt: user.acceptedPrivacyPolicyAt ?? null,
       },
     };
   }
@@ -345,7 +362,15 @@ export class AuthService {
     return true;
   }
 
-  async signup(email: string, password: string, name?: string, meta?: ClientMeta, promoCode?: string) {
+  async signup(
+    email: string,
+    password: string,
+    name?: string,
+    meta?: ClientMeta,
+    promoCode?: string,
+    consent?: { acceptedTerms?: boolean; acceptedPrivacyPolicy?: boolean },
+  ) {
+    this.assertSignupConsent(consent);
     const normalizedEmail = this.normalizeEmail(email);
     if (!normalizedEmail) throw new UnauthorizedException('Invalid email');
 
@@ -356,14 +381,27 @@ export class AuthService {
     if (existing) throw new ConflictException('Email is already registered');
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const consentedAt = new Date();
     const user = await this.prisma.user.create({
       data: {
         email: normalizedEmail,
         passwordHash,
         name: String(name || '').trim() || null,
         emailVerified: false,
+        acceptedTermsAt: consentedAt,
+        acceptedPrivacyPolicyAt: consentedAt,
+        termsVersion: this.legalVersion('TERMS_VERSION'),
+        privacyPolicyVersion: this.legalVersion('PRIVACY_POLICY_VERSION'),
       },
-      select: { id: true, email: true, name: true, emailVerified: true, emailVerifiedAt: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        emailVerified: true,
+        emailVerifiedAt: true,
+        acceptedTermsAt: true,
+        acceptedPrivacyPolicyAt: true,
+      },
     });
 
     await this.audit.record({
@@ -446,6 +484,8 @@ export class AuthService {
         active: true,
         emailVerified: true,
         emailVerifiedAt: true,
+        acceptedTermsAt: true,
+        acceptedPrivacyPolicyAt: true,
       },
     });
 
@@ -654,6 +694,8 @@ export class AuthService {
             active: true,
             emailVerified: true,
             emailVerifiedAt: true,
+            acceptedTermsAt: true,
+            acceptedPrivacyPolicyAt: true,
           },
         },
       },
@@ -704,6 +746,8 @@ export class AuthService {
         name: session.user.name ?? null,
         emailVerified: Boolean(session.user.emailVerified),
         emailVerifiedAt: session.user.emailVerifiedAt ?? null,
+        acceptedTermsAt: session.user.acceptedTermsAt ?? null,
+        acceptedPrivacyPolicyAt: session.user.acceptedPrivacyPolicyAt ?? null,
       },
       emailVerified: Boolean(session.user.emailVerified),
       workspaces,
@@ -772,6 +816,8 @@ export class AuthService {
         active: true,
         emailVerified: true,
         emailVerifiedAt: true,
+        acceptedTermsAt: true,
+        acceptedPrivacyPolicyAt: true,
         passwordChangedAt: true,
         lastLoginAt: true,
         createdAt: true,
