@@ -4,6 +4,7 @@ import * as path from 'path';
 import {
   sanitizeShotstackEffect,
   ShotstackService,
+  shotstackRenderUrl,
   validateShotstackPayload,
 } from './shotstack.service';
 import { Scene } from './interfaces/scene.interface';
@@ -147,6 +148,13 @@ describe('ShotstackService payload validation', () => {
     expect(starts.every((start: number) => start >= 0)).toBe(true);
   });
 
+
+  it('constructs Shotstack render URLs without duplicating the render path', () => {
+    expect(shotstackRenderUrl()).toBe('https://api.shotstack.io/edit/v1/render');
+    expect(shotstackRenderUrl('https://api.shotstack.io/edit/v1')).toBe('https://api.shotstack.io/edit/v1/render');
+    expect(shotstackRenderUrl('https://api.shotstack.io/edit/v1/render')).toBe('https://api.shotstack.io/edit/v1/render');
+    expect(shotstackRenderUrl('https://api.shotstack.io/edit/v1/render/')).toBe('https://api.shotstack.io/edit/v1/render');
+  });
   it('posts a validated payload without invalid volume or effect fields', async () => {
     await service.renderVideo(scenes, 'job-1');
 
@@ -154,7 +162,7 @@ describe('ShotstackService payload validation', () => {
     const clips = allClips(payload);
 
     expect(mockedAxios.post).toHaveBeenCalledWith(
-      expect.stringContaining('/render'),
+      'https://api.shotstack.io/edit/v1/render',
       expect.any(Object),
       expect.objectContaining({
         headers: expect.objectContaining({

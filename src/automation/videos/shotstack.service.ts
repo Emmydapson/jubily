@@ -47,6 +47,11 @@ const VALID_SHOTSTACK_EFFECTS = new Set([
   'slideDownSlow',
   'slideDownFast',
 ]);
+export function shotstackRenderUrl(baseUrl = process.env.SHOTSTACK_BASE_URL || 'https://api.shotstack.io/edit/v1') {
+  const normalized = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!normalized) return 'https://api.shotstack.io/edit/v1/render';
+  return normalized.endsWith('/render') ? normalized : `${normalized}/render`;
+}
 
 function clonePayload<T>(payload: T): T {
   return JSON.parse(JSON.stringify(payload)) as T;
@@ -128,7 +133,6 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
 @Injectable()
 export class ShotstackService {
   private readonly logger = new Logger(ShotstackService.name);
-  private readonly baseUrl = 'https://api.shotstack.io/edit/v1/render';
   private readonly targetVideoSeconds = Number(process.env.VIDEO_TARGET_SECONDS || 75);
   private payloadDebugSequence = 0;
 
@@ -578,7 +582,7 @@ export class ShotstackService {
       `[ShotstackRender] scenes=${renderScenes.length} duration=${Math.ceil(renderEnd)}`,
     );
 
-    const res = await axios.post(`${this.baseUrl}/render`, validation.payload, {
+    const res = await axios.post(shotstackRenderUrl(), validation.payload, {
       headers: {
         'x-api-key': this.apiKey(),
         'x-shotstack-stage': 'true',

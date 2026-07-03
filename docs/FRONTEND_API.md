@@ -65,6 +65,8 @@ Backend staging/sandbox configuration required for these routes:
 YOUTUBE_ADMIN_REDIRECT_URI=https://<api-host>/admin/auth/youtube/callback
 YOUTUBE_CUSTOMER_REDIRECT_URI=https://<api-host>/workspaces/youtube/callback
 
+SHOTSTACK_BASE_URL=https://api.shotstack.io/edit/v1
+
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=<resend sandbox/live api key>
 EMAIL_FROM="Jubily <noreply@joinjubily.com>"
@@ -93,6 +95,7 @@ PUBLIC_API_BASE_URL=https://<api-host>
 Notes:
 
 - Production/staging requires the split YouTube redirect vars. Legacy `YOUTUBE_REDIRECT` is only a local/dev fallback.
+- `SHOTSTACK_BASE_URL` should normally be the Shotstack edit API base (`https://api.shotstack.io/edit/v1`). If an environment includes `/render`, the backend normalizes it and still posts to exactly `/edit/v1/render`, never `/render/render`.
 - Resend sends mail from verified sender addresses; receiving mail for `info@joinjubily.com` still requires an actual mailbox provider.
 - Enable only configured billing providers. If `STRIPE_ENABLED=true`, all Stripe keys and price IDs above are required. If `PAYSTACK_ENABLED=true`, Paystack secret and all plan codes above are required.
 - Paystack webhook verification uses `PAYSTACK_WEBHOOK_SECRET` when set, otherwise `PAYSTACK_SECRET_KEY`.
@@ -109,6 +112,12 @@ Common statuses:
 | `409` | Duplicate resource, script gate, plan limit, render/publish precondition |
 | `429` | Throttled endpoint |
 | `500` | Server/provider failure |
+
+Provider error safety:
+
+- Render, YouTube, Stripe, and Paystack provider failures are serialized before logging/returning messages.
+- Frontend responses must not expect raw provider error objects, OAuth tokens, API keys, authorization headers, or webhook secrets.
+- Show the backend `message`/`providerMessage`/`error` fields as user-facing diagnostics where documented, not raw nested provider payloads.
 
 Shared enums:
 
@@ -431,12 +440,12 @@ Response:
   countryName: string;
   affiliateNiches: AffiliateNiche[];
   affiliatePlatforms: AffiliatePlatform[];
-  primaryAffiliateLink: string | null;
-  affiliateLinks: unknown | null;
-  preferredContentTone: string | null;
-  preferredLanguage: string | null;
-  targetAudience: string | null;
-  contentGoal: string | null;
+  primaryAffiliateLink: string; // "" when unset
+  affiliateLinks: unknown;      // {} when unset
+  preferredContentTone: string; // "" when unset
+  preferredLanguage: string;    // "" when unset
+  targetAudience: string;       // "" when unset
+  contentGoal: string;          // "" when unset
   ownerId: string;
   suspended: boolean;
   suspendedAt: string | null;
@@ -481,12 +490,12 @@ Array<{
   countryName: string | null;
   affiliateNiches: AffiliateNiche[];
   affiliatePlatforms: AffiliatePlatform[];
-  primaryAffiliateLink: string | null;
-  affiliateLinks: unknown | null;
-  preferredContentTone: string | null;
-  preferredLanguage: string | null;
-  targetAudience: string | null;
-  contentGoal: string | null;
+  primaryAffiliateLink: string; // "" when unset
+  affiliateLinks: unknown;      // {} when unset
+  preferredContentTone: string; // "" when unset
+  preferredLanguage: string;    // "" when unset
+  targetAudience: string;       // "" when unset
+  contentGoal: string;          // "" when unset
   onboardingComplete: boolean;
   createdAt: string;
   updatedAt: string;
@@ -515,12 +524,12 @@ Response:
   countryName: string | null;
   affiliateNiches: AffiliateNiche[];
   affiliatePlatforms: AffiliatePlatform[];
-  primaryAffiliateLink: string | null;
-  affiliateLinks: unknown | null;
-  preferredContentTone: string | null;
-  preferredLanguage: string | null;
-  targetAudience: string | null;
-  contentGoal: string | null;
+  primaryAffiliateLink: string; // "" when unset
+  affiliateLinks: unknown;      // {} when unset
+  preferredContentTone: string; // "" when unset
+  preferredLanguage: string;    // "" when unset
+  targetAudience: string;       // "" when unset
+  contentGoal: string;          // "" when unset
   onboardingComplete: boolean;
   createdAt: string;
   updatedAt: string;
@@ -549,6 +558,8 @@ Request: any subset of profile fields.
 ```
 
 Response: same as `GET /workspaces/:workspaceId/profile`.
+
+Profile responses are frontend-safe: optional affiliate UX fields are returned as empty strings or `{}` instead of `null`, and niche/platform arrays are always arrays.
 
 Example:
 
@@ -601,6 +612,10 @@ type YoutubeDiagnostics = {
   channelId: string | null;
   title: string | null;
   customUrl: string | null;
+  thumbnailUrl: string | null;
+  selectedChannelId: string | null;
+  currentChannel: YoutubeChannelSummary | null;
+  channels: YoutubeChannelSummary[];
   subscriberCount: string | null;
   videoCount: string | null;
   statistics: {
@@ -620,9 +635,24 @@ type YoutubeDiagnostics = {
   };
   error: string | null;
 }
+
+type YoutubeChannelSummary = {
+  id: string;
+  title: string;
+  thumbnail: string | null;
+  customUrl: string | null;
+  selected: boolean;
+};
 ```
 
 Workspace YouTube diagnostics always return `targetChannelId: null`, `channelMatchesTarget: null`, `legacyFilePresent: false`, and `legacyFileWriteFallbackEnabled: false`.
+
+Channel selector behavior:
+
+- If one channel is connected, `channels` contains one item and it has `selected: true`.
+- If multiple channels are returned by YouTube, `channels` contains `{ id, title, thumbnail, customUrl, selected }` for each available channel; the first returned channel is currently selected.
+- `currentChannel` mirrors the selected channel or is `null` when disconnected.
+- OAuth access/refresh tokens are never returned. Fetch failures return `connected: false`, `channels: []`, and a sanitized `error`.
 
 ### `POST /workspaces/:workspaceId/youtube/connect`
 
@@ -1035,6 +1065,8 @@ Rules:
 - Billing video-generation limit is enforced before the render provider is called.
 - Uses the same render service path as `POST /admin/manual-ops/videos/:scriptId/render`.
 - Response is intentionally customer-safe and does not include `renderId`, worker lease fields, provider debug paths, or admin-only internals.
+- A FREE-plan workspace can create a video only while within its plan limit. If the plan limit is exhausted, the backend returns `409` with a clear plan/credits message and does not call Shotstack.
+- Render provider failures are stored on the `VideoJob.error` field with a sanitized message. Frontend should show the returned Nest error message for immediate create failures and poll `GET /automation/videos/:id` for later render status.
 
 Publishing metadata:
 
@@ -1145,6 +1177,8 @@ Discount behavior:
 - Paystack behavior is controlled by `paystackDiscountMode`: `TRACKING_ONLY` records attribution without changing price, `ONE_TIME_AMOUNT_DISCOUNT` charges `finalAmount`, and `UNSUPPORTED` blocks discount checkout with `Paystack one-time subscription discounts are not yet supported.`
 - `redemptionCount` increments only after a successful subscription webhook marks an attribution `SUBSCRIBED`.
 - Region targeting is enforced by `countryCode`: `ALL` applies everywhere, `NIGERIA` only `NG`, `AFRICA` only African country codes, `GLOBAL` outside Africa, and `CUSTOM_COUNTRIES` only `allowedCountries`.
+- `regionScope: "ALL"` does not require `countryCode`; `allowedCountries: []` is valid and does not block any country.
+- Region-restricted scopes (`GLOBAL`, `AFRICA`, `NIGERIA`, `CUSTOM_COUNTRIES`) require a country at validation/checkout time.
 
 Promo code shape:
 
@@ -1247,6 +1281,21 @@ Example validation response:
   "providerError": null
 }
 ```
+
+Region validation examples:
+
+| Scope | `allowedCountries` | `countryCode` examples | Result |
+| --- | --- | --- | --- |
+| `ALL` | `[]` | omitted, `NG`, `US` | valid |
+| `CUSTOM_COUNTRIES` | `[]` | any | admin create/update and public validation fail |
+| `CUSTOM_COUNTRIES` | `["US", "CA"]` | `US`, `CA` | valid |
+| `CUSTOM_COUNTRIES` | `["US", "CA"]` | `GB`, omitted | invalid |
+| `NIGERIA` | any | `NG` | valid |
+| `NIGERIA` | any | `US`, omitted | invalid |
+| `AFRICA` | any | `NG`, `GH`, `KE` | valid |
+| `AFRICA` | any | `US`, `GB`, omitted | invalid |
+| `GLOBAL` | any | `US`, `GB` | valid |
+| `GLOBAL` | any | `NG`, `GH`, `KE`, omitted | invalid |
 
 ## Billing
 
@@ -1378,6 +1427,7 @@ Promo behavior:
 - Invalid, inactive, expired, over-limit, plan-inapplicable, region-inapplicable, or already-used promo codes return `400`.
 - Checkout records `CHECKOUT_STARTED` attribution before provider checkout is created.
 - If the checkout request omits `country`, the backend uses the stored workspace `countryCode` for promo validation and analytics.
+- `regionScope: "ALL"` still validates when the resolved country is missing.
 - Stripe checkout metadata and subscription metadata include promo attribution fields. Discount promos require backend promotion-code mapping.
 - Paystack checkout metadata includes promo attribution fields. `TRACKING_ONLY` codes do not reduce price, `ONE_TIME_AMOUNT_DISCOUNT` sends `finalAmount`, and `UNSUPPORTED` discount codes return the friendly unsupported error instead of silently charging full price.
 - For all discount promos, `renewalAmount` is the standard subscription price after the one-time checkout payment.
@@ -1661,6 +1711,12 @@ type UpdatePromoCodeDto = Partial<CreatePromoCodeDto>;
 ```
 
 Patch requests may include any subset of `CreatePromoCodeDto`. When changing `discountType` from `NONE` to `PERCENTAGE` or `FIXED`, include `discountValue` unless the existing promo already has one. When changing `regionScope` to `CUSTOM_COUNTRIES`, include at least one ISO alpha-2 country in `allowedCountries`.
+
+Admin region rules:
+
+- `ALL` may use `allowedCountries: []`; this means all countries and no country value are allowed.
+- `CUSTOM_COUNTRIES` must include at least one ISO alpha-2 country.
+- `NIGERIA`, `AFRICA`, and `GLOBAL` do not require `allowedCountries`; validation is based on `countryCode`.
 
 Validation errors are returned as `400` unless noted:
 

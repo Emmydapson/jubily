@@ -172,6 +172,12 @@ export class PromoCodesService {
   private assertRegion(code: { regionScope?: PromoRegionScope | null; allowedCountries?: string[] | null }, countryCode?: string | null) {
     const scope = code.regionScope ?? PromoRegionScope.ALL;
     if (scope === PromoRegionScope.ALL) return;
+
+    const allowedCountries = this.normalizeCountries(code.allowedCountries);
+    if (scope === PromoRegionScope.CUSTOM_COUNTRIES && allowedCountries.length === 0) {
+      throw new BadRequestException('allowedCountries is required when regionScope is CUSTOM_COUNTRIES');
+    }
+
     const country = this.normalizeCountry(countryCode);
     if (!country) throw new BadRequestException('Country is required for this promo code');
     const isAfrica = this.africanCountryCodes.has(country);
@@ -184,7 +190,7 @@ export class PromoCodesService {
     if (scope === PromoRegionScope.GLOBAL && isAfrica) {
       throw new BadRequestException('Promo code is not valid for this country');
     }
-    if (scope === PromoRegionScope.CUSTOM_COUNTRIES && !this.normalizeCountries(code.allowedCountries).includes(country)) {
+    if (scope === PromoRegionScope.CUSTOM_COUNTRIES && !allowedCountries.includes(country)) {
       throw new BadRequestException('Promo code is not valid for this country');
     }
   }

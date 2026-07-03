@@ -200,6 +200,10 @@ describe('YoutubeService diagnostics', () => {
       channelId: null,
       title: null,
       customUrl: null,
+      thumbnailUrl: null,
+      selectedChannelId: null,
+      currentChannel: null,
+      channels: [],
       subscriberCount: null,
       videoCount: null,
       statistics: null,
@@ -250,6 +254,24 @@ describe('YoutubeService diagnostics', () => {
       channelId: 'UC123',
       title: 'Jubily Channel',
       customUrl: '@jubily',
+      thumbnailUrl: null,
+      selectedChannelId: 'UC123',
+      currentChannel: {
+        id: 'UC123',
+        title: 'Jubily Channel',
+        thumbnail: null,
+        customUrl: '@jubily',
+        selected: true,
+      },
+      channels: [
+        {
+          id: 'UC123',
+          title: 'Jubily Channel',
+          thumbnail: null,
+          customUrl: '@jubily',
+          selected: true,
+        },
+      ],
       subscriberCount: '50',
       videoCount: '12',
       statistics: {
@@ -274,6 +296,98 @@ describe('YoutubeService diagnostics', () => {
       mine: true,
       part: ['snippet', 'statistics'],
     });
+  });
+
+  it('returns multiple connected channels with one selected and no OAuth tokens', async () => {
+    const service = serviceWithTokens({
+      access_token: 'access-1',
+      refresh_token: 'refresh-1',
+      scope: 'scope-1',
+    });
+    mockedGoogle.youtube.mockReturnValueOnce({
+      channels: {
+        list: jest.fn().mockResolvedValue({
+          data: {
+            items: [
+              {
+                id: 'UC_ONE',
+                snippet: {
+                  title: 'First Channel',
+                  customUrl: '@first',
+                  thumbnails: { default: { url: 'https://img.example.com/one.jpg' } },
+                },
+              },
+              {
+                id: 'UC_TWO',
+                snippet: {
+                  title: 'Second Channel',
+                  customUrl: '@second',
+                  thumbnails: { medium: { url: 'https://img.example.com/two.jpg' } },
+                },
+              },
+            ],
+          },
+        }),
+      },
+    });
+
+    const result = await service.getChannelDiagnostics();
+
+    expect(result).toMatchObject({
+      connected: true,
+      selectedChannelId: 'UC_ONE',
+      currentChannel: {
+        id: 'UC_ONE',
+        title: 'First Channel',
+        thumbnail: 'https://img.example.com/one.jpg',
+        customUrl: '@first',
+        selected: true,
+      },
+      channels: [
+        {
+          id: 'UC_ONE',
+          title: 'First Channel',
+          thumbnail: 'https://img.example.com/one.jpg',
+          customUrl: '@first',
+          selected: true,
+        },
+        {
+          id: 'UC_TWO',
+          title: 'Second Channel',
+          thumbnail: 'https://img.example.com/two.jpg',
+          customUrl: '@second',
+          selected: false,
+        },
+      ],
+      error: null,
+    });
+
+    expect(JSON.stringify(result)).not.toContain('access-1');
+    expect(JSON.stringify(result)).not.toContain('refresh-1');
+  });
+
+  it('returns a friendly channel fetch error without exposing tokens', async () => {
+    const service = serviceWithTokens({
+      access_token: 'secret-access-token',
+      refresh_token: 'secret-refresh-token',
+      scope: 'scope-1',
+    });
+    mockedGoogle.youtube.mockReturnValueOnce({
+      channels: {
+        list: jest.fn().mockRejectedValue(new Error('failed Bearer secret-access-token access_token=secret-access-token')),
+      },
+    });
+
+    const result = await service.getChannelDiagnostics();
+
+    expect(result).toMatchObject({
+      connected: false,
+      channels: [],
+      currentChannel: null,
+      error: 'failed Bearer [REDACTED] access_token=[REDACTED]',
+    });
+    expect(JSON.stringify(result)).not.toContain('secret-access-token');
+    expect(JSON.stringify(result)).not.toContain('secret-refresh-token');
   });
 
   it('loads the stored encrypted OAuth token for channel diagnostics', async () => {

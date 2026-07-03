@@ -453,6 +453,41 @@ describe('PromoCodesService', () => {
     await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.STRIPE, BillingInterval.MONTHLY, 'GB')).rejects.toThrow('Promo code is not valid for this country');
   });
 
+
+  it('allows ALL region promos for any or missing country without allowedCountries', async () => {
+    prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, regionScope: PromoRegionScope.ALL, allowedCountries: [] });
+    await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.PAYSTACK, BillingInterval.MONTHLY, 'NG')).resolves.toMatchObject({ valid: true });
+
+    prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, regionScope: PromoRegionScope.ALL, allowedCountries: [] });
+    await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.STRIPE, BillingInterval.MONTHLY, 'US')).resolves.toMatchObject({ valid: true });
+
+    prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, regionScope: PromoRegionScope.ALL, allowedCountries: [] });
+    await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.STRIPE, BillingInterval.MONTHLY)).resolves.toMatchObject({ valid: true });
+  });
+
+  it('enforces each promo region scope explicitly', async () => {
+    prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, regionScope: PromoRegionScope.CUSTOM_COUNTRIES, allowedCountries: [] });
+    await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.STRIPE, BillingInterval.MONTHLY, 'US')).rejects.toThrow('allowedCountries is required when regionScope is CUSTOM_COUNTRIES');
+
+    prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, regionScope: PromoRegionScope.NIGERIA, allowedCountries: [] });
+    await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.PAYSTACK, BillingInterval.MONTHLY, 'NG')).resolves.toMatchObject({ valid: true });
+
+    prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, regionScope: PromoRegionScope.NIGERIA, allowedCountries: [] });
+    await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.STRIPE, BillingInterval.MONTHLY, 'US')).rejects.toThrow('Promo code is not valid for this country');
+
+    for (const countryCode of ['NG', 'GH', 'KE']) {
+      prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, regionScope: PromoRegionScope.AFRICA, allowedCountries: [] });
+      await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.PAYSTACK, BillingInterval.MONTHLY, countryCode)).resolves.toMatchObject({ valid: true });
+    }
+
+    for (const countryCode of ['US', 'GB']) {
+      prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, regionScope: PromoRegionScope.GLOBAL, allowedCountries: [] });
+      await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.STRIPE, BillingInterval.MONTHLY, countryCode)).resolves.toMatchObject({ valid: true });
+    }
+
+    prisma.promoCode.findUnique.mockResolvedValueOnce({ ...activeCode, regionScope: PromoRegionScope.GLOBAL, allowedCountries: [] });
+    await expect(service.validatePublic('jane20', Plan.PRO, BillingProvider.PAYSTACK, BillingInterval.MONTHLY, 'NG')).rejects.toThrow('Promo code is not valid for this country');
+  });
   it('records signup attribution without incrementing redemption count', async () => {
     prisma.promoCode.findUnique.mockResolvedValue(activeCode);
     prisma.promoAttribution.create.mockResolvedValue({ id: 'attr-1', status: PromoAttributionStatus.SIGNUP });

@@ -7,6 +7,7 @@ import * as path from 'path';
 import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptString, encryptString } from '../settings/settings.crypto';
+import { safeErrorMessage } from './safe-metadata';
 
 type YoutubeTokens = {
   access_token?: string | null;
@@ -27,6 +28,10 @@ type YoutubeChannelDiagnostics = {
   channelId: string | null;
   title: string | null;
   customUrl: string | null;
+  thumbnailUrl: string | null;
+  selectedChannelId: string | null;
+  currentChannel: YoutubeChannelSummary | null;
+  channels: YoutubeChannelSummary[];
   subscriberCount: string | null;
   videoCount: string | null;
   statistics: {
@@ -47,10 +52,19 @@ type YoutubeChannelDiagnostics = {
   error: string | null;
 };
 
+type YoutubeChannelSummary = {
+  id: string;
+  title: string;
+  thumbnail: string | null;
+  customUrl: string | null;
+  selected: boolean;
+};
+
 type ConnectedYoutubeChannel = {
   channelId: string | null;
   title: string | null;
   customUrl: string | null;
+  thumbnailUrl: string | null;
   statistics: {
     viewCount: string | null;
     subscriberCount: string | null;
@@ -108,7 +122,7 @@ export class YoutubeService {
       })();
 
       void persist.catch((error: unknown) => {
-        this.logger.warn(`[YouTube] token refresh persistence failed msg=${error instanceof Error ? error.message : String(error)}`);
+        this.logger.warn(`[YouTube] token refresh persistence failed msg=${safeErrorMessage(error)}`);
       });
     });
 
@@ -143,18 +157,34 @@ export class YoutubeService {
     return Boolean(channelId) && channelId === targetChannelId;
   }
 
-  private async fetchConnectedChannel(auth: any): Promise<ConnectedYoutubeChannel> {
+  private channelThumbnail(snippet: any) {
+    return snippet?.thumbnails?.default?.url ?? snippet?.thumbnails?.medium?.url ?? snippet?.thumbnails?.high?.url ?? null;
+  }
+
+  private channelSummary(channel: ConnectedYoutubeChannel, selectedChannelId?: string | null): YoutubeChannelSummary | null {
+    if (!channel.channelId) return null;
+    return {
+      id: channel.channelId,
+      title: channel.title || 'Untitled YouTube channel',
+      thumbnail: channel.thumbnailUrl,
+      customUrl: channel.customUrl,
+      selected: selectedChannelId ? channel.channelId === selectedChannelId : true,
+    };
+  }
+
+  private async fetchConnectedChannels(auth: any): Promise<ConnectedYoutubeChannel[]> {
     const youtube = google.youtube({ version: 'v3', auth });
     const res = await youtube.channels.list({
       mine: true,
       part: ['snippet', 'statistics'],
     });
-    const channel = res.data?.items?.[0];
+    const items = Array.isArray(res.data?.items) ? res.data.items : [];
 
-    return {
+    return items.map((channel: any) => ({
       channelId: channel?.id ?? null,
       title: channel?.snippet?.title ?? null,
       customUrl: channel?.snippet?.customUrl ?? null,
+      thumbnailUrl: this.channelThumbnail(channel?.snippet),
       statistics: channel?.statistics
         ? {
             viewCount: channel.statistics.viewCount ?? null,
@@ -163,7 +193,12 @@ export class YoutubeService {
             videoCount: channel.statistics.videoCount ?? null,
           }
         : null,
-    };
+    }));
+  }
+
+  private async fetchConnectedChannel(auth: any): Promise<ConnectedYoutubeChannel> {
+    const channels = await this.fetchConnectedChannels(auth);
+    return channels[0] ?? { channelId: null, title: null, customUrl: null, thumbnailUrl: null, statistics: null };
   }
 
   private async assertTargetChannel(auth: any, operation: string) {
@@ -268,7 +303,7 @@ export class YoutubeService {
         this.logger.log('[YouTube] using encrypted DB OAuth token');
       }
     } catch (error: unknown) {
-      this.logger.warn(`[YouTube] DB token load failed; trying file fallback msg=${error instanceof Error ? error.message : String(error)}`);
+      this.logger.warn(`[YouTube] DB token load failed; trying file fallback msg=${safeErrorMessage(error)}`);
     }
 
     if (!tokens) {
@@ -276,7 +311,7 @@ export class YoutubeService {
       if (tokens) {
         this.logger.warn('[YouTube] using legacy file OAuth token fallback; migrate to encrypted DB storage');
         await this.persistTokens(tokens).catch((error: unknown) => {
-          this.logger.warn(`[YouTube] legacy token migration skipped msg=${error instanceof Error ? error.message : String(error)}`);
+          this.logger.warn(`[YouTube] legacy token migration skipped msg=${safeErrorMessage(error)}`);
         });
       }
     }
@@ -381,6 +416,10 @@ export class YoutubeService {
         channelId: null,
         title: null,
         customUrl: null,
+        thumbnailUrl: null,
+        selectedChannelId: null,
+        currentChannel: null,
+        channels: [],
         subscriberCount: null,
         videoCount: null,
         statistics: null,
@@ -395,7 +434,11 @@ export class YoutubeService {
     try {
       const oauth = this.createOAuthClient();
       oauth.setCredentials(this.googleCredentials(tokens));
-      const channel = await this.fetchConnectedChannel(oauth);
+      const channels = await this.fetchConnectedChannels(oauth);
+      const channel = channels[0] ?? { channelId: null, title: null, customUrl: null, thumbnailUrl: null, statistics: null };
+      const selectedChannelId = channel.channelId;
+      const channelSummaries = channels.map((item) => this.channelSummary(item, selectedChannelId)).filter(Boolean) as YoutubeChannelSummary[];
+      const currentChannel = channelSummaries.find((item) => item.selected) ?? null;
       const matchesTarget = this.channelMatchesTarget(channel.channelId);
 
       return {
@@ -403,6 +446,10 @@ export class YoutubeService {
         channelId: channel.channelId,
         title: channel.title,
         customUrl: channel.customUrl,
+        thumbnailUrl: channel.thumbnailUrl,
+        selectedChannelId,
+        currentChannel,
+        channels: channelSummaries,
         subscriberCount: channel.statistics?.subscriberCount ?? null,
         videoCount: channel.statistics?.videoCount ?? null,
         statistics: channel.statistics,
@@ -422,6 +469,10 @@ export class YoutubeService {
         channelId: null,
         title: null,
         customUrl: null,
+        thumbnailUrl: null,
+        selectedChannelId: null,
+        currentChannel: null,
+        channels: [],
         subscriberCount: null,
         videoCount: null,
         statistics: null,
@@ -429,7 +480,7 @@ export class YoutubeService {
         channelMatchesTarget: this.channelMatchesTarget(null),
         scope: tokens.scope ?? null,
         tokenStorage,
-        error: error instanceof Error ? error.message : String(error),
+        error: safeErrorMessage(error),
       };
     }
   }
@@ -459,6 +510,10 @@ export class YoutubeService {
         channelId: null,
         title: null,
         customUrl: null,
+        thumbnailUrl: null,
+        selectedChannelId: null,
+        currentChannel: null,
+        channels: [],
         subscriberCount: null,
         videoCount: null,
         statistics: null,
@@ -472,12 +527,20 @@ export class YoutubeService {
 
     try {
       const { oauth, tokens } = await this.clientWithTokens(workspaceId);
-      const channel = await this.fetchConnectedChannel(oauth);
+      const channels = await this.fetchConnectedChannels(oauth);
+      const channel = channels[0] ?? { channelId: null, title: null, customUrl: null, thumbnailUrl: null, statistics: null };
+      const selectedChannelId = channel.channelId;
+      const channelSummaries = channels.map((item) => this.channelSummary(item, selectedChannelId)).filter(Boolean) as YoutubeChannelSummary[];
+      const currentChannel = channelSummaries.find((item) => item.selected) ?? null;
       return {
         connected: Boolean(channel.channelId),
         channelId: channel.channelId,
         title: channel.title,
         customUrl: channel.customUrl,
+        thumbnailUrl: channel.thumbnailUrl,
+        selectedChannelId,
+        currentChannel,
+        channels: channelSummaries,
         subscriberCount: channel.statistics?.subscriberCount ?? null,
         videoCount: channel.statistics?.videoCount ?? null,
         statistics: channel.statistics,
@@ -493,6 +556,10 @@ export class YoutubeService {
         channelId: row.channelId,
         title: row.channelTitle,
         customUrl: row.channelCustomUrl,
+        thumbnailUrl: null,
+        selectedChannelId: row.channelId,
+        currentChannel: row.channelId ? { id: row.channelId, title: row.channelTitle || 'Untitled YouTube channel', thumbnail: null, customUrl: row.channelCustomUrl, selected: true } : null,
+        channels: row.channelId ? [{ id: row.channelId, title: row.channelTitle || 'Untitled YouTube channel', thumbnail: null, customUrl: row.channelCustomUrl, selected: true }] : [],
         subscriberCount: null,
         videoCount: null,
         statistics: null,
@@ -500,7 +567,7 @@ export class YoutubeService {
         channelMatchesTarget: null,
         scope: row.scope,
         tokenStorage,
-        error: error instanceof Error ? error.message : String(error),
+        error: safeErrorMessage(error),
       };
     }
   }
@@ -564,7 +631,7 @@ export class YoutubeService {
         timeout: 120_000,
       });
     } catch (e: any) {
-      this.logger.warn(`[YouTube] video download failed host=${host} status=${e?.response?.status || 'unknown'} msg=${e?.message || e}`);
+      this.logger.warn(`[YouTube] video download failed host=${host} status=${e?.response?.status || 'unknown'} msg=${safeErrorMessage(e)}`);
       throw new Error(`Download failed (${e?.response?.status || 'unknown'}) from host=${host}`);
     }
 
@@ -603,7 +670,7 @@ export class YoutubeService {
       this.logger.log(`[YouTube] upload completed videoId=${videoId}`);
       return videoId;
     } catch (e: any) {
-      this.logger.warn(`[YouTube] upload failed status=${e?.code || 'unknown'} msg=${e?.message || e}`);
+      this.logger.warn(`[YouTube] upload failed status=${e?.code || 'unknown'} msg=${safeErrorMessage(e)}`);
       throw e;
     }
   }

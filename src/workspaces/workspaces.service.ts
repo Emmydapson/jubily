@@ -86,6 +86,12 @@ export class WorkspacesService {
       countryName: workspace.countryName ?? null,
       affiliateNiches: workspace.affiliateNiches ?? [],
       affiliatePlatforms: workspace.affiliatePlatforms ?? [],
+      primaryAffiliateLink: (workspace as any).primaryAffiliateLink ?? '',
+      affiliateLinks: (workspace as any).affiliateLinks ?? {},
+      preferredContentTone: (workspace as any).preferredContentTone ?? '',
+      preferredLanguage: (workspace as any).preferredLanguage ?? '',
+      targetAudience: (workspace as any).targetAudience ?? '',
+      contentGoal: (workspace as any).contentGoal ?? '',
       onboardingComplete: this.onboardingComplete(workspace),
     };
   }
@@ -96,12 +102,12 @@ export class WorkspacesService {
       countryName: this.normalizeOptionalText(input.countryName),
       affiliateNiches: normalizeAffiliateNiches(input.affiliateNiches),
       affiliatePlatforms: normalizeAffiliatePlatforms(input.affiliatePlatforms),
-      primaryAffiliateLink: this.normalizeOptionalText(input.primaryAffiliateLink),
-      affiliateLinks: input.affiliateLinks === undefined ? undefined : (input.affiliateLinks as never),
-      preferredContentTone: this.normalizeOptionalText(input.preferredContentTone),
-      preferredLanguage: this.normalizeOptionalText(input.preferredLanguage),
-      targetAudience: this.normalizeOptionalText(input.targetAudience),
-      contentGoal: this.normalizeOptionalText(input.contentGoal),
+      primaryAffiliateLink: this.normalizeOptionalText(input.primaryAffiliateLink) ?? '',
+      affiliateLinks: input.affiliateLinks === undefined ? {} : (input.affiliateLinks as never),
+      preferredContentTone: this.normalizeOptionalText(input.preferredContentTone) ?? '',
+      preferredLanguage: this.normalizeOptionalText(input.preferredLanguage) ?? '',
+      targetAudience: this.normalizeOptionalText(input.targetAudience) ?? '',
+      contentGoal: this.normalizeOptionalText(input.contentGoal) ?? '',
     };
   }
 

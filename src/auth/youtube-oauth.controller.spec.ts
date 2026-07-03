@@ -45,6 +45,24 @@ describe('AuthController YouTube OAuth connect flow', () => {
         channelId: 'UC123',
         title: 'Jubily Channel',
         customUrl: '@jubily',
+        thumbnailUrl: null,
+        selectedChannelId: 'UC123',
+        currentChannel: {
+          id: 'UC123',
+          title: 'Jubily Channel',
+          thumbnail: null,
+          customUrl: '@jubily',
+          selected: true,
+        },
+        channels: [
+          {
+            id: 'UC123',
+            title: 'Jubily Channel',
+            thumbnail: null,
+            customUrl: '@jubily',
+            selected: true,
+          },
+        ],
         subscriberCount: '50',
         videoCount: '12',
         statistics: {
@@ -104,6 +122,24 @@ describe('AuthController YouTube OAuth connect flow', () => {
       channelId: 'UC123',
       title: 'Jubily Channel',
       customUrl: '@jubily',
+      thumbnailUrl: null,
+      selectedChannelId: 'UC123',
+      currentChannel: {
+        id: 'UC123',
+        title: 'Jubily Channel',
+        thumbnail: null,
+        customUrl: '@jubily',
+        selected: true,
+      },
+      channels: [
+        {
+          id: 'UC123',
+          title: 'Jubily Channel',
+          thumbnail: null,
+          customUrl: '@jubily',
+          selected: true,
+        },
+      ],
       subscriberCount: '50',
       videoCount: '12',
       statistics: {
