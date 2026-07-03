@@ -65,6 +65,9 @@ describe('YoutubeService diagnostics', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env = { ...oldEnv };
+    process.env.YOUTUBE_CLIENT_ID = 'client';
+    process.env.YOUTUBE_CLIENT_SECRET = 'secret';
+    process.env.YOUTUBE_REDIRECT_URI = 'https://api.joinjubily.com/api/auth/youtube/callback';
     process.env.YOUTUBE_ADMIN_REDIRECT_URI = 'https://api.example.com/admin/auth/youtube/callback';
     process.env.YOUTUBE_CUSTOMER_REDIRECT_URI = 'https://api.example.com/workspaces/youtube/callback';
     prisma = {
@@ -90,7 +93,7 @@ describe('YoutubeService diagnostics', () => {
     return service;
   }
 
-  it('generates split admin and customer YouTube auth URLs with the correct redirect URIs', async () => {
+  it('generates admin and customer YouTube auth URLs with the correct redirect URIs', async () => {
     const service = new YoutubeService(prisma as never);
 
     const adminUrl = service.getAdminAuthUrl('admin-state');
@@ -102,7 +105,7 @@ describe('YoutubeService diagnostics', () => {
     );
     expect(new URL(adminUrl).searchParams.get('state')).toBe('admin-state');
     expect(new URL(customerUrl).searchParams.get('redirect_uri')).toBe(
-      'https://api.example.com/workspaces/youtube/callback',
+      'https://api.joinjubily.com/api/auth/youtube/callback',
     );
     expect(new URL(customerUrl).searchParams.get('state')).toBe('customer-state');
 
@@ -115,13 +118,14 @@ describe('YoutubeService diagnostics', () => {
     expect(oauth2).toHaveBeenCalledWith(
       process.env.YOUTUBE_CLIENT_ID,
       process.env.YOUTUBE_CLIENT_SECRET,
-      'https://api.example.com/workspaces/youtube/callback',
+      'https://api.joinjubily.com/api/auth/youtube/callback',
     );
   });
 
   it('falls back to legacy YOUTUBE_REDIRECT outside production only', () => {
     delete process.env.YOUTUBE_ADMIN_REDIRECT_URI;
     delete process.env.YOUTUBE_CUSTOMER_REDIRECT_URI;
+    delete process.env.YOUTUBE_REDIRECT_URI;
     process.env.YOUTUBE_REDIRECT = 'http://localhost:5000/auth/youtube/callback';
     process.env.NODE_ENV = 'development';
     const service = new YoutubeService(prisma as never);
@@ -134,7 +138,47 @@ describe('YoutubeService diagnostics', () => {
     );
 
     process.env.NODE_ENV = 'production';
-    expect(() => service.getAdminAuthUrl('state-2')).toThrow('YOUTUBE_ADMIN_REDIRECT_URI is required');
+    expect(() => service.getAdminAuthUrl('state-2')).toThrow('YouTube OAuth is not configured');
+  });
+
+  it('uses global YOUTUBE_REDIRECT_URI for workspace/customer OAuth when workspace redirect is missing', () => {
+    delete process.env.YOUTUBE_CUSTOMER_REDIRECT_URI;
+    process.env.NODE_ENV = 'production';
+    const service = new YoutubeService(prisma as never);
+
+    const url = service.getCustomerAuthUrl('workspace-state');
+
+    expect(new URL(url).searchParams.get('redirect_uri')).toBe(
+      'https://api.joinjubily.com/api/auth/youtube/callback',
+    );
+    expect(new URL(url).searchParams.get('state')).toBe('workspace-state');
+    expect(google.auth.OAuth2).toHaveBeenLastCalledWith(
+      process.env.YOUTUBE_CLIENT_ID,
+      process.env.YOUTUBE_CLIENT_SECRET,
+      'https://api.joinjubily.com/api/auth/youtube/callback',
+    );
+  });
+
+  it('falls back to legacy split customer redirect only when global workspace redirect is missing', () => {
+    delete process.env.YOUTUBE_REDIRECT_URI;
+    process.env.NODE_ENV = 'production';
+    const service = new YoutubeService(prisma as never);
+
+    const url = service.getCustomerAuthUrl('workspace-state');
+
+    expect(new URL(url).searchParams.get('redirect_uri')).toBe(
+      'https://api.example.com/workspaces/youtube/callback',
+    );
+    expect(new URL(url).searchParams.get('state')).toBe('workspace-state');
+  });
+
+  it('returns a friendly configuration error when global OAuth config is missing', () => {
+    delete process.env.YOUTUBE_CLIENT_ID;
+    const service = new YoutubeService(prisma as never);
+
+    expect(() => service.getCustomerAuthUrl('workspace-state')).toThrow(
+      'YouTube OAuth is not configured. Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET.',
+    );
   });
 
   it('stores YouTube OAuth tokens per workspace with channel metadata', async () => {

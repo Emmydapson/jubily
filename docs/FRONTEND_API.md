@@ -62,8 +62,10 @@ Validation:
 Backend staging/sandbox configuration required for these routes:
 
 ```env
-YOUTUBE_ADMIN_REDIRECT_URI=https://<api-host>/admin/auth/youtube/callback
-YOUTUBE_CUSTOMER_REDIRECT_URI=https://<api-host>/workspaces/youtube/callback
+YOUTUBE_CLIENT_ID=<google oauth client id>
+YOUTUBE_CLIENT_SECRET=<google oauth client secret>
+YOUTUBE_REDIRECT_URI=https://api.joinjubily.com/api/auth/youtube/callback
+YOUTUBE_PUBLISHING_ENABLED=true
 
 SHOTSTACK_BASE_URL=https://api.shotstack.io/edit/v1
 TERMS_VERSION=terms-2026-07
@@ -96,7 +98,7 @@ PUBLIC_API_BASE_URL=https://<api-host>
 
 Notes:
 
-- Production/staging requires the split YouTube redirect vars. Legacy `YOUTUBE_REDIRECT` is only a local/dev fallback.
+- Production YouTube workspace OAuth uses global `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REDIRECT_URI`. Add `https://api.joinjubily.com/api/auth/youtube/callback` as the Google Console authorized redirect URI. Legacy split customer redirect vars only apply when `YOUTUBE_REDIRECT_URI` is absent.
 - `SHOTSTACK_BASE_URL` should normally be the Shotstack edit API base (`https://api.shotstack.io/edit/v1`). If an environment includes `/render`, the backend normalizes it and still posts to exactly `/edit/v1/render`, never `/render/render`.
 - `TERMS_VERSION` and `PRIVACY_POLICY_VERSION` are optional. When set, signup stores the current versions with the consent timestamps.
 - Resend sends mail from verified sender addresses; receiving mail for `info@joinjubily.com` still requires an actual mailbox provider.
@@ -695,7 +697,7 @@ Request: none.
 
 Response: `{ url: string }`
 
-Frontend flow: call with customer bearer token, navigate/popup to `url`, then Google redirects to `/workspaces/youtube/callback`.
+Frontend flow: call with customer bearer token, navigate/popup to `url`, then Google redirects to `/auth/youtube/callback`. The API callback redirects the browser to `https://joinjubily.com/youtube?connected=true`.
 
 ### `DELETE /workspaces/:workspaceId/youtube`
 
@@ -703,15 +705,120 @@ Auth: customer JWT and workspace `OWNER` or `ADMIN`.
 
 Response: `{ connected: false }`
 
-### `GET /workspaces/youtube/callback`
+### `GET /auth/youtube/callback`
 
 Auth: public. Throttled at 30/min.
 
 Query: `{ code: string; state: string }`
 
-Response: plain text `YouTube connected. You can close this tab.`
+Success: redirects to `https://joinjubily.com/youtube?connected=true`.
+
+Friendly error redirects use `?error=` with one of:
+
+- `YOUTUBE_OAUTH_NOT_CONFIGURED`
+- `MISSING_WORKSPACE`
+- `INVALID_CALLBACK_STATE`
+- `TOKEN_EXCHANGE_FAILED`
 
 Notes: state expires after 10 minutes and validates that the original user still has workspace `OWNER` or `ADMIN`.
+
+## Publishing Accounts: TikTok, Facebook, Instagram
+
+All account-management endpoints require a customer bearer token and active workspace (`x-workspace-id`). Provider OAuth callbacks are public browser redirects but validate a one-time, workspace-scoped OAuth state before storing credentials.
+
+Raw OAuth tokens are never returned to the frontend.
+
+### Connect URLs
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/auth/tiktok/connect` | Returns `{ url }` for TikTok OAuth. |
+| `GET` | `/auth/facebook/connect` | Returns `{ url }` for Facebook/Instagram OAuth. |
+
+TikTok scopes requested by default: `user.info.basic`, `video.publish`.
+
+Meta scopes requested by default: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic`, `instagram_content_publish`.
+
+### OAuth Callbacks
+
+| Method | Path | Success redirect | Invalid state redirect |
+| --- | --- | --- | --- |
+| `GET` | `/auth/tiktok/callback?code=...&state=...` | `https://joinjubily.com/publishing?connected=tiktok` | `https://joinjubily.com/publishing?error=INVALID_CALLBACK_STATE` |
+| `GET` | `/auth/facebook/callback?code=...&state=...` | `https://joinjubily.com/publishing?connected=facebook` | `https://joinjubily.com/publishing?error=INVALID_CALLBACK_STATE` |
+
+Facebook OAuth stores available Pages and connected Instagram Business Accounts in account `metadata.pages` and `metadata.instagramBusinessAccounts`. Frontend should let users select the default Page and/or Instagram Business Account after connection.
+
+### `GET /publishing/accounts`
+
+Returns workspace publishing accounts for `YOUTUBE`, `TIKTOK`, `FACEBOOK`, and `INSTAGRAM`.
+
+Response item shape:
+
+```ts
+{
+  id: string;
+  workspaceId: string;
+  provider: "YOUTUBE" | "TIKTOK" | "FACEBOOK" | "INSTAGRAM";
+  providerAccountId: string;
+  displayName: string;
+  username: string | null;
+  avatarUrl: string | null;
+  expiresAt: string | null;
+  scopes: string[];
+  selectedPageId: string | null;
+  selectedInstagramBusinessAccountId: string | null;
+  metadata: unknown;
+  connectedAt: string;
+  updatedAt: string;
+  disconnectedAt: string | null;
+  status: "CONNECTED" | "DISCONNECTED";
+}
+```
+
+### `PATCH /publishing/accounts/:id/select`
+
+Body:
+
+```ts
+{
+  selectedPageId?: string | null;
+  selectedInstagramBusinessAccountId?: string | null;
+}
+```
+
+Use this after Facebook OAuth to choose the default Facebook Page or Instagram Business Account. Access is workspace-scoped.
+
+### `POST /publishing/accounts/:id/disconnect`
+
+Disconnects/deactivates the publishing account, attempts provider revocation when supported, and keeps publish history. The returned account has `status: "DISCONNECTED"`.
+
+### Publish Targets
+
+`POST /automation/videos/:id/publish` accepts an optional body:
+
+```ts
+{
+  target?: "YOUTUBE" | "TIKTOK" | "FACEBOOK" | "INSTAGRAM";
+}
+```
+
+Omitted `target` defaults to `YOUTUBE`, preserving the existing YouTube flow.
+
+Publishing payloads support `videoUrl` or `mediaAssetId`, `title`, `description`/`caption`, `tags`, provider privacy/status where supported, `scheduledAt` where supported, and affiliate link/disclosure text in caption/description.
+
+Current provider limitations:
+
+- TikTok connection works, but publishing returns: `TikTok publishing is not enabled yet. App review approval is required.`
+- Facebook/Instagram connection works, but publishing returns: `Meta publishing is not enabled yet. App review approval is required.`
+- YouTube publishing continues to use the existing workspace YouTube OAuth and upload pipeline.
+
+### App Review / Data Handling Notes
+
+- Provider tokens are encrypted with `SETTINGS_MASTER_KEY_BASE64`.
+- Tokens, secrets, auth headers, and raw provider errors are never logged or returned.
+- Users revoke access in Jubily via `POST /publishing/accounts/:id/disconnect`; provider-side revocation is best-effort where supported.
+- Account disconnect sets `disconnectedAt` and keeps audit logs and publish history.
+- Data deletion should remove/deactivate connected account rows and associated encrypted tokens while preserving legally required audit and billing records according to Jubily retention policy.
 
 ## Customer Product / Offer API
 

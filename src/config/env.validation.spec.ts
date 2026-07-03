@@ -20,8 +20,7 @@ describe('validateEnv', () => {
         FRONTEND_URL: 'https://joinjubily.com',
         API_URL: 'https://api.example.com',
         PUBLIC_API_BASE_URL: 'http://localhost:5000',
-        YOUTUBE_ADMIN_REDIRECT_URI: 'https://api.example.com/admin/auth/youtube/callback',
-        YOUTUBE_CUSTOMER_REDIRECT_URI: 'https://api.example.com/workspaces/youtube/callback',
+        YOUTUBE_REDIRECT_URI: 'https://api.joinjubily.com/api/auth/youtube/callback',
         YOUTUBE_CLIENT_ID: 'client',
         YOUTUBE_CLIENT_SECRET: 'secret',
         OPENAI_API_KEY: 'openai',
@@ -31,7 +30,7 @@ describe('validateEnv', () => {
     ).toThrow('PUBLIC_API_BASE_URL must not use a local host in production');
   });
 
-  it('requires split YouTube redirect URIs in production', () => {
+  it('requires global YouTube OAuth config in production when publishing is enabled', () => {
     expect(() =>
       validateEnv({
         NODE_ENV: 'production',
@@ -42,7 +41,6 @@ describe('validateEnv', () => {
         FRONTEND_URL: 'https://joinjubily.com',
         API_URL: 'https://api.example.com',
         PUBLIC_API_BASE_URL: 'https://api.example.com',
-        YOUTUBE_REDIRECT: 'https://api.example.com/auth/youtube/callback',
         YOUTUBE_CLIENT_ID: 'client',
         YOUTUBE_CLIENT_SECRET: 'secret',
         OPENAI_API_KEY: 'openai',
@@ -52,7 +50,7 @@ describe('validateEnv', () => {
         EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
         SUPPORT_EMAIL: 'info@joinjubily.com',
       }),
-    ).toThrow('YOUTUBE_ADMIN_REDIRECT_URI is required');
+    ).toThrow('YOUTUBE_REDIRECT_URI is required');
 
     expect(() =>
       validateEnv({
@@ -64,8 +62,7 @@ describe('validateEnv', () => {
         FRONTEND_URL: 'https://joinjubily.com',
         API_URL: 'https://api.example.com',
         PUBLIC_API_BASE_URL: 'https://api.example.com',
-        YOUTUBE_ADMIN_REDIRECT_URI: 'https://api.example.com/admin/auth/youtube/callback',
-        YOUTUBE_CUSTOMER_REDIRECT_URI: 'https://api.example.com/workspaces/youtube/callback',
+        YOUTUBE_REDIRECT_URI: 'https://api.joinjubily.com/api/auth/youtube/callback',
         YOUTUBE_CLIENT_ID: 'client',
         YOUTUBE_CLIENT_SECRET: 'secret',
         OPENAI_API_KEY: 'openai',
@@ -74,6 +71,49 @@ describe('validateEnv', () => {
         EMAIL_PROVIDER: 'log',
         EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
         SUPPORT_EMAIL: 'info@joinjubily.com',
+      }),
+    ).not.toThrow();
+  });
+
+  it('does not require YouTube OAuth config in production when publishing is disabled', () => {
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'production',
+        JWT_SECRET: strongSecret,
+        DATABASE_URL: 'postgresql://user:pass@db/app',
+        ADMIN_EMAILS: 'admin@example.com',
+        SETTINGS_MASTER_KEY_BASE64: key,
+        FRONTEND_URL: 'https://joinjubily.com',
+        API_URL: 'https://api.example.com',
+        PUBLIC_API_BASE_URL: 'https://api.example.com',
+        YOUTUBE_PUBLISHING_ENABLED: 'false',
+        OPENAI_API_KEY: 'openai',
+        SHOTSTACK_API_KEY: 'shotstack',
+        SHOTSTACK_OWNER_ID: 'owner',
+        EMAIL_PROVIDER: 'log',
+        EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
+        SUPPORT_EMAIL: 'info@joinjubily.com',
+      }),
+    ).not.toThrow();
+  });
+
+  it('requires YouTube OAuth config outside production when publishing is explicitly enabled', () => {
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'development',
+        JWT_SECRET: strongSecret,
+        YOUTUBE_PUBLISHING_ENABLED: 'true',
+      }),
+    ).toThrow('YOUTUBE_CLIENT_ID is required');
+
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'development',
+        JWT_SECRET: strongSecret,
+        YOUTUBE_PUBLISHING_ENABLED: 'true',
+        YOUTUBE_CLIENT_ID: 'client',
+        YOUTUBE_CLIENT_SECRET: 'secret',
+        YOUTUBE_REDIRECT_URI: 'http://localhost:3000/api/auth/youtube/callback',
       }),
     ).not.toThrow();
   });

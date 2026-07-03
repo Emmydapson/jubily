@@ -13,6 +13,8 @@ import { SettingsService } from '../../settings/settings.service';
 import { BillingService } from '../../billing/billing.service';
 import { AuditService } from '../../audit/audit.service';
 import { safeErrorMessage } from '../../common/safe-metadata';
+import { SocialAccountsService } from '../../publishing/social-accounts.service';
+import { ProviderPublishingError } from '../../publishing/social-publishing.types';
 
 @Injectable()
 export class PublishWorker implements OnModuleInit {
@@ -35,6 +37,7 @@ export class PublishWorker implements OnModuleInit {
     private settingsService: SettingsService,
     private billing: BillingService,
     private audit: AuditService,
+    private socialAccounts: SocialAccountsService,
   ) {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -519,6 +522,7 @@ ${hashtags.join(' ')}`.slice(0, 4500),
           offerId: true,
           youtubeUrl: true,
           published: true,
+          publishTarget: true,
           status: true,
           createdAt: true,
           scriptId: true,
@@ -590,6 +594,37 @@ ${hashtags.join(' ')}`.slice(0, 4500),
       }
       const stableUrl = await this.ensureStableUrl(fullJob);
       this.logger.log(`Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
+
+      if (fullJob.publishTarget !== 'YOUTUBE') {
+        try {
+          await this.socialAccounts.publish({
+            workspaceId: fullJob.workspaceId || '',
+            provider: fullJob.publishTarget,
+            videoUrl: stableUrl,
+            title: videoTitle,
+            caption: baseDesc,
+            description: baseDesc,
+            tags,
+          });
+        } catch (error) {
+          const message = error instanceof ProviderPublishingError ? error.message : safeErrorMessage(error);
+          await this.releaseClaim(job.id, {
+            attempts: { increment: 1 },
+            error: message,
+            status: 'FAILED_PUBLISH',
+          });
+          await this.monitoring.warn({
+            stage: 'PUBLISH',
+            status: 'PROVIDER_NOT_ENABLED',
+            message,
+            jobId: job.id,
+            offerId: fullJob.offerId ?? null,
+            scriptId: fullJob.scriptId,
+            provider: String(fullJob.publishTarget).toLowerCase(),
+          });
+          return;
+        }
+      }
       await this.monitoring.info({
         stage: 'PUBLISH',
         status: 'STARTED',

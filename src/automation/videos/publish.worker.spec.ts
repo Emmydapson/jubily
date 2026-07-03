@@ -41,6 +41,7 @@ describe('PublishWorker', () => {
     offerId: 'offer-1',
     youtubeUrl: null,
     published: false,
+    publishTarget: 'YOUTUBE',
     status: 'COMPLETED',
     createdAt: job.createdAt,
     scriptId: 'script-1',
@@ -103,6 +104,7 @@ describe('PublishWorker', () => {
       { getSettings: jest.fn() } as never,
       billing as never,
       audit as never,
+      { publish: jest.fn() } as never,
     );
   });
 

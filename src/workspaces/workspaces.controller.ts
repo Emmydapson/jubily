@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -18,7 +19,7 @@ import type { Response } from 'express';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
-import { YoutubeService } from '../common/youtube.service';
+import { YoutubeOAuthError, YoutubeService } from '../common/youtube.service';
 import { ActiveWorkspace } from './workspace.decorator';
 import { WorkspaceRoles } from './workspace-roles.decorator';
 import { WorkspaceGuard } from './workspace.guard';
@@ -39,6 +40,20 @@ export class WorkspacesController {
     private readonly youtube: YoutubeService,
     private readonly oauthStates: OAuthStateService,
   ) {}
+
+  private frontendYoutubeUrl(params: Record<string, string>) {
+    const base = String(process.env.FRONTEND_URL || 'https://joinjubily.com').replace(/\/+$/, '');
+    const url = new URL(`${base}/youtube`);
+    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    return url.toString();
+  }
+
+  private asYoutubeBadRequest(error: unknown) {
+    if (error instanceof YoutubeOAuthError) {
+      return new BadRequestException({ error: error.code, message: error.message });
+    }
+    throw error;
+  }
 
   @Post()
   @ApiOperation({ summary: 'Create a workspace for the current SaaS user' })
@@ -96,13 +111,23 @@ export class WorkspacesController {
     @ActiveWorkspace() workspace: { id: string },
   ) {
     if (!req.user?.userId) throw new UnauthorizedException('SaaS user token required');
+    if (!workspace?.id) {
+      throw new BadRequestException({
+        error: 'MISSING_WORKSPACE',
+        message: 'Workspace context is required for YouTube OAuth.',
+      });
+    }
     const state = await this.oauthStates.create({
       purpose: 'workspace_youtube',
       workspaceId: workspace.id,
       userId: req.user.userId,
       ttlMs: this.youtubeOAuthStateTtlMs,
     });
-    return { url: String(this.youtube.getCustomerAuthUrl(state)) };
+    try {
+      return { url: String(this.youtube.getCustomerAuthUrl(state)) };
+    } catch (error: unknown) {
+      throw this.asYoutubeBadRequest(error);
+    }
   }
 
   @Delete(':workspaceId/youtube')
@@ -123,13 +148,22 @@ export class WorkspacesController {
     @Query('code') code?: string,
     @Query('state') state?: string,
   ) {
-    if (!code) throw new UnauthorizedException('Missing OAuth code');
+    if (!code) return res.redirect(this.frontendYoutubeUrl({ error: 'TOKEN_EXCHANGE_FAILED' }));
     const pending = await this.oauthStates.consume('workspace_youtube', state);
-    if (!pending?.workspaceId || !pending.userId) throw new UnauthorizedException('Invalid OAuth state');
-    await this.workspaces.requireMembership(pending.workspaceId, pending.userId, ['OWNER', 'ADMIN']);
-    const channel = await this.youtube.handleWorkspaceAuthCallback(pending.workspaceId, code);
-    await this.workspaces.recordYoutubeConnected(pending.workspaceId, pending.userId, channel);
-    return res.status(200).send('YouTube connected. You can close this tab.');
+    if (!pending?.workspaceId || !pending.userId) {
+      return res.redirect(this.frontendYoutubeUrl({ error: 'INVALID_CALLBACK_STATE' }));
+    }
+    try {
+      await this.workspaces.requireMembership(pending.workspaceId, pending.userId, ['OWNER', 'ADMIN']);
+      const channel = await this.youtube.handleWorkspaceAuthCallback(pending.workspaceId, code, pending.userId);
+      await this.workspaces.recordYoutubeConnected(pending.workspaceId, pending.userId, channel);
+      return res.redirect(this.frontendYoutubeUrl({ connected: 'true' }));
+    } catch (error: unknown) {
+      if (error instanceof YoutubeOAuthError) {
+        return res.redirect(this.frontendYoutubeUrl({ error: error.code }));
+      }
+      throw error;
+    }
   }
 
   @Get(':workspaceId')

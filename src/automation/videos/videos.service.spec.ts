@@ -12,6 +12,7 @@ describe('VideosService quality gate', () => {
   let billing: { consumeVideoGeneration: jest.Mock; consumePublish: jest.Mock; incrementUsage: jest.Mock };
   let audit: { record: jest.Mock };
   let youtube: { getWorkspaceChannelDiagnostics: jest.Mock };
+  let socialAccounts: { listAccounts: jest.Mock; publish: jest.Mock };
   let service: VideosService;
 
   beforeEach(() => {
@@ -34,7 +35,11 @@ describe('VideosService quality gate', () => {
     };
     audit = { record: jest.fn().mockResolvedValue(null) };
     youtube = { getWorkspaceChannelDiagnostics: jest.fn().mockResolvedValue({ connected: true }) };
-    service = new VideosService(prisma as never, shotstack as never, billing as never, audit as never, youtube as never);
+    socialAccounts = {
+      listAccounts: jest.fn().mockResolvedValue([{ provider: 'TIKTOK', status: 'CONNECTED' }]),
+      publish: jest.fn().mockRejectedValue(new Error('TikTok publishing is not enabled yet. App review approval is required.')),
+    };
+    service = new VideosService(prisma as never, shotstack as never, billing as never, audit as never, youtube as never, socialAccounts as never);
   });
 
   it('blocks rejected scripts before creating an inline render job', async () => {
@@ -526,7 +531,7 @@ describe('VideosService quality gate', () => {
         renderId: { not: null },
         workerStage: null,
       },
-      data: { error: null, workerLockedAt: null, workerLockedBy: null, workerStage: 'PUBLISH_QUEUED' },
+      data: { error: null, publishTarget: 'YOUTUBE', workerLockedAt: null, workerLockedBy: null, workerStage: 'PUBLISH_QUEUED' },
     });
   });
 });

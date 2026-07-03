@@ -14,6 +14,8 @@ import { BillingService } from '../../billing/billing.service';
 import { AuditService } from '../../audit/audit.service';
 import { safeErrorMessage } from '../../common/safe-metadata';
 import { YoutubeService } from '../../common/youtube.service';
+import { SocialAccountsService } from '../../publishing/social-accounts.service';
+import { ProviderPublishingError } from '../../publishing/social-publishing.types';
 
 @Injectable()
 export class VideosService {
@@ -23,6 +25,7 @@ export class VideosService {
     private readonly billing: BillingService,
     private readonly audit: AuditService,
     private readonly youtube: YoutubeService,
+    private readonly socialAccounts: SocialAccountsService,
   ) {}
 
   private publicApiBaseUrl() {
@@ -374,7 +377,8 @@ export class VideosService {
     return this.getVideoJobSummary(jobId, workspaceId);
   }
 
-  async publishVideo(jobId: string, workspaceId?: string | null) {
+  async publishVideo(jobId: string, workspaceId?: string | null, input: { target?: 'YOUTUBE' | 'TIKTOK' | 'FACEBOOK' | 'INSTAGRAM' } = {}) {
+    const target = input.target ?? 'YOUTUBE';
     const job = await this.prisma.videoJob.findUnique({
       where: { id: jobId },
       include: {
@@ -390,8 +394,28 @@ export class VideosService {
     }
     if (job.published) return { queued: false, status: 'PUBLISHED', job: this.presentCustomerJob(job) };
 
-    const youtube = await this.youtube.getWorkspaceChannelDiagnostics(job.workspaceId);
-    if (!youtube.connected) throw new ConflictException('Connect YouTube before publishing');
+    if (target === 'YOUTUBE') {
+      const youtube = await this.youtube.getWorkspaceChannelDiagnostics(job.workspaceId);
+      if (!youtube.connected) throw new ConflictException('Connect YouTube before publishing');
+    } else {
+      const accounts = await this.socialAccounts.listAccounts(job.workspaceId);
+      if (!accounts.some((account) => account.provider === target && account.status === 'CONNECTED')) {
+        throw new ConflictException(`Connect ${target.toLowerCase()} before publishing`);
+      }
+      try {
+        await this.socialAccounts.publish({
+          workspaceId: job.workspaceId,
+          provider: target,
+          mediaAssetId: job.id,
+          title: job.script.topic?.title,
+        });
+      } catch (error) {
+        if (error instanceof ProviderPublishingError) {
+          throw new ConflictException({ provider: target, providerMessage: error.message, message: error.message });
+        }
+        throw error;
+      }
+    }
 
     const claimed = await this.prisma.videoJob.updateMany({
       where: {
@@ -404,6 +428,7 @@ export class VideosService {
       },
       data: {
         error: null,
+        publishTarget: target,
         workerLockedAt: null,
         workerLockedBy: null,
         workerStage: 'PUBLISH_QUEUED',

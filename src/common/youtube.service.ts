@@ -73,6 +73,21 @@ type ConnectedYoutubeChannel = {
   } | null;
 };
 
+export type YoutubeOAuthErrorCode =
+  | 'YOUTUBE_OAUTH_NOT_CONFIGURED'
+  | 'MISSING_WORKSPACE'
+  | 'INVALID_CALLBACK_STATE'
+  | 'TOKEN_EXCHANGE_FAILED';
+
+export class YoutubeOAuthError extends Error {
+  constructor(
+    public readonly code: YoutubeOAuthErrorCode,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 @Injectable()
 export class YoutubeService {
   private readonly logger = new Logger(YoutubeService.name);
@@ -80,24 +95,43 @@ export class YoutubeService {
 
   constructor(private prisma: PrismaService) {}
 
+  private youtubePublishingEnabled() {
+    return process.env.YOUTUBE_PUBLISHING_ENABLED !== 'false';
+  }
+
   private youtubeRedirectUri(kind: 'admin' | 'customer') {
     const specific =
       kind === 'admin'
         ? process.env.YOUTUBE_ADMIN_REDIRECT_URI
         : process.env.YOUTUBE_CUSTOMER_REDIRECT_URI;
+    const globalDefault = kind === 'customer' ? process.env.YOUTUBE_REDIRECT_URI : undefined;
     const legacy = process.env.NODE_ENV === 'production' ? '' : process.env.YOUTUBE_REDIRECT;
-    const redirectUri = String(specific || legacy || '').trim();
+    const redirectUri = String(
+      kind === 'customer'
+        ? globalDefault || specific || legacy
+        : specific || legacy,
+    ).trim();
     if (!redirectUri) {
-      throw new Error(
+      throw new YoutubeOAuthError(
+        'YOUTUBE_OAUTH_NOT_CONFIGURED',
         kind === 'admin'
-          ? 'YOUTUBE_ADMIN_REDIRECT_URI is required'
-          : 'YOUTUBE_CUSTOMER_REDIRECT_URI is required',
+          ? 'YouTube OAuth is not configured. Set YOUTUBE_ADMIN_REDIRECT_URI for admin OAuth.'
+          : 'YouTube OAuth is not configured. Set YOUTUBE_REDIRECT_URI or YOUTUBE_CUSTOMER_REDIRECT_URI.',
       );
     }
     return redirectUri;
   }
 
   private createOAuthClient(persistWorkspaceId?: string, redirectKind: 'admin' | 'customer' = persistWorkspaceId ? 'customer' : 'admin') {
+    if (!this.youtubePublishingEnabled()) {
+      throw new YoutubeOAuthError('YOUTUBE_OAUTH_NOT_CONFIGURED', 'YouTube publishing is disabled.');
+    }
+    if (!process.env.YOUTUBE_CLIENT_ID || !process.env.YOUTUBE_CLIENT_SECRET) {
+      throw new YoutubeOAuthError(
+        'YOUTUBE_OAUTH_NOT_CONFIGURED',
+        'YouTube OAuth is not configured. Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET.',
+      );
+    }
     const oauth = new google.auth.OAuth2(
       process.env.YOUTUBE_CLIENT_ID,
       process.env.YOUTUBE_CLIENT_SECRET,
@@ -268,6 +302,7 @@ export class YoutubeService {
     workspaceId: string,
     tokens: YoutubeTokens,
     channel?: ConnectedYoutubeChannel,
+    userId?: string | null,
   ) {
     if (!tokens.refresh_token && !tokens.access_token) return;
     const { encrypted, last4 } = encryptString(JSON.stringify(tokens));
@@ -293,6 +328,56 @@ export class YoutubeService {
         scope: tokens.scope ?? null,
       },
     });
+
+    if (userId && channel?.channelId) {
+      const socialAccess = encryptString(tokens.access_token || tokens.refresh_token || 'youtube-oauth-token');
+      const socialRefresh = tokens.refresh_token ? encryptString(tokens.refresh_token) : null;
+      await this.prisma.socialAccount.upsert({
+        where: {
+          workspaceId_provider_providerAccountId: {
+            workspaceId,
+            provider: 'YOUTUBE',
+            providerAccountId: channel.channelId,
+          },
+        },
+        update: {
+          userId,
+          displayName: channel.title || 'YouTube channel',
+          username: channel.customUrl ?? null,
+          accessTokenEncrypted: socialAccess.encrypted,
+          accessTokenLast4: socialAccess.last4,
+          refreshTokenEncrypted: socialRefresh?.encrypted ?? null,
+          refreshTokenLast4: socialRefresh?.last4 ?? null,
+          expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+          scopes: tokens.scope ? tokens.scope.split(/\s+/).filter(Boolean) : [],
+          metadata: {
+            channelCustomUrl: channel.customUrl ?? null,
+            statistics: channel.statistics ?? null,
+          },
+          disconnectedAt: null,
+          connectedAt: new Date(),
+        },
+        create: {
+          workspaceId,
+          userId,
+          provider: 'YOUTUBE',
+          providerAccountId: channel.channelId,
+          displayName: channel.title || 'YouTube channel',
+          username: channel.customUrl ?? null,
+          avatarUrl: channel.thumbnailUrl ?? null,
+          accessTokenEncrypted: socialAccess.encrypted,
+          accessTokenLast4: socialAccess.last4,
+          refreshTokenEncrypted: socialRefresh?.encrypted ?? null,
+          refreshTokenLast4: socialRefresh?.last4 ?? null,
+          expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+          scopes: tokens.scope ? tokens.scope.split(/\s+/).filter(Boolean) : [],
+          metadata: {
+            channelCustomUrl: channel.customUrl ?? null,
+            statistics: channel.statistics ?? null,
+          },
+        },
+      });
+    }
   }
 
   private async loadGlobalTokens(): Promise<YoutubeTokens | null> {
@@ -572,11 +657,20 @@ export class YoutubeService {
     }
   }
 
-  async handleWorkspaceAuthCallback(workspaceId: string, code: string) {
+  async handleWorkspaceAuthCallback(workspaceId: string, code: string, userId?: string | null) {
+    if (!workspaceId) {
+      throw new YoutubeOAuthError('MISSING_WORKSPACE', 'Workspace context is required for YouTube OAuth.');
+    }
     const oauth = this.createOAuthClient(workspaceId);
-    const { tokens } = await oauth.getToken(code);
+    let tokens: YoutubeTokens;
+    try {
+      const result = await oauth.getToken(code);
+      tokens = result.tokens;
+    } catch {
+      throw new YoutubeOAuthError('TOKEN_EXCHANGE_FAILED', 'YouTube token exchange failed. Please try connecting again.');
+    }
     if (!tokens.refresh_token) {
-      throw new Error('No refresh token received. Try reconnecting YouTube for this workspace.');
+      throw new YoutubeOAuthError('TOKEN_EXCHANGE_FAILED', 'YouTube did not return a refresh token. Please reconnect YouTube.');
     }
 
     const merged: YoutubeTokens = {
@@ -588,7 +682,7 @@ export class YoutubeService {
 
     oauth.setCredentials(this.googleCredentials(merged));
     const channel = await this.fetchConnectedChannel(oauth);
-    await this.persistWorkspaceTokens(workspaceId, merged, channel);
+    await this.persistWorkspaceTokens(workspaceId, merged, channel, userId);
 
     return {
       connected: true,
@@ -602,6 +696,10 @@ export class YoutubeService {
 
   async disconnectWorkspace(workspaceId: string) {
     await this.prisma.workspaceYoutubeConnection.deleteMany({ where: { workspaceId } });
+    await this.prisma.socialAccount.updateMany({
+      where: { workspaceId, provider: 'YOUTUBE', disconnectedAt: null },
+      data: { disconnectedAt: new Date() },
+    });
     return { connected: false };
   }
 

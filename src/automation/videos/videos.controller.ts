@@ -57,8 +57,12 @@ export class VideosController {
   @WorkspaceRoles('OWNER', 'ADMIN')
   @ApiOperation({ summary: 'Queue a completed video for workspace YouTube publishing', description: 'Requires a valid workspace membership, x-workspace-id, a completed render, and a connected workspace YouTube channel.' })
   @ApiParam({ name: 'id', format: 'uuid', example: '4f4b01d4-1d0b-43fd-84bc-ecf162b3f05c' })
-  publish(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
-    return this.videosService.publishVideo(id, workspace?.id);
+  publish(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { target?: 'YOUTUBE' | 'TIKTOK' | 'FACEBOOK' | 'INSTAGRAM' } = {},
+    @ActiveWorkspace() workspace?: { id: string } | null,
+  ) {
+    return this.videosService.publishVideo(id, workspace?.id, body);
   }
 
   @Get(':id/assets')

@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type OAuthStatePurpose = 'admin_youtube' | 'workspace_youtube';
+export type OAuthStatePurpose =
+  | 'admin_youtube'
+  | 'workspace_youtube'
+  | 'workspace_tiktok'
+  | 'workspace_facebook';
 
 @Injectable()
 export class OAuthStateService {

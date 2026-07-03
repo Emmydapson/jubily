@@ -18,6 +18,7 @@ import { WorkspacesModule } from '../../workspaces/workspaces.module';
 import { BillingModule } from '../../billing/billing.module';
 import { AuditModule } from '../../audit/audit.module';
 import { AdminGuard } from '../../auth/admin.guard';
+import { PublishingModule } from '../../publishing/publishing.module';
 
 @Module({
   providers: [
@@ -35,6 +36,6 @@ import { AdminGuard } from '../../auth/admin.guard';
   ],
   controllers: [VideosController, AdminVideosController],
   exports: [VideosService, YoutubeService,],
-  imports: [MonitoringModule, SettingsModule, WorkspacesModule, BillingModule, AuditModule],
+  imports: [MonitoringModule, SettingsModule, WorkspacesModule, BillingModule, AuditModule, PublishingModule],
 })
 export class VideosModule {}

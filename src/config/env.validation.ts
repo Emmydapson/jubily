@@ -109,6 +109,30 @@ function isEnabled(env: Record<string, unknown>, name: string) {
   return String(env[name] || 'false').toLowerCase() === 'true';
 }
 
+function isDisabled(env: Record<string, unknown>, name: string) {
+  return String(env[name] || '').toLowerCase() === 'false';
+}
+
+function requireYoutubeOAuth(env: Record<string, unknown>, options: { publicHost?: boolean } = {}) {
+  requireValue(env, 'YOUTUBE_CLIENT_ID');
+  requireValue(env, 'YOUTUBE_CLIENT_SECRET');
+  const redirect = String(env.YOUTUBE_REDIRECT_URI || env.YOUTUBE_CUSTOMER_REDIRECT_URI || '').trim();
+  if (!redirect) throw new Error('YOUTUBE_REDIRECT_URI is required');
+  assertUrl({ YOUTUBE_REDIRECT_URI: redirect }, 'YOUTUBE_REDIRECT_URI', options);
+}
+
+function requireTikTokOAuth(env: Record<string, unknown>, options: { publicHost?: boolean } = {}) {
+  requireValue(env, 'TIKTOK_CLIENT_KEY');
+  requireValue(env, 'TIKTOK_CLIENT_SECRET');
+  assertUrl(env, 'TIKTOK_REDIRECT_URI', options);
+}
+
+function requireFacebookOAuth(env: Record<string, unknown>, options: { publicHost?: boolean } = {}) {
+  requireValue(env, 'FACEBOOK_APP_ID');
+  requireValue(env, 'FACEBOOK_APP_SECRET');
+  assertUrl(env, 'FACEBOOK_REDIRECT_URI', options);
+}
+
 function requireProviderPricing(env: Record<string, unknown>, provider: 'STRIPE' | 'PAYSTACK') {
   const suffixes = ['PRO_MONTHLY', 'PRO_YEARLY', 'PREMIUM_MONTHLY', 'PREMIUM_YEARLY'];
   const tail = provider === 'STRIPE' ? 'PRICE_ID' : 'PLAN_CODE';
@@ -138,11 +162,24 @@ export function validateEnv(config: Record<string, unknown>) {
     assertUrl(env, 'PUBLIC_API_BASE_URL', { publicHost: true });
   }
 
+  const youtubePublishingEnabled =
+    isProduction
+      ? !isDisabled(env, 'YOUTUBE_PUBLISHING_ENABLED')
+      : isEnabled(env, 'YOUTUBE_PUBLISHING_ENABLED');
+
+  if (youtubePublishingEnabled) {
+    requireYoutubeOAuth(env, { publicHost: isHosted });
+  }
+
+  if (isEnabled(env, 'TIKTOK_OAUTH_ENABLED') || env.TIKTOK_CLIENT_KEY || env.TIKTOK_CLIENT_SECRET || env.TIKTOK_REDIRECT_URI) {
+    requireTikTokOAuth(env, { publicHost: isHosted });
+  }
+
+  if (isEnabled(env, 'FACEBOOK_OAUTH_ENABLED') || env.FACEBOOK_APP_ID || env.FACEBOOK_APP_SECRET || env.FACEBOOK_REDIRECT_URI) {
+    requireFacebookOAuth(env, { publicHost: isHosted });
+  }
+
   if (isProduction) {
-    assertUrl(env, 'YOUTUBE_ADMIN_REDIRECT_URI', { publicHost: true });
-    assertUrl(env, 'YOUTUBE_CUSTOMER_REDIRECT_URI', { publicHost: true });
-    requireValue(env, 'YOUTUBE_CLIENT_ID');
-    requireValue(env, 'YOUTUBE_CLIENT_SECRET');
     requireValue(env, 'OPENAI_API_KEY');
     requireValue(env, 'SHOTSTACK_API_KEY');
     requireValue(env, 'SHOTSTACK_OWNER_ID');
@@ -175,8 +212,11 @@ export function validateEnv(config: Record<string, unknown>) {
   if (env.APP_WEB_URL) assertUrl(env, 'APP_WEB_URL', { publicHost: isHosted });
   if (env.PUBLIC_APP_URL) assertUrl(env, 'PUBLIC_APP_URL', { publicHost: isHosted });
   if (env.YOUTUBE_REDIRECT) assertUrl(env, 'YOUTUBE_REDIRECT', { publicHost: isHosted });
+  if (env.YOUTUBE_REDIRECT_URI) assertUrl(env, 'YOUTUBE_REDIRECT_URI', { publicHost: isHosted });
   if (env.YOUTUBE_ADMIN_REDIRECT_URI) assertUrl(env, 'YOUTUBE_ADMIN_REDIRECT_URI', { publicHost: isHosted });
   if (env.YOUTUBE_CUSTOMER_REDIRECT_URI) assertUrl(env, 'YOUTUBE_CUSTOMER_REDIRECT_URI', { publicHost: isHosted });
+  if (env.TIKTOK_REDIRECT_URI) assertUrl(env, 'TIKTOK_REDIRECT_URI', { publicHost: isHosted });
+  if (env.FACEBOOK_REDIRECT_URI) assertUrl(env, 'FACEBOOK_REDIRECT_URI', { publicHost: isHosted });
 
   return env;
 }

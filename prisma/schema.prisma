@@ -105,36 +105,39 @@ enum RunSlot {
 }
 
 model VideoJob {
-  id                        String    @id @default(uuid())
+  id                        String             @id @default(uuid())
   workspaceId               String?
   scriptId                  String
   offerId                   String? // ✅ NEW (store product used for the video)
-  status                    String    @default("PENDING")
+  status                    String             @default("PENDING")
   provider                  String? // 'shotstack' | 'replicate'
   videoUrl                  String?
   youtubeVideoId            String?
+  publishTarget             PublishingProvider @default(YOUTUBE)
+  socialPostId              String?
+  socialPostUrl             String?
   publishStage              String? // optional: UPLOADED | METADATA_DONE | CAPTIONS_DONE
   renderId                  String?
   error                     String?
   youtubeUrl                String?
   slot                      RunSlot
   scheduledFor              DateTime
-  published                 Boolean   @default(false)
-  attempts                  Int       @default(0)
-  createdAt                 DateTime  @default(now())
+  published                 Boolean            @default(false)
+  attempts                  Int                @default(0)
+  createdAt                 DateTime           @default(now())
   videoSrt                  String?
   workerLockedAt            DateTime?
   workerLockedBy            String?
   workerStage               String?
   thumbnailPrompt           String?
   thumbnailImageUrl         String?
-  thumbnailStatus           String    @default("PENDING")
+  thumbnailStatus           String             @default("PENDING")
   thumbnailError            String?
   thumbnailGeneratedAt      DateTime?
   durationSeconds           Float?
   sceneCount                Int?
-  hasBurnedSubtitles        Boolean   @default(false)
-  hasTrackingLink           Boolean   @default(false)
+  hasBurnedSubtitles        Boolean            @default(false)
+  hasTrackingLink           Boolean            @default(false)
   shotstackPayloadDebugPath String?
 
   script    Script     @relation(fields: [scriptId], references: [id])
@@ -152,6 +155,7 @@ model VideoJob {
   @@index([scriptId])
   @@index([offerId])
   @@index([youtubeVideoId])
+  @@index([publishTarget, published])
   @@index([workerStage, workerLockedAt])
 }
 
@@ -227,7 +231,17 @@ enum IntegrationProvider {
   DIGISTORE
   CLICKBANK
   YOUTUBE
+  TIKTOK
+  FACEBOOK
+  INSTAGRAM
   SHOTSTACK
+}
+
+enum PublishingProvider {
+  YOUTUBE
+  TIKTOK
+  FACEBOOK
+  INSTAGRAM
 }
 
 enum PipelineStage {
@@ -344,6 +358,7 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   sessions                UserSession[]
   promoAttributions       PromoAttribution[]
+  socialAccounts          SocialAccount[]
 }
 
 model EmailVerificationToken {
@@ -428,6 +443,38 @@ model Workspace {
   pipelineEvents     PipelineEvent[]
   auditLogs          AuditLog[]
   promoAttributions  PromoAttribution[]
+  socialAccounts     SocialAccount[]
+}
+
+model SocialAccount {
+  id                                 String             @id @default(uuid())
+  workspaceId                        String
+  userId                             String
+  provider                           PublishingProvider
+  providerAccountId                  String
+  displayName                        String
+  username                           String?
+  avatarUrl                          String?
+  accessTokenEncrypted               String
+  accessTokenLast4                   String
+  refreshTokenEncrypted              String?
+  refreshTokenLast4                  String?
+  expiresAt                          DateTime?
+  scopes                             String[]           @default([])
+  selectedPageId                     String?
+  selectedInstagramBusinessAccountId String?
+  metadata                           Json?
+  connectedAt                        DateTime           @default(now())
+  updatedAt                          DateTime           @updatedAt
+  disconnectedAt                     DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider, providerAccountId])
+  @@index([workspaceId, provider])
+  @@index([userId])
+  @@index([disconnectedAt])
 }
 
 model WorkspaceMember {
@@ -674,6 +721,9 @@ enum AuditAction {
   WORKSPACE_CREATED
   YOUTUBE_CONNECTED
   YOUTUBE_DISCONNECTED
+  SOCIAL_ACCOUNT_CONNECTED
+  SOCIAL_ACCOUNT_DISCONNECTED
+  SOCIAL_ACCOUNT_SELECTED
   VIDEO_GENERATED
   VIDEO_RENDERED
   VIDEO_PUBLISHED

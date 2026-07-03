@@ -97,6 +97,27 @@ Offer seed shape:
 
 Supported networks are `digistore24` and `clickbank`. Supported niches are `sleep`, `weight-loss`, `energy`, `stress`, `gut-health`, `focus`, `fitness`, `hormones`, `memory`, `mens-health`, `dental-health`, `joint-health`, and `hearing-health`.
 
+## YouTube OAuth
+
+Production workspace YouTube connect uses global Google OAuth credentials. `YOUTUBE_REDIRECT_URI` is the primary workspace callback URL; `YOUTUBE_CUSTOMER_REDIRECT_URI` is only a legacy fallback when the global redirect is absent.
+
+Required when YouTube publishing is enabled:
+
+```bash
+YOUTUBE_CLIENT_ID=...
+YOUTUBE_CLIENT_SECRET=...
+YOUTUBE_REDIRECT_URI=https://api.joinjubily.com/api/auth/youtube/callback
+YOUTUBE_PUBLISHING_ENABLED=true
+```
+
+Add this exact authorized redirect URI in Google Cloud Console:
+
+```text
+https://api.joinjubily.com/api/auth/youtube/callback
+```
+
+The workspace connect endpoint is `POST /api/workspaces/:workspaceId/youtube/connect`. Google redirects back to the API callback, and the backend redirects the browser to `https://joinjubily.com/youtube?connected=true`.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
