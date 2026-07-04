@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RegisterVideoDto } from './dto/register-video.dto';
 import { extractScenes } from '../scene.parser';
 import { ShotstackService } from './shotstack.service';
+import { ShotstackProviderError } from './shotstack.service';
 import { randomUUID } from 'crypto';
 import { ListVideosQueryDto } from './dto/list-videos-query.dto';
 import { ApiListResponse } from '../../common/api-response';
@@ -196,7 +197,10 @@ export class VideosService {
     try {
       return await this.startRenderForJob(job.id, workerId);
     } catch (error: unknown) {
-      const message = safeErrorMessage(error instanceof Error ? error : 'Failed to create render job');
+      const isShotstackProviderError = error instanceof ShotstackProviderError;
+      const message = isShotstackProviderError
+        ? error.publicMessage
+        : safeErrorMessage(error instanceof Error ? error : 'Failed to create render job');
 
       await this.prisma.videoJob.update({
         where: { id: job.id },
@@ -209,6 +213,14 @@ export class VideosService {
           workerStage: null,
         },
       });
+
+      if (isShotstackProviderError) {
+        throw new BadRequestException({
+          message,
+          provider: 'shotstack',
+          providerError: error.safe,
+        });
+      }
 
       throw error;
     }

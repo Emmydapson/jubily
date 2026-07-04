@@ -10,7 +10,17 @@ import * as path from 'path';
 
 type ShotstackValidationIssue = {
   path: string;
-  code: 'CLIP_VOLUME_MOVED' | 'INVALID_EFFECT_REMOVED' | 'NEGATIVE_START_CLAMPED';
+  code:
+    | 'CLIP_VOLUME_MOVED'
+    | 'INVALID_EFFECT_REMOVED'
+    | 'NEGATIVE_START_CLAMPED'
+    | 'UNSUPPORTED_CLIP_PROPERTY_REMOVED'
+    | 'UNSUPPORTED_ASSET_PROPERTY_REMOVED'
+    | 'MISSING_REQUIRED_FIELD'
+    | 'INVALID_ASSET_TYPE'
+    | 'INVALID_CLIP_TIMING'
+    | 'INVALID_TIMELINE'
+    | 'INVALID_OUTPUT';
   value?: unknown;
 };
 
@@ -47,6 +57,88 @@ const VALID_SHOTSTACK_EFFECTS = new Set([
   'slideDownSlow',
   'slideDownFast',
 ]);
+
+const VALID_ASSET_TYPES = new Set(['image', 'video', 'audio', 'html', 'title']);
+const VALID_OUTPUT_FORMATS = new Set(['mp4']);
+const VALID_OUTPUT_RESOLUTIONS = new Set(['preview', 'mobile', 'sd', 'hd', '1080']);
+const VALID_OUTPUT_ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1', '4:5']);
+const VALID_CLIP_POSITION = new Set(['top', 'bottom', 'center', 'left', 'right']);
+const CLIP_ALLOWED_KEYS = new Set([
+  'asset',
+  'start',
+  'length',
+  'position',
+  'offset',
+  'effect',
+  'transition',
+  'filter',
+  'opacity',
+  'transform',
+  'volume',
+]);
+const ASSET_ALLOWED_KEYS: Record<string, Set<string>> = {
+  image: new Set(['type', 'src', 'crop']),
+  video: new Set(['type', 'src', 'trim', 'volume', 'crop']),
+  audio: new Set(['type', 'src', 'trim', 'volume']),
+  html: new Set(['type', 'html', 'css', 'width', 'height', 'background']),
+  title: new Set(['type', 'text', 'style', 'color', 'size', 'background', 'position']),
+};
+
+export type SafeShotstackProviderError = {
+  statusCode: number | null;
+  requestId: string | null;
+  validationMessages: string[];
+};
+
+export class ShotstackProviderError extends Error {
+  constructor(
+    public readonly publicMessage: string,
+    public readonly safe: SafeShotstackProviderError,
+  ) {
+    super(publicMessage);
+  }
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : value == null ? [] : [value];
+}
+
+function collectValidationMessages(payload: any): string[] {
+  const candidates = [
+    payload?.error?.message,
+    payload?.error?.details,
+    payload?.response?.error,
+    payload?.response?.message,
+    payload?.message,
+  ];
+  const messages: string[] = [];
+
+  for (const candidate of candidates.flatMap(asArray)) {
+    if (typeof candidate === 'string' && candidate.trim()) messages.push(candidate.trim());
+    if (candidate && typeof candidate === 'object') {
+      const obj = candidate as Record<string, unknown>;
+      for (const key of ['message', 'detail', 'description', 'error']) {
+        const value = obj[key];
+        if (typeof value === 'string' && value.trim()) messages.push(value.trim());
+      }
+    }
+  }
+
+  return [...new Set(messages)].slice(0, 10);
+}
+
+export function serializeShotstackProviderError(error: unknown): SafeShotstackProviderError {
+  const response = (error as any)?.response;
+  const data = response?.data;
+  const headers = response?.headers || {};
+  return {
+    statusCode: typeof response?.status === 'number' ? response.status : null,
+    requestId:
+      String(headers['x-request-id'] || headers['x-shotstack-request-id'] || data?.request_id || data?.requestId || '').trim() || null,
+    validationMessages: collectValidationMessages(data),
+  };
+}
+
 export function shotstackRenderUrl(baseUrl = process.env.SHOTSTACK_BASE_URL || 'https://api.shotstack.io/edit/v1') {
   const normalized = String(baseUrl || '').trim().replace(/\/+$/, '');
   if (!normalized) return 'https://api.shotstack.io/edit/v1/render';
@@ -85,14 +177,66 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
   const tracks = sanitized?.timeline?.tracks;
 
   if (!Array.isArray(tracks)) {
+    issues.push({
+      path: 'timeline.tracks',
+      code: 'INVALID_TIMELINE',
+      value: tracks,
+    });
     return { payload: sanitized, issues };
   }
 
+  if (tracks.length === 0) {
+    issues.push({
+      path: 'timeline.tracks',
+      code: 'INVALID_TIMELINE',
+      value: tracks,
+    });
+  }
+
+  const output = sanitized?.output;
+  if (!output || typeof output !== 'object') {
+    issues.push({ path: 'output', code: 'INVALID_OUTPUT', value: output });
+  } else {
+    if (!VALID_OUTPUT_FORMATS.has(String(output.format || ''))) {
+      issues.push({ path: 'output.format', code: 'INVALID_OUTPUT', value: output.format });
+    }
+    if (output.resolution != null && !VALID_OUTPUT_RESOLUTIONS.has(String(output.resolution))) {
+      issues.push({ path: 'output.resolution', code: 'INVALID_OUTPUT', value: output.resolution });
+    }
+    if (output.aspectRatio != null && !VALID_OUTPUT_ASPECT_RATIOS.has(String(output.aspectRatio))) {
+      issues.push({ path: 'output.aspectRatio', code: 'INVALID_OUTPUT', value: output.aspectRatio });
+    }
+  }
+
   tracks.forEach((track: any, trackIndex: number) => {
-    if (!Array.isArray(track?.clips)) return;
+    if (!Array.isArray(track?.clips)) {
+      issues.push({
+        path: `timeline.tracks[${trackIndex}].clips`,
+        code: 'INVALID_TIMELINE',
+        value: track?.clips,
+      });
+      return;
+    }
 
     track.clips.forEach((clip: any, clipIndex: number) => {
       const path = `timeline.tracks[${trackIndex}].clips[${clipIndex}]`;
+      const asset = clip?.asset;
+
+      if (!clip || typeof clip !== 'object') {
+        issues.push({ path, code: 'INVALID_TIMELINE', value: clip });
+        return;
+      }
+
+      for (const key of Object.keys(clip)) {
+        if (!CLIP_ALLOWED_KEYS.has(key)) {
+          issues.push({
+            path: `${path}.${key}`,
+            code: 'UNSUPPORTED_CLIP_PROPERTY_REMOVED',
+            value: clip[key],
+          });
+          delete clip[key];
+        }
+      }
 
       if (typeof clip?.start === 'number' && clip.start < 0) {
         issues.push({
@@ -103,6 +247,14 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
         clip.start = clampStart(clip.start);
       }
 
+      if (typeof clip?.start !== 'number' || !Number.isFinite(clip.start) || typeof clip?.length !== 'number' || !Number.isFinite(clip.length) || clip.length <= 0) {
+        issues.push({
+          path,
+          code: 'INVALID_CLIP_TIMING',
+          value: { start: clip?.start, length: clip?.length },
+        });
+      }
+
       if (clip?.effect && !sanitizeShotstackEffect(clip.effect)) {
         issues.push({
           path: `${path}.effect`,
@@ -110,6 +262,15 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
           value: clip.effect,
         });
         delete clip.effect;
+      }
+
+      if (clip?.position && !VALID_CLIP_POSITION.has(String(clip.position))) {
+        issues.push({
+          path: `${path}.position`,
+          code: 'UNSUPPORTED_CLIP_PROPERTY_REMOVED',
+          value: clip.position,
+        });
+        delete clip.position;
       }
 
       if (Object.prototype.hasOwnProperty.call(clip, 'volume')) {
@@ -123,6 +284,34 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
           code: 'CLIP_VOLUME_MOVED',
           value: volume,
         });
+      }
+
+      if (!asset || typeof asset !== 'object') {
+        issues.push({ path: `${path}.asset`, code: 'MISSING_REQUIRED_FIELD' });
+        return;
+      }
+
+      const assetType = String(asset.type || '');
+      if (!VALID_ASSET_TYPES.has(assetType)) {
+        issues.push({ path: `${path}.asset.type`, code: 'INVALID_ASSET_TYPE', value: asset.type });
+        return;
+      }
+
+      const allowed = ASSET_ALLOWED_KEYS[assetType] ?? new Set(['type']);
+      for (const key of Object.keys(asset)) {
+        if (!allowed.has(key)) {
+          issues.push({
+            path: `${path}.asset.${key}`,
+            code: 'UNSUPPORTED_ASSET_PROPERTY_REMOVED',
+            value: asset[key],
+          });
+          delete asset[key];
+        }
+      }
+
+      const requiredContentField = assetType === 'html' ? 'html' : assetType === 'title' ? 'text' : 'src';
+      if (typeof asset[requiredContentField] !== 'string' || !asset[requiredContentField].trim()) {
+        issues.push({ path: `${path}.asset.${requiredContentField}`, code: 'MISSING_REQUIRED_FIELD' });
       }
     });
   });
@@ -483,7 +672,7 @@ export class ShotstackService {
       // 🎥 BACKGROUND IMAGE
       // ------------------------
       bgClips.push({
-        asset: { type: 'image', src: images[i], fit: 'cover' },
+        asset: { type: 'image', src: images[i] },
         start,
         length,
         position: 'center',
@@ -576,20 +765,45 @@ export class ShotstackService {
         `[ShotstackPayloadValidation] ${JSON.stringify(this.summarizePayloadIssues(validation.issues))}`,
       );
     }
+    const blockingIssues = validation.issues.filter((issue) =>
+      ['MISSING_REQUIRED_FIELD', 'INVALID_ASSET_TYPE', 'INVALID_CLIP_TIMING', 'INVALID_TIMELINE', 'INVALID_OUTPUT'].includes(issue.code),
+    );
+    if (blockingIssues.length > 0) {
+      throw new ShotstackProviderError('Video render failed because the render payload was invalid.', {
+        statusCode: null,
+        requestId: null,
+        validationMessages: blockingIssues.map((issue) => `${issue.code} at ${issue.path}`),
+      });
+    }
     const shotstackPayloadDebugPath = this.maybeSaveDebugPayload(jobId, validation.payload);
 
     this.logger.log(
       `[ShotstackRender] scenes=${renderScenes.length} duration=${Math.ceil(renderEnd)}`,
     );
 
-    const res = await axios.post(shotstackRenderUrl(), validation.payload, {
-      headers: {
-        'x-api-key': this.apiKey(),
-        'x-shotstack-stage': 'true',
-        'Content-Type': 'application/json',
-      },
-      timeout: 60000,
-    });
+    let res;
+    try {
+      res = await axios.post(shotstackRenderUrl(), validation.payload, {
+        headers: {
+          'x-api-key': this.apiKey(),
+          'x-shotstack-stage': 'true',
+          'Content-Type': 'application/json',
+        },
+        timeout: 60000,
+      });
+    } catch (error) {
+      const safe = serializeShotstackProviderError(error);
+      const hasValidationFailure =
+        safe.statusCode === 400 ||
+        safe.validationMessages.some((message) => /validation|unknown property|timeline|asset/i.test(message));
+      const publicMessage = hasValidationFailure
+        ? 'Video render failed because the render payload was invalid.'
+        : 'Video render failed at the render provider.';
+      this.logger.warn(
+        `[ShotstackRenderFailed] status=${safe.statusCode ?? 'unknown'} requestId=${safe.requestId ?? 'none'} validationMessages=${JSON.stringify(safe.validationMessages)}`,
+      );
+      throw new ShotstackProviderError(publicMessage, safe);
+    }
 
     const renderId = res.data?.response?.id;
 

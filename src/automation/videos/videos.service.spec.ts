@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { VideosService } from './videos.service';
+import { ShotstackProviderError } from './shotstack.service';
 
 describe('VideosService quality gate', () => {
   let prisma: {
@@ -182,6 +183,64 @@ describe('VideosService quality gate', () => {
     expect(billing.consumeVideoGeneration).not.toHaveBeenCalled();
     expect(billing.incrementUsage).not.toHaveBeenCalled();
     expect(shotstack.renderVideo).not.toHaveBeenCalled();
+  });
+
+  it('returns a clear frontend error when Shotstack rejects an invalid payload', async () => {
+    prisma.script.findUnique.mockResolvedValue({
+      id: 'script-1',
+      workspaceId: 'workspace-1',
+      reviewStatus: 'APPROVED',
+    });
+    prisma.videoJob.create.mockResolvedValue({
+      id: 'job-1',
+      scriptId: 'script-1',
+      workspaceId: 'workspace-1',
+    });
+    prisma.videoJob.findUnique.mockResolvedValue({
+      id: 'job-1',
+      workspaceId: 'workspace-1',
+      renderId: null,
+      script: {
+        id: 'script-1',
+        content: JSON.stringify({ scenes: [{ narration: 'Done', caption: 'Done', seconds: 5 }] }),
+        topicId: 'topic-1',
+        reviewStatus: 'APPROVED',
+      },
+    });
+    prisma.videoJob.update.mockResolvedValue({ id: 'job-1' });
+    shotstack.renderVideo.mockRejectedValue(new ShotstackProviderError(
+      'Video render failed because the render payload was invalid.',
+      {
+        statusCode: 400,
+        requestId: 'req-1',
+        validationMessages: ['Validation failed for timeline.'],
+      },
+    ));
+
+    await expect(service.createVideoJob(
+      'script-1',
+      undefined,
+      'MORNING',
+      new Date('2026-05-31T09:00:00.000Z'),
+      'workspace-1',
+    )).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: 'Video render failed because the render payload was invalid.',
+        provider: 'shotstack',
+        providerError: {
+          statusCode: 400,
+          requestId: 'req-1',
+          validationMessages: ['Validation failed for timeline.'],
+        },
+      }),
+    });
+    expect(prisma.videoJob.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'job-1' },
+      data: expect.objectContaining({
+        status: 'FAILED',
+        error: 'Video render failed because the render payload was invalid.',
+      }),
+    }));
   });
 
   it('creates video jobs only for scripts and offers in the active workspace', async () => {
