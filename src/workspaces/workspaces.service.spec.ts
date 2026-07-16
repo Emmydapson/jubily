@@ -41,7 +41,7 @@ describe('WorkspacesService', () => {
       countryCode: 'us',
       countryName: 'United States',
       affiliateNiches: ['ai-software'],
-      affiliatePlatforms: ['partnerstack', 'amazon'],
+      affiliatePlatforms: ['partnerstack', 'amazon', 'selar'],
     });
 
     expect(prisma.workspace.create).toHaveBeenCalledWith({
@@ -52,7 +52,7 @@ describe('WorkspacesService', () => {
         countryCode: 'US',
         countryName: 'United States',
         affiliateNiches: ['AI_SOFTWARE'],
-        affiliatePlatforms: ['PARTNERSTACK', 'AMAZON_ASSOCIATES'],
+        affiliatePlatforms: ['PARTNERSTACK', 'AMAZON_ASSOCIATES', 'SELAR'],
         primaryAffiliateLink: '',
         affiliateLinks: {},
         preferredContentTone: '',

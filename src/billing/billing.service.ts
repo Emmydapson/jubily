@@ -298,27 +298,50 @@ export class BillingService {
     throw new BadRequestException('Unsupported billing provider');
   }
 
-  private normalizeProvider(provider?: string | BillingProvider | null): BillingProvider | null {
-    if (!provider) return null;
-    const value = String(provider).toUpperCase();
+  private normalizeProvider(provider?: string | BillingProvider | null, options: { required?: boolean; exact?: boolean } = {}): BillingProvider | null {
+    const raw = String(provider || '').trim();
+    if (!raw) {
+      if (options.required) throw new BadRequestException('provider is required');
+      return null;
+    }
+    const value = raw.toUpperCase();
     if (value === 'GENERIC') return null;
-    if (value === BillingProvider.STRIPE) return BillingProvider.STRIPE;
-    if (value === BillingProvider.PAYSTACK) return BillingProvider.PAYSTACK;
-    throw new BadRequestException('Invalid billing provider');
+    if ((options.exact ? raw : value) === BillingProvider.STRIPE) return BillingProvider.STRIPE;
+    if ((options.exact ? raw : value) === BillingProvider.PAYSTACK) return BillingProvider.PAYSTACK;
+    throw new BadRequestException('provider must be STRIPE or PAYSTACK');
   }
 
-  private selectProvider(provider?: string | BillingProvider | null, country?: string | null) {
-    const requested = this.normalizeProvider(provider);
-    if (requested) return requested;
-    const code = String(country || '').trim().toUpperCase();
-    const paystackCountries = new Set(['NG', 'GH', 'ZA', 'KE', 'CI', 'EG', 'RW']);
-    return paystackCountries.has(code) ? BillingProvider.PAYSTACK : BillingProvider.STRIPE;
+  private normalizeCheckoutPlan(plan?: Plan | string | null): Exclude<Plan, 'FREE'> {
+    const value = String(plan || '').trim();
+    if (!value) throw new BadRequestException('plan is required');
+    if (value === Plan.FREE) throw new BadRequestException('FREE plan does not require checkout');
+    if (value === Plan.PRO || value === Plan.PREMIUM) return value as Exclude<Plan, 'FREE'>;
+    throw new BadRequestException('plan must be PRO or PREMIUM');
   }
 
-  private checkoutUrl(kind: 'success' | 'cancel') {
-    const base = String(process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
-    if (!base) throw new BadRequestException('FRONTEND_URL is required for billing redirects');
-    return `${base}/billing/${kind}`;
+  private normalizeCheckoutInterval(interval?: BillingInterval | string | null): BillingInterval {
+    const value = String(interval || '').trim().toLowerCase();
+    if (!value) throw new BadRequestException('interval is required');
+    if (value === BillingInterval.MONTHLY) return BillingInterval.MONTHLY;
+    if (value === BillingInterval.YEARLY) return BillingInterval.YEARLY;
+    throw new BadRequestException('interval must be monthly or yearly');
+  }
+
+  private normalizeCheckoutCountry(country?: string | null) {
+    const value = String(country || '').trim().toUpperCase();
+    if (!value) throw new BadRequestException('country is required');
+    if (!/^[A-Z]{2}$/.test(value)) throw new BadRequestException('country must be an ISO alpha-2 code');
+    return value;
+  }
+
+  private checkoutUrl(kind: 'success' | 'cancelled' | 'paystack-callback') {
+    const base = String(process.env.FRONTEND_URL || 'https://joinjubily.com').trim().replace(/\/+$/, '');
+    const path = kind === 'success'
+      ? '/billing/success'
+      : kind === 'cancelled'
+        ? '/billing/cancelled'
+        : '/billing/paystack/callback';
+    return `${base}${path}`;
   }
 
   private async actorEmail(actor?: { userId?: string | null }) {
@@ -335,13 +358,12 @@ export class BillingService {
   ) {
     await this.assertWorkspaceActive(workspaceId);
     await this.getOrCreateSubscription(workspaceId);
-    const plan = requestedPlan ?? Plan.PRO;
-    if (plan === Plan.FREE) throw new BadRequestException('FREE plan does not require checkout');
+    const plan = this.normalizeCheckoutPlan(requestedPlan);
     if (!actor?.userId) throw new ForbiddenException('SaaS user is required for checkout');
-    const workspace = await this.requireWorkspace(workspaceId);
-    const country = String(options?.country || workspace.countryCode || '').trim().toUpperCase() || null;
-    const provider = this.selectProvider(options?.provider, country);
-    const interval = options?.interval ?? BillingInterval.MONTHLY;
+    await this.requireWorkspace(workspaceId);
+    const country = this.normalizeCheckoutCountry(options?.country);
+    const provider = this.normalizeProvider(options?.provider, { required: true, exact: true }) as BillingProvider;
+    const interval = this.normalizeCheckoutInterval(options?.interval);
     const promo = options?.promoCode && this.promos
       ? await this.promos.recordCheckoutStarted({
           code: options.promoCode,
@@ -359,8 +381,8 @@ export class BillingService {
       email: await this.actorEmail(actor),
       plan: plan as Exclude<Plan, 'FREE'>,
       interval,
-      successUrl: this.checkoutUrl('success'),
-      cancelUrl: this.checkoutUrl('cancel'),
+      successUrl: provider === BillingProvider.PAYSTACK ? this.checkoutUrl('paystack-callback') : this.checkoutUrl('success'),
+      cancelUrl: this.checkoutUrl('cancelled'),
       promo: promo ? { ...promo.metadata, stripePromotionCodeId: promo.stripePromotionCodeId } : null,
     });
     await this.audit.record({
@@ -371,7 +393,9 @@ export class BillingService {
       metadata: { requestedPlan: plan, provider, interval, reference: checkout.reference, promoCode: promo?.promo.code ?? null, countryCode: country },
     });
     return {
-      ...checkout,
+      provider: checkout.provider,
+      checkoutUrl: checkout.checkoutUrl,
+      reference: checkout.reference,
       promo: promo
         ? {
             code: promo.promo.code,
@@ -385,6 +409,41 @@ export class BillingService {
             currency: promo.preview.currency,
           }
         : null,
+    };
+  }
+
+  async verifyPaystackCallback(reference: string) {
+    const parsed = await this.paystack.verifyTransaction(reference);
+    if (parsed?.subscriptionUpdate && !parsed.ignored) {
+      const subscription = await this.applyProviderSubscriptionUpdate(BillingProvider.PAYSTACK, parsed.subscriptionUpdate);
+      if (this.promos && subscription.status === SubscriptionStatus.ACTIVE) {
+        await this.promos.markSubscribed({
+          promoCodeId: parsed.subscriptionUpdate.promoCodeId,
+          promoAttributionId: parsed.subscriptionUpdate.promoAttributionId,
+          userId: parsed.subscriptionUpdate.userId,
+          workspaceId: parsed.subscriptionUpdate.workspaceId,
+          subscriptionId: subscription.id,
+          provider: BillingProvider.PAYSTACK,
+          plan: parsed.subscriptionUpdate.plan ?? subscription.plan,
+          interval: parsed.subscriptionUpdate.interval,
+          amount: parsed.subscriptionUpdate.amount,
+          originalAmount: parsed.subscriptionUpdate.originalAmount,
+          discountAmount: parsed.subscriptionUpdate.discountAmount,
+          finalAmount: parsed.subscriptionUpdate.finalAmount,
+          renewalAmount: parsed.subscriptionUpdate.renewalAmount,
+          currency: parsed.subscriptionUpdate.currency,
+          countryCode: parsed.subscriptionUpdate.countryCode,
+          regionScope: parsed.subscriptionUpdate.regionScope,
+          discountDuration: parsed.subscriptionUpdate.discountDuration,
+        });
+      }
+    }
+    return {
+      verified: !parsed.ignored,
+      provider: BillingProvider.PAYSTACK,
+      reference,
+      eventType: parsed.eventType,
+      workspaceId: parsed.subscriptionUpdate?.workspaceId ?? null,
     };
   }
 

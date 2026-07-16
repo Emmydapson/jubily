@@ -28,4 +28,17 @@ describe('AiService affiliate defaults', () => {
     expect(script.toLowerCase()).not.toContain('healthtips');
     expect(script.toLowerCase()).not.toContain('wellness');
   });
+
+  it('renders Selar with the display label in mock AI context', async () => {
+    const service = new AiService();
+
+    const script = await service.generateScript('Promote a creator course', {
+      niche: 'EDUCATION',
+      platform: 'SELAR',
+      productName: 'Creator Course',
+    });
+
+    expect(script).toContain('Selar offers');
+    expect(script).not.toContain('SELAR offers');
+  });
 });

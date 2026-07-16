@@ -3,6 +3,7 @@ import { BillingProvider, Plan, SubscriptionStatus } from '@prisma/client';
 import { BillingService } from './billing.service';
 import { PlanLimitsService } from './plan-limits.service';
 import { BillingPricingService } from './providers/billing-pricing.service';
+import { BillingInterval } from './dto/start-checkout.dto';
 
 describe('BillingService', () => {
   const periodStart = new Date('2026-06-01T00:00:00.000Z');
@@ -11,7 +12,7 @@ describe('BillingService', () => {
   let audit: { record: jest.Mock };
   let webhookAdapter: { verify: jest.Mock; extractEventId: jest.Mock; extractEventType: jest.Mock };
   let stripe: { createCheckout: jest.Mock; cancelSubscription: jest.Mock; verifyWebhook: jest.Mock; parseWebhook: jest.Mock };
-  let paystack: { createCheckout: jest.Mock; cancelSubscription: jest.Mock; verifyWebhook: jest.Mock; parseWebhook: jest.Mock };
+  let paystack: { createCheckout: jest.Mock; cancelSubscription: jest.Mock; verifyWebhook: jest.Mock; parseWebhook: jest.Mock; verifyTransaction: jest.Mock };
   let service: BillingService;
 
   beforeEach(() => {
@@ -83,6 +84,7 @@ describe('BillingService', () => {
       cancelSubscription: jest.fn(),
       verifyWebhook: jest.fn().mockReturnValue({ valid: true }),
       parseWebhook: jest.fn(),
+      verifyTransaction: jest.fn(),
     };
     service = new BillingService(
       prisma,
@@ -395,8 +397,23 @@ describe('BillingService', () => {
 
   it('rejects invalid checkout providers', async () => {
     await expect(
-      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: 'bad-provider' }),
-    ).rejects.toThrow('Invalid billing provider');
+      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: 'bad-provider', interval: BillingInterval.MONTHLY, country: 'US' }),
+    ).rejects.toThrow('provider must be STRIPE or PAYSTACK');
+  });
+
+  it('returns distinct checkout validation errors for missing required fields', async () => {
+    await expect(
+      service.startCheckout('workspace-1', undefined, { userId: 'user-1' }, { provider: BillingProvider.STRIPE, interval: BillingInterval.MONTHLY, country: 'US' }),
+    ).rejects.toThrow('plan is required');
+    await expect(
+      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { interval: BillingInterval.MONTHLY, country: 'US' }),
+    ).rejects.toThrow('provider is required');
+    await expect(
+      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.STRIPE, country: 'US' }),
+    ).rejects.toThrow('interval is required');
+    await expect(
+      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.STRIPE, interval: BillingInterval.MONTHLY }),
+    ).rejects.toThrow('country is required');
   });
 
   it('creates checkout with the selected provider', async () => {
@@ -410,20 +427,26 @@ describe('BillingService', () => {
     });
 
     await expect(
-      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.STRIPE }),
-    ).resolves.toEqual(expect.objectContaining({ provider: BillingProvider.STRIPE, reference: 'cs-1' }));
+      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.STRIPE, interval: BillingInterval.MONTHLY, country: 'US' }),
+    ).resolves.toEqual({
+      provider: BillingProvider.STRIPE,
+      checkoutUrl: 'https://checkout.stripe.com/session',
+      reference: 'cs-1',
+      promo: null,
+    });
 
     expect(stripe.createCheckout).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'workspace-1',
       userId: 'user-1',
       email: 'user@example.com',
       plan: Plan.PRO,
+      interval: BillingInterval.MONTHLY,
       successUrl: 'https://joinjubily.com/billing/success',
-      cancelUrl: 'https://joinjubily.com/billing/cancel',
+      cancelUrl: 'https://joinjubily.com/billing/cancelled',
     }));
   });
 
-  it('uses FRONTEND_URL for Paystack checkout redirects', async () => {
+  it('uses FRONTEND_URL for Paystack checkout callback redirects', async () => {
     process.env.FRONTEND_URL = 'https://joinjubily.com';
     prisma.user.findUnique.mockResolvedValue({ email: 'user@example.com' });
     paystack.createCheckout.mockResolvedValue({
@@ -434,20 +457,26 @@ describe('BillingService', () => {
     });
 
     await expect(
-      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.PAYSTACK }),
-    ).resolves.toEqual(expect.objectContaining({ provider: BillingProvider.PAYSTACK, reference: 'ref-1' }));
+      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.PAYSTACK, interval: BillingInterval.MONTHLY, country: 'NG' }),
+    ).resolves.toEqual({
+      provider: BillingProvider.PAYSTACK,
+      checkoutUrl: 'https://paystack.com/pay/ref',
+      reference: 'ref-1',
+      promo: null,
+    });
 
     expect(paystack.createCheckout).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'workspace-1',
       userId: 'user-1',
       email: 'user@example.com',
       plan: Plan.PRO,
-      successUrl: 'https://joinjubily.com/billing/success',
-      cancelUrl: 'https://joinjubily.com/billing/cancel',
+      interval: BillingInterval.MONTHLY,
+      successUrl: 'https://joinjubily.com/billing/paystack/callback',
+      cancelUrl: 'https://joinjubily.com/billing/cancelled',
     }));
   });
 
-  it('uses stored workspace country for provider defaults and promo validation', async () => {
+  it('keeps selected provider when validating promos', async () => {
     process.env.FRONTEND_URL = 'https://joinjubily.com';
     prisma.workspace.findUnique.mockResolvedValue({ id: 'workspace-1', suspended: false, suspensionReason: null, countryCode: 'NG', countryName: 'Nigeria' });
     prisma.user.findUnique.mockResolvedValue({ email: 'user@example.com' });
@@ -483,12 +512,48 @@ describe('BillingService', () => {
     });
 
     await expect(
-      withPromos.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { promoCode: 'nga20' }),
+      withPromos.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, {
+        provider: BillingProvider.PAYSTACK,
+        interval: BillingInterval.MONTHLY,
+        country: 'NG',
+        promoCode: 'nga20',
+      }),
     ).resolves.toEqual(expect.objectContaining({ provider: BillingProvider.PAYSTACK }));
 
     expect(promos.recordCheckoutStarted).toHaveBeenCalledWith(expect.objectContaining({
       countryCode: 'NG',
       provider: BillingProvider.PAYSTACK,
+    }));
+    expect(paystack.createCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      promo: expect.objectContaining({ finalAmount: 600000 }),
+    }));
+  });
+
+  it('verifies Paystack callbacks and applies subscription updates', async () => {
+    paystack.verifyTransaction.mockResolvedValue({
+      providerEventId: 'ref-1',
+      eventType: 'charge.success',
+      subscriptionUpdate: {
+        workspaceId: 'workspace-1',
+        plan: Plan.PRO,
+        status: SubscriptionStatus.ACTIVE,
+        providerCustomerId: 'auth-1',
+        providerSubscriptionId: 'sub-paystack-1',
+      },
+    });
+
+    await expect(service.verifyPaystackCallback('ref-1')).resolves.toEqual({
+      verified: true,
+      provider: BillingProvider.PAYSTACK,
+      reference: 'ref-1',
+      eventType: 'charge.success',
+      workspaceId: 'workspace-1',
+    });
+
+    expect(paystack.verifyTransaction).toHaveBeenCalledWith('ref-1');
+    expect(prisma.workspaceSubscription.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { workspaceId: 'workspace-1' },
+      update: expect.objectContaining({ billingProvider: BillingProvider.PAYSTACK }),
     }));
   });
 

@@ -32,6 +32,7 @@ export const AFFILIATE_PLATFORMS = [
   'AMAZON_ASSOCIATES',
   'TEMU',
   'ALIEXPRESS',
+  'SELAR',
   'IMPACT',
   'PARTNERSTACK',
   'CJ_AFFILIATE',
@@ -67,12 +68,17 @@ const PLATFORM_ALIASES: Record<string, AffiliatePlatform> = {
   DIGISTORE: 'DIGISTORE24',
   DIGISTORE24: 'DIGISTORE24',
   CLICKBANK: 'CLICKBANK',
+  SELAR: 'SELAR',
   AMAZON: 'AMAZON_ASSOCIATES',
   AMAZON_ASSOCIATES: 'AMAZON_ASSOCIATES',
   CJ: 'CJ_AFFILIATE',
   CJ_AFFILIATE: 'CJ_AFFILIATE',
   EBAY: 'EBAY_PARTNER_NETWORK',
   EBAY_PARTNER_NETWORK: 'EBAY_PARTNER_NETWORK',
+};
+
+const PLATFORM_LABELS: Partial<Record<AffiliatePlatform, string>> = {
+  SELAR: 'Selar',
 };
 
 function normalizeToken(value: unknown) {
@@ -97,6 +103,12 @@ export function normalizeAffiliatePlatform(value: unknown): AffiliatePlatform | 
   const token = normalizeToken(raw);
   const platform = PLATFORM_ALIASES[token] ?? (AFFILIATE_PLATFORMS.includes(token as AffiliatePlatform) ? (token as AffiliatePlatform) : null);
   return platform;
+}
+
+export function affiliatePlatformLabel(value: unknown): string | null {
+  const platform = normalizeAffiliatePlatform(value);
+  if (!platform) return null;
+  return PLATFORM_LABELS[platform] ?? platform;
 }
 
 export function normalizeAffiliateNiches(values: unknown): AffiliateNiche[] {

@@ -17,4 +17,22 @@ describe('BillingController workspace roles', () => {
   it('keeps plan listing public for pre-login pricing pages', () => {
     expect(Reflect.getMetadata(IS_PUBLIC_KEY, BillingController.prototype.plans)).toBe(true);
   });
+
+  it('keeps provider webhooks available at singular and plural paths', () => {
+    expect(Reflect.getMetadata('path', BillingController.prototype.providerWebhook)).toBe('webhook/:provider');
+    expect(Reflect.getMetadata('path', BillingController.prototype.providerWebhooks)).toBe('webhooks/:provider');
+  });
+
+  it('verifies Paystack callbacks from reference or trxref', async () => {
+    const billing = {
+      verifyPaystackCallback: jest.fn().mockResolvedValue({ verified: true }),
+    };
+    const controller = new BillingController(billing as never);
+
+    await expect(controller.paystackCallback('ref-1')).resolves.toEqual({ verified: true });
+    await expect(controller.paystackCallback(undefined, 'trx-1')).resolves.toEqual({ verified: true });
+
+    expect(billing.verifyPaystackCallback).toHaveBeenNthCalledWith(1, 'ref-1');
+    expect(billing.verifyPaystackCallback).toHaveBeenNthCalledWith(2, 'trx-1');
+  });
 });

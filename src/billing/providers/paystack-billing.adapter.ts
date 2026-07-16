@@ -89,6 +89,29 @@ export class PaystackBillingAdapter implements LiveBillingProviderAdapter {
     return { cancelAtPeriodEnd: false };
   }
 
+  async verifyTransaction(reference: string): Promise<ProviderWebhookResult> {
+    const value = String(reference || '').trim();
+    if (!value) throw new BadRequestException('Paystack reference is required');
+    let response;
+    try {
+      response = await axios.get(
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(value)}`,
+        { headers: { Authorization: `Bearer ${this.secret()}` } },
+      );
+    } catch (error) {
+      logAndThrowProviderError(this.logger, error, {
+        provider: this.provider,
+        endpoint: 'transaction.verify',
+      });
+    }
+
+    return this.parseWebhook({
+      event: response.data?.data?.status === 'success' ? 'charge.success' : 'charge.failed',
+      data: response.data?.data,
+    });
+  }
+
+
   verifyWebhook(rawBody: string | Buffer | undefined, headers: Record<string, unknown>) {
     const secret = String(process.env.PAYSTACK_WEBHOOK_SECRET || process.env.PAYSTACK_SECRET_KEY || '').trim();
     if (!secret) return { valid: false, reason: 'missing_paystack_webhook_secret' };

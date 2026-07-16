@@ -60,14 +60,14 @@ describe('OffersService', () => {
 
     expect(
       normalizeAndValidateOfferInput({
-        network: 'digistore24',
+        network: 'selar',
         name: ' AI Offer ',
         hoplink: 'https://vendor.example/path',
         nicheTag: 'ai-software',
         active: true,
       }),
     ).toMatchObject({
-      network: 'DIGISTORE24',
+      network: 'SELAR',
       name: 'AI Offer',
       hoplink: 'https://vendor.example/path',
       nicheTag: 'AI_SOFTWARE',

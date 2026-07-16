@@ -16,6 +16,14 @@
     "active": true
   },
   {
+    "network": "SELAR",
+    "externalProductId": "creator-course-demo",
+    "name": "Creator Course",
+    "nicheTag": "EDUCATION",
+    "hoplink": "https://selar.co/example?affiliate=maxxma",
+    "active": true
+  },
+  {
     "network": "CJ_AFFILIATE",
     "externalProductId": "finance-app-demo",
     "name": "Budgeting App",

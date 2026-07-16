@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, Length } from 'class-validator';
+import { IsOptional, IsString, Length } from 'class-validator';
 import { BillingProvider, Plan } from '@prisma/client';
 
 export enum BillingInterval {
@@ -8,15 +8,15 @@ export enum BillingInterval {
 
 export class StartCheckoutDto {
   @IsOptional()
-  @IsEnum(Plan)
+  @IsString()
   plan?: Plan;
 
   @IsOptional()
-  @IsEnum(BillingProvider)
+  @IsString()
   provider?: BillingProvider;
 
   @IsOptional()
-  @IsEnum(BillingInterval)
+  @IsString()
   interval?: BillingInterval;
 
   @IsOptional()

@@ -16,6 +16,14 @@
     "active": true
   },
   {
+    "network": "SELAR",
+    "externalProductId": "CREATOR_COURSE",
+    "name": "Example Creator Course",
+    "nicheTag": "EDUCATION",
+    "hoplink": "https://selar.co/example?affiliate=demo",
+    "active": true
+  },
+  {
     "network": "AMAZON_ASSOCIATES",
     "externalProductId": "HOME_OFFICE_GEAR",
     "name": "Example Home Office Product",

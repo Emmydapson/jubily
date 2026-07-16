@@ -43,11 +43,11 @@ describe('AutomationService customer wizard helpers', () => {
       name: 'AI Writer Pro',
       hoplink: 'https://example.com',
       nicheTag: 'AI_SOFTWARE',
-      network: 'PARTNERSTACK',
+      network: 'SELAR',
       workspaceId: 'workspace-1',
       workspace: {
         affiliateNiches: ['AI_SOFTWARE'],
-        affiliatePlatforms: ['PARTNERSTACK'],
+        affiliatePlatforms: ['SELAR'],
         primaryAffiliateLink: 'https://workspace.example.com',
         preferredContentTone: 'direct',
         preferredLanguage: 'en',
@@ -90,20 +90,20 @@ describe('AutomationService customer wizard helpers', () => {
       name: 'AI Writer Pro',
       url: 'https://example.com',
       niche: 'AI_SOFTWARE',
-      platform: 'PARTNERSTACK',
+      platform: 'Selar',
       targetAudience: 'busy founders',
       contentTone: 'direct',
       language: 'en',
       contentGoal: 'compare product options',
       bullets: [
         'Affiliate niche: AI_SOFTWARE',
-        'Affiliate platform: PARTNERSTACK',
+        'Affiliate platform: Selar',
         'Target audience: busy founders',
       ],
     });
     expect(scriptService.createReviewed).toHaveBeenCalledWith(
       'topic-1',
-      'v2-ai-offer-PARTNERSTACK-reviewed',
+      'v2-ai-offer-SELAR-reviewed',
       expect.objectContaining({ content: 'reviewed script' }),
       'workspace-1',
     );

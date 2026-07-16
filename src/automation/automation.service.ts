@@ -9,6 +9,7 @@ import type { ScriptReviewStatus } from './dto/update-script-review-status.dto';
 import { BillingService } from '../billing/billing.service';
 import { AuditService } from '../audit/audit.service';
 import { UpdateScriptDto } from './dto/update-script.dto';
+import { affiliatePlatformLabel } from '../affiliates/affiliate.constants';
 
 type OfferInput = {
   id: string;
@@ -361,18 +362,20 @@ export class AutomationService {
   ) {
     const topic = await this.requireTopic(topicId, workspaceId);
     if (topic.workspaceId) await this.billing.consumeAiGeneration(topic.workspaceId);
+    const platform = offer.network || offer.workspace?.affiliatePlatforms?.[0] || null;
+    const platformLabel = affiliatePlatformLabel(platform) || platform;
     const content = await this.aiService.generateScriptWithOffer(topicTitle, {
       name: offer.name,
       url: offer.hoplink || offer.workspace?.primaryAffiliateLink || '',
       niche: offer.nicheTag || offer.workspace?.affiliateNiches?.[0] || null,
-      platform: offer.network || offer.workspace?.affiliatePlatforms?.[0] || null,
+      platform: platformLabel,
       targetAudience: offer.workspace?.targetAudience,
       contentTone: offer.workspace?.preferredContentTone,
       language: offer.workspace?.preferredLanguage,
       contentGoal: offer.workspace?.contentGoal,
       bullets: [
         offer.nicheTag ? `Affiliate niche: ${offer.nicheTag}` : null,
-        offer.network ? `Affiliate platform: ${offer.network}` : null,
+        platformLabel ? `Affiliate platform: ${platformLabel}` : null,
         offer.workspace?.targetAudience ? `Target audience: ${offer.workspace.targetAudience}` : null,
       ].filter(Boolean) as string[],
     });

@@ -104,7 +104,7 @@ Notes:
 - Resend sends mail from verified sender addresses; receiving mail for `info@joinjubily.com` still requires an actual mailbox provider.
 - Enable only configured billing providers. If `STRIPE_ENABLED=true`, all Stripe keys and price IDs above are required. If `PAYSTACK_ENABLED=true`, Paystack secret and all plan codes above are required.
 - Paystack webhook verification uses `PAYSTACK_WEBHOOK_SECRET` when set, otherwise `PAYSTACK_SECRET_KEY`.
-- Billing checkout success/cancel URLs are built from `BILLING_RETURN_BASE_URL || PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL`.
+- Billing checkout frontend return URLs use `FRONTEND_URL` when configured, otherwise `https://joinjubily.com`.
 
 Common statuses:
 
@@ -177,6 +177,7 @@ type AffiliatePlatform =
   | "AMAZON_ASSOCIATES"
   | "TEMU"
   | "ALIEXPRESS"
+  | "SELAR"
   | "IMPACT"
   | "PARTNERSTACK"
   | "CJ_AFFILIATE"
@@ -189,6 +190,8 @@ type AffiliatePlatform =
   | "SHOPIFY_COLLABS"
   | "CUSTOM";
 ```
+
+Display label for `SELAR` is `Selar`.
 
 Paginated response:
 
@@ -1526,28 +1529,38 @@ Request:
 
 ```ts
 {
-  plan?: "PRO" | "PREMIUM";       // defaults to PRO; FREE rejected
-  provider?: "PAYSTACK" | "STRIPE";
-  interval?: "monthly" | "yearly"; // defaults monthly
-  country?: string;                // optional override; otherwise stored workspace countryCode is used
+  plan: "PRO" | "PREMIUM";         // required; uppercase
+  provider: "STRIPE" | "PAYSTACK"; // required; uppercase
+  interval: "monthly" | "yearly";  // required; lowercase
+  country: string;                 // required ISO alpha-2 code, e.g. "US" or "NG"
   promoCode?: string;              // optional; normalized and validated server-side
 }
 ```
 
 Provider selection:
 
-- Explicit provider must be `PAYSTACK` or `STRIPE`.
-- Omitted provider selects from `country || workspace.countryCode`: `PAYSTACK` for `NG`, `GH`, `ZA`, `KE`, `CI`, `EG`, `RW`; otherwise `STRIPE`.
+- `provider` must be exactly `STRIPE` or `PAYSTACK`.
+- The backend no longer chooses a provider from country during checkout. Send the user's visible provider selection in this field.
 - Promo region validation and checkout attribution use the same country value. Do not rely on IP for checkout country.
+
+Validation errors distinguish missing and invalid fields:
+
+- Missing provider: `provider is required`
+- Invalid provider: `provider must be STRIPE or PAYSTACK`
+- Missing plan: `plan is required`
+- Invalid plan: `plan must be PRO or PREMIUM`
+- Missing interval: `interval is required`
+- Invalid interval: `interval must be monthly or yearly`
+- Missing country: `country is required`
+- Invalid country: `country must be an ISO alpha-2 code`
 
 Response:
 
 ```ts
 {
-  provider: BillingProvider;
+  provider: "STRIPE" | "PAYSTACK";
   checkoutUrl: string;
-  reference: string;
-  sessionId?: string | null;
+  reference?: string;
   promo: null | {
     code: string;
     discountType: PromoDiscountType;
@@ -1566,18 +1579,27 @@ Promo behavior:
 
 - Invalid, inactive, expired, over-limit, plan-inapplicable, region-inapplicable, or already-used promo codes return `400`.
 - Checkout records `CHECKOUT_STARTED` attribution before provider checkout is created.
-- If the checkout request omits `country`, the backend uses the stored workspace `countryCode` for promo validation and analytics.
-- `regionScope: "ALL"` still validates when the resolved country is missing.
+- Promo validation receives the same explicit `provider`, `plan`, `interval`, and `country` from the checkout request; it does not overwrite or discard the selected provider.
 - Stripe checkout metadata and subscription metadata include promo attribution fields. Discount promos require backend promotion-code mapping.
 - Paystack checkout metadata includes promo attribution fields. `TRACKING_ONLY` codes do not reduce price, `ONE_TIME_AMOUNT_DISCOUNT` sends `finalAmount`, and `UNSUPPORTED` discount codes return the friendly unsupported error instead of silently charging full price.
 - For all discount promos, `renewalAmount` is the standard subscription price after the one-time checkout payment.
 
 Return URLs sent to the provider:
 
-- Success: `${BILLING_RETURN_BASE_URL || PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL}/billing/success`
-- Cancel: `${BILLING_RETURN_BASE_URL || PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL}/billing/cancel`
+- Stripe success: `https://joinjubily.com/billing/success`
+- Stripe cancel: `https://joinjubily.com/billing/cancelled`
+- Paystack callback: `https://joinjubily.com/billing/paystack/callback`
 
-The frontend should provide matching pages and refresh subscription state after redirect.
+Paystack callback behavior:
+
+- Frontend callback page should preserve Paystack's query string and refresh subscription state after the backend verifies the transaction.
+- Backend callback endpoint: `GET /billing/paystack/callback?reference=<reference>` or `GET /billing/paystack/callback?trxref=<reference>`.
+- Both `reference` and `trxref` are accepted.
+
+Webhook routes:
+
+- Paystack webhook: `https://api.joinjubily.com/api/billing/webhooks/paystack`
+- Stripe webhook: `https://api.joinjubily.com/api/billing/webhook/stripe` or `https://api.joinjubily.com/api/billing/webhooks/stripe`
 
 ### `POST /billing/cancel`
 
@@ -2049,6 +2071,7 @@ Not frontend routes:
 
 - `POST /billing/webhook`
 - `POST /billing/webhook/:provider`
+- `POST /billing/webhooks/:provider`
 - `POST /webhooks/digistore24`
 - `POST /webhooks/clickbank?key=:key`
 

@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
@@ -76,5 +76,25 @@ export class BillingController {
   @ApiOperation({ summary: 'Billing provider webhook endpoint' })
   providerWebhook(@Req() req: any, @Param('provider') provider: string, @Body() body?: unknown) {
     return this.billing.handleWebhook(provider, body ?? {}, req.headers ?? {}, req.rawBody);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Post('webhooks/:provider')
+  @ApiOperation({ summary: 'Billing provider webhook endpoint' })
+  providerWebhooks(@Req() req: any, @Param('provider') provider: string, @Body() body?: unknown) {
+    return this.providerWebhook(req, provider, body);
+  }
+
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Get('paystack/callback')
+  @ApiOperation({ summary: 'Verify Paystack checkout callback' })
+  paystackCallback(@Query('reference') reference?: string, @Query('trxref') trxref?: string) {
+    const value = String(reference || trxref || '').trim();
+    if (!value) throw new BadRequestException('Paystack reference is required');
+    return this.billing.verifyPaystackCallback(value);
   }
 }

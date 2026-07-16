@@ -21,6 +21,25 @@ describe('PaystackBillingAdapter', () => {
     jest.mocked(axios.post).mockReset().mockResolvedValue({
       data: { data: { authorization_url: 'https://paystack.com/pay/ref', reference: 'ref-1' } },
     });
+    jest.mocked(axios.get).mockReset().mockResolvedValue({
+      data: {
+        data: {
+          id: 'txn-1',
+          status: 'success',
+          reference: 'ref-1',
+          amount: 750000,
+          currency: 'NGN',
+          metadata: {
+            workspaceId: 'workspace-1',
+            userId: 'user-1',
+            plan: Plan.PRO,
+            interval: BillingInterval.MONTHLY,
+          },
+          authorization: { authorization_code: 'AUTH_code' },
+          subscription: { subscription_code: 'SUB_code' },
+        },
+      },
+    });
     jest.mocked(axios.isAxiosError).mockReset().mockReturnValue(false);
   });
 
@@ -37,8 +56,8 @@ describe('PaystackBillingAdapter', () => {
       email: 'user@example.com',
       plan: Plan.PRO,
       interval: BillingInterval.MONTHLY,
-      successUrl: 'https://joinjubily.com/billing/success',
-      cancelUrl: 'https://joinjubily.com/billing/cancel',
+      successUrl: 'https://joinjubily.com/billing/paystack/callback',
+      cancelUrl: 'https://joinjubily.com/billing/cancelled',
     })).resolves.toEqual({
       provider: BillingProvider.PAYSTACK,
       checkoutUrl: 'https://paystack.com/pay/ref',
@@ -49,7 +68,7 @@ describe('PaystackBillingAdapter', () => {
     const body = jest.mocked(axios.post).mock.calls[0][1] as any;
     expect(body.plan).toBe('PLN_pro_monthly');
     expect(body.amount).toBe(750000);
-    expect(body.callback_url).toBe('https://joinjubily.com/billing/success');
+    expect(body.callback_url).toBe('https://joinjubily.com/billing/paystack/callback');
     expect(body.metadata).toEqual(expect.objectContaining({
       workspaceId: 'workspace-1',
       userId: 'user-1',
@@ -118,5 +137,25 @@ describe('PaystackBillingAdapter', () => {
       reason: 'paystack_hmac_sha512',
     });
     expect(adapter.verifyWebhook(raw, {})).toEqual({ valid: false, reason: 'missing_signature' });
+  });
+
+  it('verifies callback transactions by reference', async () => {
+    const adapter = new PaystackBillingAdapter(new BillingPricingService());
+
+    await expect(adapter.verifyTransaction('ref-1')).resolves.toEqual(expect.objectContaining({
+      providerEventId: 'txn-1',
+      eventType: 'charge.success',
+      subscriptionUpdate: expect.objectContaining({
+        workspaceId: 'workspace-1',
+        plan: Plan.PRO,
+        providerCustomerId: 'AUTH_code',
+        providerSubscriptionId: 'SUB_code',
+      }),
+    }));
+
+    expect(axios.get).toHaveBeenCalledWith(
+      'https://api.paystack.co/transaction/verify/ref-1',
+      expect.objectContaining({ headers: { Authorization: 'Bearer sk_paystack' } }),
+    );
   });
 });

@@ -1,6 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
+import { affiliatePlatformLabel } from '../../affiliates/affiliate.constants';
 
 type Scene = {
   narration: string;
@@ -47,7 +48,7 @@ export class AiService {
   private contextLines(context?: AffiliateGenerationContext) {
     return [
       `Affiliate niche: ${context?.niche || 'general affiliate marketing'}`,
-      `Affiliate platform: ${context?.platform || 'not specified'}`,
+      `Affiliate platform: ${affiliatePlatformLabel(context?.platform) || context?.platform || 'not specified'}`,
       `Affiliate product/link: ${context?.productName || context?.affiliateLink || 'not specified'}`,
       `Target audience: ${context?.targetAudience || 'affiliate buyers interested in the topic'}`,
       `Content tone: ${context?.contentTone || 'clear, practical, trustworthy'}`,
@@ -185,7 +186,7 @@ ${this.contextLines(context)}
 
   private buildMockScript(topic: string, context?: AffiliateGenerationContext): ScriptJson {
     const product = context?.productName || 'the recommended product';
-    const platform = context?.platform || 'affiliate platform';
+    const platform = affiliatePlatformLabel(context?.platform) || context?.platform || 'affiliate platform';
     const niche = context?.niche || 'affiliate marketing';
     return {
       title: topic,
