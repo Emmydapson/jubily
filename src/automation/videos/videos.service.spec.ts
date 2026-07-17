@@ -593,4 +593,58 @@ describe('VideosService quality gate', () => {
       data: { error: null, publishTarget: 'YOUTUBE', workerLockedAt: null, workerLockedBy: null, workerStage: 'PUBLISH_QUEUED' },
     });
   });
+
+  it('queues connected social provider jobs without publishing during the request', async () => {
+    prisma.videoJob.findUnique.mockResolvedValueOnce({
+      id: 'job-1',
+      scriptId: 'script-1',
+      workspaceId: 'workspace-1',
+      offerId: null,
+      status: 'COMPLETED',
+      provider: 'shotstack',
+      videoUrl: 'https://cdn.example.com/video.mp4',
+      youtubeVideoId: null,
+      renderId: 'render-1',
+      error: null,
+      youtubeUrl: null,
+      slot: 'MORNING',
+      scheduledFor: new Date('2026-05-31T09:00:00.000Z'),
+      published: false,
+      attempts: 0,
+      createdAt: new Date('2026-05-31T09:00:00.000Z'),
+      offer: null,
+      script: { id: 'script-1', reviewStatus: 'APPROVED', topic: { id: 'topic-1', title: 'Topic' } },
+    });
+    prisma.videoJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.videoJob.findUnique.mockResolvedValueOnce({
+      id: 'job-1',
+      scriptId: 'script-1',
+      workspaceId: 'workspace-1',
+      offerId: null,
+      status: 'COMPLETED',
+      provider: 'shotstack',
+      videoUrl: 'https://cdn.example.com/video.mp4',
+      youtubeVideoId: null,
+      renderId: 'render-1',
+      error: null,
+      youtubeUrl: null,
+      slot: 'MORNING',
+      scheduledFor: new Date('2026-05-31T09:00:00.000Z'),
+      published: false,
+      attempts: 0,
+      createdAt: new Date('2026-05-31T09:00:00.000Z'),
+      offer: null,
+      script: { id: 'script-1', reviewStatus: 'APPROVED', topic: { id: 'topic-1', title: 'Topic' } },
+    });
+
+    await expect(service.publishVideo('job-1', 'workspace-1', { target: 'TIKTOK' })).resolves.toEqual(
+      expect.objectContaining({ queued: true, status: 'QUEUED_FOR_PUBLISH' }),
+    );
+    expect(socialAccounts.listAccounts).toHaveBeenCalledWith('workspace-1');
+    expect(socialAccounts.publish).not.toHaveBeenCalled();
+    expect(youtube.getWorkspaceChannelDiagnostics).not.toHaveBeenCalled();
+    expect(prisma.videoJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ publishTarget: 'TIKTOK', workerStage: 'PUBLISH_QUEUED' }),
+    }));
+  });
 });

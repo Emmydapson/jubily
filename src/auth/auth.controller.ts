@@ -57,11 +57,11 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('signup')
-  @ApiOperation({ summary: 'Create a SaaS user account', description: 'Public endpoint. Returns a JWT access token for workspace-scoped routes.' })
+  @ApiOperation({ summary: 'Create a SaaS user account', description: 'Public endpoint. Sends email verification and does not issue tokens until the user verifies and logs in.' })
   @ApiBody({ type: SignupDto })
   @ApiOkResponse({
-    description: 'Signup succeeded.',
-    schema: { example: { accessToken: 'eyJhbGciOi...', user: { id: '7f8d41e2-0dd8-48ea-a143-b2f8dfc21bcb', email: 'user@example.com', name: 'Jane' } } },
+    description: 'Signup succeeded; email verification required.',
+    schema: { example: { message: 'Email verification required. Verification email sent.', requiresEmailVerification: true, user: { id: '7f8d41e2-0dd8-48ea-a143-b2f8dfc21bcb', email: 'user@example.com', name: 'Jane', emailVerified: false } } },
   })
   signup(@Req() req: Request, @Body() dto: SignupDto) {
     return this.auth.signup(dto.email, dto.password, dto.name, requestMeta(req), dto.promoCode, {

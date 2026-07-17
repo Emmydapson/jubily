@@ -16,7 +16,6 @@ import { AuditService } from '../../audit/audit.service';
 import { safeErrorMessage } from '../../common/safe-metadata';
 import { YoutubeService } from '../../common/youtube.service';
 import { SocialAccountsService } from '../../publishing/social-accounts.service';
-import { ProviderPublishingError } from '../../publishing/social-publishing.types';
 
 @Injectable()
 export class VideosService {
@@ -413,19 +412,6 @@ export class VideosService {
       const accounts = await this.socialAccounts.listAccounts(job.workspaceId);
       if (!accounts.some((account) => account.provider === target && account.status === 'CONNECTED')) {
         throw new ConflictException(`Connect ${target.toLowerCase()} before publishing`);
-      }
-      try {
-        await this.socialAccounts.publish({
-          workspaceId: job.workspaceId,
-          provider: target,
-          mediaAssetId: job.id,
-          title: job.script.topic?.title,
-        });
-      } catch (error) {
-        if (error instanceof ProviderPublishingError) {
-          throw new ConflictException({ provider: target, providerMessage: error.message, message: error.message });
-        }
-        throw error;
       }
     }
 

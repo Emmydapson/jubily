@@ -20,7 +20,8 @@ type ShotstackValidationIssue = {
     | 'INVALID_ASSET_TYPE'
     | 'INVALID_CLIP_TIMING'
     | 'INVALID_TIMELINE'
-    | 'INVALID_OUTPUT';
+    | 'INVALID_OUTPUT'
+    | 'UNSUPPORTED_OUTPUT_PROPERTY_REMOVED';
   value?: unknown;
 };
 
@@ -62,6 +63,7 @@ const VALID_ASSET_TYPES = new Set(['image', 'video', 'audio', 'html', 'title']);
 const VALID_OUTPUT_FORMATS = new Set(['mp4']);
 const VALID_OUTPUT_RESOLUTIONS = new Set(['preview', 'mobile', 'sd', 'hd', '1080']);
 const VALID_OUTPUT_ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1', '4:5']);
+const OUTPUT_ALLOWED_KEYS = new Set(['format', 'resolution', 'aspectRatio']);
 const VALID_CLIP_POSITION = new Set(['top', 'bottom', 'center', 'left', 'right']);
 const CLIP_ALLOWED_KEYS = new Set([
   'asset',
@@ -197,6 +199,16 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
   if (!output || typeof output !== 'object') {
     issues.push({ path: 'output', code: 'INVALID_OUTPUT', value: output });
   } else {
+    for (const key of Object.keys(output)) {
+      if (!OUTPUT_ALLOWED_KEYS.has(key)) {
+        issues.push({
+          path: `output.${key}`,
+          code: 'UNSUPPORTED_OUTPUT_PROPERTY_REMOVED',
+          value: output[key],
+        });
+        delete output[key];
+      }
+    }
     if (!VALID_OUTPUT_FORMATS.has(String(output.format || ''))) {
       issues.push({ path: 'output.format', code: 'INVALID_OUTPUT', value: output.format });
     }
@@ -754,8 +766,6 @@ export class ShotstackService {
         format: 'mp4',
         resolution: '1080',
         aspectRatio: '9:16',
-        fps: 30,
-        quality: 'high',
       },
     };
 

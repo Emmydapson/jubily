@@ -13,9 +13,8 @@ const API_BASE_URL =
 
 Swagger:
 
-- `GET /api`
+- `GET /api/docs`
 - `GET /api-json`
-- `GET /api-yaml`
 
 Standard JSON headers:
 
@@ -26,7 +25,7 @@ Authorization: Bearer <accessToken>
 
 Customer JWT vs admin JWT:
 
-- Customer tokens come from `/auth/signup`, `/auth/login`, and `/auth/refresh`.
+- Customer tokens come from `/auth/login` and `/auth/refresh`. `/auth/signup` creates the account and sends email verification, but does not issue tokens.
 - Customer JWT payloads use `kind: "user"` and `role: "USER"`.
 - Admin tokens come from `/admin/auth/login`.
 - Admin JWT payloads use `kind: "admin"` and `role: "SUPER_ADMIN" | "ADMIN" | "SUPPORT"`.
@@ -86,13 +85,14 @@ STRIPE_PREMIUM_YEARLY_PRICE_ID=<stripe price id>
 
 PAYSTACK_ENABLED=true|false
 PAYSTACK_SECRET_KEY=<paystack sandbox secret key>
+PAYSTACK_PUBLIC_KEY=<paystack sandbox public key>
 PAYSTACK_WEBHOOK_SECRET=<paystack sandbox webhook signing secret>
 PAYSTACK_PRO_MONTHLY_PLAN_CODE=<paystack plan code>
 PAYSTACK_PRO_YEARLY_PLAN_CODE=<paystack plan code>
 PAYSTACK_PREMIUM_MONTHLY_PLAN_CODE=<paystack plan code>
 PAYSTACK_PREMIUM_YEARLY_PLAN_CODE=<paystack plan code>
 
-BILLING_RETURN_BASE_URL=https://<frontend-host>
+FRONTEND_URL=https://joinjubily.com
 PUBLIC_API_BASE_URL=https://<api-host>
 ```
 
@@ -102,7 +102,7 @@ Notes:
 - `SHOTSTACK_BASE_URL` should normally be the Shotstack edit API base (`https://api.shotstack.io/edit/v1`). If an environment includes `/render`, the backend normalizes it and still posts to exactly `/edit/v1/render`, never `/render/render`.
 - `TERMS_VERSION` and `PRIVACY_POLICY_VERSION` are optional. When set, signup stores the current versions with the consent timestamps.
 - Resend sends mail from verified sender addresses; receiving mail for `info@joinjubily.com` still requires an actual mailbox provider.
-- Enable only configured billing providers. If `STRIPE_ENABLED=true`, all Stripe keys and price IDs above are required. If `PAYSTACK_ENABLED=true`, Paystack secret and all plan codes above are required.
+- Enable only configured billing providers. If `STRIPE_ENABLED=true`, all Stripe keys and price IDs above are required. If `PAYSTACK_ENABLED=true`, Paystack secret/public keys and all plan codes above are required.
 - Paystack webhook verification uses `PAYSTACK_WEBHOOK_SECRET` when set, otherwise `PAYSTACK_SECRET_KEY`.
 - Billing checkout frontend return URLs use `FRONTEND_URL` when configured, otherwise `https://joinjubily.com`.
 

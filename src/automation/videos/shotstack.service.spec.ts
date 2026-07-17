@@ -371,15 +371,13 @@ describe('ShotstackService payload validation', () => {
     ).toThrow('Image clips must not cover the full timeline');
   });
 
-  it('renders explicit high quality vertical 1080p Shorts output', async () => {
+  it('renders supported vertical 1080p Shorts output without unsupported output fields', async () => {
     await service.renderVideo(scenes, 'job-1');
 
     expect(postedPayload().output).toEqual({
       format: 'mp4',
       resolution: '1080',
       aspectRatio: '9:16',
-      fps: 30,
-      quality: 'high',
     });
   });
 

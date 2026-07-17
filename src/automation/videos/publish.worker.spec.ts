@@ -428,6 +428,51 @@ describe('PublishWorker', () => {
     );
   });
 
+  it('publishes social provider jobs once and does not continue into YouTube upload', async () => {
+    const socialPublish = jest.fn().mockResolvedValue({ id: 'publish-1' });
+    worker = new PublishWorker(
+      prisma as never,
+      youtube as never,
+      sheets as never,
+      serve as never,
+      monitoring as never,
+      { getSettings: jest.fn() } as never,
+      billing as never,
+      audit as never,
+      { publish: socialPublish } as never,
+    );
+    prisma.videoJob.findUnique.mockResolvedValue({
+      ...fullJob,
+      workspaceId: 'workspace-1',
+      publishTarget: 'TIKTOK',
+    });
+
+    await worker.publish(job);
+
+    expect(socialPublish).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      provider: 'TIKTOK',
+      videoUrl: fullJob.videoUrl,
+      title: 'Better Morning Energy',
+      caption: expect.stringContaining('Start with water'),
+      description: expect.stringContaining('Start with water'),
+      tags: expect.any(Array),
+    });
+    expect(youtube.upload).not.toHaveBeenCalled();
+    expect(youtube.updateMetadata).not.toHaveBeenCalled();
+    expect(youtube.uploadCaptions).not.toHaveBeenCalled();
+    expect(prisma.videoJob.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      data: {
+        status: 'COMPLETED',
+        published: true,
+        workerLockedAt: null,
+        workerLockedBy: null,
+        workerStage: null,
+      },
+    });
+  });
+
   it('warns and publishes without a tracking link when no public API base URL is configured', async () => {
     delete process.env.PUBLIC_API_BASE_URL;
     delete process.env.JUBILY_API_BASE_URL;

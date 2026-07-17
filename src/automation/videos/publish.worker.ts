@@ -596,6 +596,7 @@ ${hashtags.join(' ')}`.slice(0, 4500),
       this.logger.log(`Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
 
       if (fullJob.publishTarget !== 'YOUTUBE') {
+        const provider = String(fullJob.publishTarget || '').toLowerCase();
         try {
           await this.socialAccounts.publish({
             workspaceId: fullJob.workspaceId || '',
@@ -606,6 +607,36 @@ ${hashtags.join(' ')}`.slice(0, 4500),
             description: baseDesc,
             tags,
           });
+          await this.sheets.append([
+            job.id,
+            job.scriptId,
+            topicTitle,
+            offerName,
+            provider,
+            'PUBLISHED',
+            stableUrl,
+            '',
+            job.createdAt,
+            new Date(),
+          ]);
+          await this.audit.record({
+            action: 'VIDEO_PUBLISHED',
+            workspaceId: fullJob.workspaceId || undefined,
+            targetType: 'VideoJob',
+            targetId: job.id,
+            metadata: { provider },
+          });
+          await this.monitoring.info({
+            stage: 'PUBLISH',
+            status: 'COMPLETED',
+            message: 'Social publish flow completed',
+            jobId: job.id,
+            offerId: fullJob.offerId ?? null,
+            scriptId: fullJob.scriptId,
+            provider,
+          });
+          await this.releaseClaim(job.id, { status: 'COMPLETED', published: true });
+          return;
         } catch (error) {
           const message = error instanceof ProviderPublishingError ? error.message : safeErrorMessage(error);
           await this.releaseClaim(job.id, {
@@ -620,7 +651,7 @@ ${hashtags.join(' ')}`.slice(0, 4500),
             jobId: job.id,
             offerId: fullJob.offerId ?? null,
             scriptId: fullJob.scriptId,
-            provider: String(fullJob.publishTarget).toLowerCase(),
+            provider,
           });
           return;
         }
