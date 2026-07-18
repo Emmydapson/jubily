@@ -45,6 +45,7 @@ describe('Worker lease claims', () => {
       { getSettings: jest.fn() } as never,
       { consumePublish: jest.fn(), assertWorkspaceActive: jest.fn() } as never,
       { record: jest.fn() } as never,
+      {} as never,
     );
   }
 

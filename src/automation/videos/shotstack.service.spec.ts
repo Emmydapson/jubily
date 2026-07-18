@@ -419,7 +419,7 @@ describe('ShotstackService payload validation', () => {
 
     expect(result).toEqual({
       renderId: 'render-1',
-      durationSeconds: 75,
+      durationSeconds: 4,
       sceneCount: 2,
       hasBurnedSubtitles: true,
       shotstackPayloadDebugPath: null,
@@ -533,7 +533,7 @@ describe('ShotstackService payload validation', () => {
     });
   });
 
-  it('forces render timing to the 60-90 second target even when source scene durations are short', async () => {
+  it('keeps short-form render timing in Standard visual beat durations without stretching to 75 seconds', async () => {
     tts.synthesizeWithMarksToCloudinaryMp3.mockResolvedValue({
       url: 'https://cdn.example.com/voice.mp3',
       timepoints: [],
@@ -546,12 +546,12 @@ describe('ShotstackService payload validation', () => {
       (sum: number, clip: any) => sum + clip.length,
       0,
     );
-    expect(total).toBe(75);
-    expect(images.map((clip: any) => clip.length)).toEqual([37.5, 37.5]);
+    expect(total).toBe(5);
+    expect(images.map((clip: any) => clip.length)).toEqual([2.5, 2.5]);
     expect(tts.synthesizeWithMarksToCloudinaryMp3).toHaveBeenCalledWith(
       expect.any(Array),
       expect.any(String),
-      [37.5, 37.5],
+      [2.5, 2.5],
     );
   });
 
@@ -587,12 +587,12 @@ describe('ShotstackService payload validation', () => {
       'https://cdn.example.com/image-2.jpg',
       'https://cdn.example.com/image-3.jpg',
     ]);
-    expect(images.map((clip: any) => clip.start)).toEqual([0, 25, 50]);
-    expect(images.map((clip: any) => clip.length)).toEqual([25, 25, 25]);
+    expect(images.map((clip: any) => clip.start)).toEqual([0, 2.5, 5]);
+    expect(images.map((clip: any) => clip.length)).toEqual([2.5, 2.5, 1]);
     expect(tts.synthesizeWithMarksToCloudinaryMp3).toHaveBeenCalledWith(
       expect.any(Array),
       expect.any(String),
-      [25, 25, 25],
+      [2.5, 2.5, 2.5],
     );
   });
 
@@ -630,7 +630,7 @@ describe('ShotstackService payload validation', () => {
     await service.renderVideo(scenes, 'job-1');
 
     const images = imageClips(postedPayload());
-    expect(images.map((clip: any) => clip.start)).toEqual([0, 37.5]);
+    expect(images.map((clip: any) => clip.start)).toEqual([0, 2.5]);
     expect(images.map((clip: any) => clip.asset.fit)).toEqual([
       undefined,
       undefined,
@@ -714,12 +714,12 @@ describe('ShotstackService payload validation', () => {
         position: 'bottom',
         asset: expect.objectContaining({
           type: 'html',
-          css: expect.stringContaining('font-size: 48px'),
-          width: 960,
-          height: 220,
-          background: 'rgba(0,0,0,0.72)',
+          css: expect.stringContaining('font-size: 42px'),
+          width: 920,
+          height: 190,
+          background: 'rgba(0,0,0,0.42)',
         }),
-        offset: { x: 0, y: 0.1 },
+        offset: { x: 0, y: 0.15 },
       }),
     );
     expect(subtitles.map((clip: any) => clip.asset.html).join(' ')).toContain(

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   GoneException,
+  INestApplication,
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -23,7 +24,7 @@ class ProbeController {
 
 describe('TrackingController public redirect', () => {
   const offerId = 'aabc7ed5-b8b5-4138-8443-f173ac9b3c10';
-  let app: { close: () => Promise<void>; getHttpServer: () => unknown };
+  let app: INestApplication;
   let tracking: {
     getRedirectOffer: jest.Mock;
     createClick: jest.Mock;

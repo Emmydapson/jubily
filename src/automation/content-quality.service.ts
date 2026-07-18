@@ -48,7 +48,9 @@ export type ScriptQualityResult = {
 
 function scriptTotalSeconds(content: string) {
   try {
-    const parsed = JSON.parse(content) as { scenes?: Array<{ seconds?: unknown; narration?: string }> };
+    const parsed = JSON.parse(content) as {
+      scenes?: Array<{ seconds?: unknown; narration?: string }>;
+    };
     const scenes = Array.isArray(parsed.scenes) ? parsed.scenes : [];
     return scenes.reduce((sum, scene) => sum + Number(scene.seconds || 0), 0);
   } catch {
@@ -83,7 +85,7 @@ export class ContentQualityService {
 
     while (
       (review.score < this.minApprovedScore ||
-        scriptTotalSeconds(content) < 60 ||
+        scriptTotalSeconds(content) < 30 ||
         scriptSceneCount(content) < 8) &&
       rewriteAttempts < this.maxRewriteAttempts
     ) {
@@ -92,7 +94,7 @@ export class ContentQualityService {
           topic: params.topic,
           script: content,
           issues: review.issues,
-          targetSeconds: 75,
+          targetSeconds: 45,
         });
         content = this.normalizeContent(params.topic, content);
         rewriteAttempts++;
@@ -102,8 +104,12 @@ export class ContentQualityService {
       }
     }
 
-    const titleCandidates = await this.buildTitleCandidates(params.topic, content);
-    const selectedTitle = titleCandidates[0]?.title || this.safeTitle(params.topic);
+    const titleCandidates = await this.buildTitleCandidates(
+      params.topic,
+      content,
+    );
+    const selectedTitle =
+      titleCandidates[0]?.title || this.safeTitle(params.topic);
     const hashtags = this.topicHashtags(params.topic, content);
     const youtubeDescription = await this.buildDescription({
       topic: params.topic,
@@ -112,7 +118,11 @@ export class ContentQualityService {
       hashtags,
       offerName: params.offerName,
     });
-    const thumbnailPrompt = this.thumbnailPrompt(params.topic, selectedTitle, content);
+    const thumbnailPrompt = this.thumbnailPrompt(
+      params.topic,
+      selectedTitle,
+      content,
+    );
 
     const enriched = this.injectMetadata(content, {
       title: selectedTitle,
@@ -125,13 +135,13 @@ export class ContentQualityService {
     const finalTotalSeconds = scriptTotalSeconds(enriched);
     const finalSceneCount = scriptSceneCount(enriched);
     const reviewStatus =
-      finalTotalSeconds < 60 || finalSceneCount < 8
+      finalTotalSeconds < 30 || finalSceneCount < 8
         ? 'REJECTED'
         : finalReview.score >= this.minApprovedScore
-        ? 'APPROVED'
-        : finalReview.score >= 65
-          ? 'NEEDS_REVIEW'
-          : 'REJECTED';
+          ? 'APPROVED'
+          : finalReview.score >= 65
+            ? 'NEEDS_REVIEW'
+            : 'REJECTED';
 
     return {
       content: enriched,
@@ -148,7 +158,10 @@ export class ContentQualityService {
     };
   }
 
-  scoreScript(topic: string, content: string): ScriptQualityResult['qualityReview'] {
+  scoreScript(
+    topic: string,
+    content: string,
+  ): ScriptQualityResult['qualityReview'] {
     const parsed = this.parse(content);
     const scenes = Array.isArray(parsed.scenes) ? parsed.scenes : [];
     const issues: string[] = [];
@@ -160,7 +173,10 @@ export class ContentQualityService {
     const ctaScore = this.ctaScore(parsed, issues, strengths);
     const visualScore = this.visualScore(scenes, issues, strengths);
     const safetyScore = this.safetyScore(content, issues, strengths);
-    const titleScore = this.scoreTitle(String(parsed.title || topic), topic).score;
+    const titleScore = this.scoreTitle(
+      String(parsed.title || topic),
+      topic,
+    ).score;
 
     const dimensions = {
       hook: hookScore,
@@ -174,15 +190,20 @@ export class ContentQualityService {
 
     const score = Math.round(
       hookScore * 0.2 +
-      structureScore * 0.14 +
-      pacingScore * 0.16 +
-      ctaScore * 0.12 +
-      visualScore * 0.16 +
-      safetyScore * 0.12 +
-      titleScore * 0.1,
+        structureScore * 0.14 +
+        pacingScore * 0.16 +
+        ctaScore * 0.12 +
+        visualScore * 0.16 +
+        safetyScore * 0.12 +
+        titleScore * 0.1,
     );
 
-    return { score, issues: [...new Set(issues)], strengths: [...new Set(strengths)], dimensions };
+    return {
+      score,
+      issues: [...new Set(issues)],
+      strengths: [...new Set(strengths)],
+      dimensions,
+    };
   }
 
   scoreTitle(title: string, topic: string): TitleCandidate {
@@ -202,7 +223,11 @@ export class ContentQualityService {
       reasons.push('title length is weak');
     }
 
-    if (/(why|mistake|simple|before|hidden|stop|common|most people|this|signals?|habits?)/i.test(t)) {
+    if (
+      /(why|mistake|simple|before|hidden|stop|common|most people|this|signals?|habits?)/i.test(
+        t,
+      )
+    ) {
       score += 18;
       reasons.push('curiosity trigger present');
     }
@@ -212,7 +237,11 @@ export class ContentQualityService {
       reasons.push('topic keyword present');
     }
 
-    if (/(you|your|people|routine|day|morning|energy|sleep|focus|health|product|buyer|tool|offer|business|money|learn)/i.test(t)) {
+    if (
+      /(you|your|people|routine|day|morning|energy|sleep|focus|health|product|buyer|tool|offer|business|money|learn)/i.test(
+        t,
+      )
+    ) {
       score += 8;
       reasons.push('viewer benefit or relevance present');
     }
@@ -227,7 +256,11 @@ export class ContentQualityService {
 
   private async buildTitleCandidates(topic: string, content: string) {
     const parsed = this.parse(content);
-    const generated = await this.ai.generateTitleCandidates({ topic, script: content, count: 5 });
+    const generated = await this.ai.generateTitleCandidates({
+      topic,
+      script: content,
+      count: 5,
+    });
     const candidates = [
       ...generated,
       String(parsed.title || ''),
@@ -235,7 +268,9 @@ export class ContentQualityService {
       `Fix this before your next product pick`,
     ].filter(Boolean);
 
-    const unique = Array.from(new Set(candidates.map((title) => this.clean(title)).filter(Boolean)));
+    const unique = Array.from(
+      new Set(candidates.map((title) => this.clean(title)).filter(Boolean)),
+    );
     return unique
       .map((title) => this.scoreTitle(title, topic))
       .sort((a, b) => b.score - a.score)
@@ -257,7 +292,8 @@ export class ContentQualityService {
         hashtags: params.hashtags,
         offerName: params.offerName,
       });
-      if (generated && !/https?:\/\//i.test(generated)) return generated.slice(0, 1200);
+      if (generated && !/https?:\/\//i.test(generated))
+        return generated.slice(0, 1200);
     } catch {
       // deterministic fallback below
     }
@@ -266,9 +302,13 @@ export class ContentQualityService {
     return [
       this.clean(String(parsed.hook || params.title)),
       'A practical affiliate product note for your next decision.',
-      params.offerName ? 'Recommended resource is linked in the description.' : 'Save this for later.',
+      params.offerName
+        ? 'Recommended resource is linked in the description.'
+        : 'Save this for later.',
       params.hashtags.join(' '),
-    ].join('\n').slice(0, 1200);
+    ]
+      .join('\n')
+      .slice(0, 1200);
   }
 
   private normalizeContent(topic: string, content: string) {
@@ -278,24 +318,35 @@ export class ContentQualityService {
       ...parsed,
       title: this.clean(String(parsed.title || topic)),
       hook: this.clean(String(parsed.hook || scenes[0]?.narration || topic)),
-      cta: this.clean(String(parsed.cta || 'Check the recommended resource in the description.')),
-      scenes: this.normalizeSceneDurations(scenes.map((scene) => ({
-        narration: this.clean(String(scene.narration || '')),
-        caption: this.clean(String(scene.caption || '')),
-        visualPrompt: this.ensureVisualPrompt(String(scene.visualPrompt || scene.narration || topic)),
-        seconds: Number(scene.seconds || 5),
-      }))),
+      cta: this.clean(
+        String(
+          parsed.cta || 'Check the recommended resource in the description.',
+        ),
+      ),
+      scenes: this.normalizeSceneDurations(
+        scenes.map((scene) => ({
+          narration: this.clean(String(scene.narration || '')),
+          caption: this.clean(String(scene.caption || '')),
+          visualPrompt: this.ensureVisualPrompt(
+            String(scene.visualPrompt || scene.narration || topic),
+          ),
+          seconds: Number(scene.seconds || 5),
+        })),
+      ),
     };
 
     return JSON.stringify(normalized);
   }
 
-  private injectMetadata(content: string, metadata: {
-    title: string;
-    hashtags: string[];
-    youtubeDescription: string;
-    thumbnailPrompt: string;
-  }) {
+  private injectMetadata(
+    content: string,
+    metadata: {
+      title: string;
+      hashtags: string[];
+      youtubeDescription: string;
+      thumbnailPrompt: string;
+    },
+  ) {
     const parsed = this.parse(content);
     return JSON.stringify({
       ...parsed,
@@ -306,8 +357,15 @@ export class ContentQualityService {
     });
   }
 
-  private hookScore(parsed: ScriptJson, scenes: Scene[], issues: string[], strengths: string[]) {
-    const hook = this.clean(String(parsed.hook || scenes[0]?.narration || scenes[0]?.caption || ''));
+  private hookScore(
+    parsed: ScriptJson,
+    scenes: Scene[],
+    issues: string[],
+    strengths: string[],
+  ) {
+    const hook = this.clean(
+      String(parsed.hook || scenes[0]?.narration || scenes[0]?.caption || ''),
+    );
     let score = 20;
     if (!hook) {
       issues.push('missing hook');
@@ -316,14 +374,24 @@ export class ContentQualityService {
     const words = this.wordCount(hook);
     if (words <= 18) score += 25;
     else issues.push('hook is too long for the first two seconds');
-    if (/(you|your|most people|stop|before|why|mistake|hidden|common|this)/i.test(hook)) score += 35;
+    if (
+      /(you|your|most people|stop|before|why|mistake|hidden|common|this)/i.test(
+        hook,
+      )
+    )
+      score += 35;
     else issues.push('hook lacks a clear curiosity trigger');
-    if (!/^(\w+\s+){0,2}(this|you|your|stop|why|before|most)/i.test(hook)) score += 10;
+    if (!/^(\w+\s+){0,2}(this|you|your|stop|why|before|most)/i.test(hook))
+      score += 10;
     if (score >= 75) strengths.push('strong opening hook');
     return Math.min(100, score);
   }
 
-  private structureScore(scenes: Scene[], issues: string[], strengths: string[]) {
+  private structureScore(
+    scenes: Scene[],
+    issues: string[],
+    strengths: string[],
+  ) {
     let score = 35;
     if (scenes.length >= 8 && scenes.length <= 12) {
       score += 45;
@@ -338,18 +406,23 @@ export class ContentQualityService {
 
   private pacingScore(scenes: Scene[], issues: string[], strengths: string[]) {
     if (!scenes.length) return 0;
-    const durations = scenes.map((scene) => Number(scene.seconds || this.estimatedSeconds(scene.narration || '')));
+    const durations = scenes.map((scene) =>
+      Number(scene.seconds || this.estimatedSeconds(scene.narration || '')),
+    );
     const total = durations.reduce((sum, n) => sum + n, 0);
     let score = 30;
-    if (total >= 60 && total <= 90) {
+    if (total >= 30 && total <= 60) {
       score += 35;
       strengths.push('total length is retention-friendly');
     } else {
-      issues.push('target total length should be 60-90 seconds');
+      issues.push('target total length should be 30-60 seconds');
     }
-    const goodSceneLengths = durations.filter((seconds) => seconds >= 6 && seconds <= 12).length;
+    const goodSceneLengths = durations.filter(
+      (seconds) => seconds >= 2.5 && seconds <= 5,
+    ).length;
     score += Math.round((goodSceneLengths / scenes.length) * 35);
-    if (goodSceneLengths !== scenes.length) issues.push('some scenes are too short or too long');
+    if (goodSceneLengths !== scenes.length)
+      issues.push('some scenes are too short or too long');
     return Math.min(100, score);
   }
 
@@ -362,7 +435,8 @@ export class ContentQualityService {
     let score = 35;
     if (!/https?:\/\/|www\./i.test(cta)) score += 25;
     else issues.push('CTA should not contain raw URLs');
-    if (/(save|follow|comment|try|description|resource)/i.test(cta)) score += 30;
+    if (/(save|follow|comment|try|description|resource)/i.test(cta))
+      score += 30;
     else issues.push('CTA should ask for a low-friction action');
     if (this.wordCount(cta) <= 14) score += 10;
     else issues.push('CTA is too long');
@@ -377,20 +451,31 @@ export class ContentQualityService {
       const prompt = String(scene.visualPrompt || '');
       let score = 20;
       if (this.wordCount(prompt) >= 10) score += 20;
-      if (/(zoom|pan|push|close-up|slow|camera|overhead|tracking)/i.test(prompt)) score += 20;
-      if (/(light|lighting|sunlight|bright|cinematic|natural)/i.test(prompt)) score += 20;
+      if (
+        /(zoom|pan|push|close-up|slow|camera|overhead|tracking)/i.test(prompt)
+      )
+        score += 20;
+      if (/(light|lighting|sunlight|bright|cinematic|natural)/i.test(prompt))
+        score += 20;
       if (/(realistic|documentary|lifestyle)/i.test(prompt)) score += 10;
       if (/no text/i.test(prompt)) score += 10;
       total += Math.min(100, score);
     }
     const avg = Math.round(total / scenes.length);
-    if (avg < 75) issues.push('visual prompts need more camera, lighting, realism, and no-text detail');
+    if (avg < 75)
+      issues.push(
+        'visual prompts need more camera, lighting, realism, and no-text detail',
+      );
     else strengths.push('visual prompts are production-ready');
     return avg;
   }
 
   private safetyScore(content: string, issues: string[], strengths: string[]) {
-    if (/(cure|guarantee|diagnose|doctor-approved|lose \d+ pounds|melts fat|reverses disease|miracle)/i.test(content)) {
+    if (
+      /(cure|guarantee|diagnose|doctor-approved|lose \d+ pounds|melts fat|reverses disease|miracle)/i.test(
+        content,
+      )
+    ) {
       issues.push('contains risky claim language');
       return 45;
     }
@@ -416,15 +501,21 @@ export class ContentQualityService {
       if (pattern.test(lower)) mapped.forEach((tag) => tags.add(tag));
     }
 
-    this.keywordWords(topic).slice(0, 3).forEach((word) => tags.add(`#${word.replace(/[^a-z0-9]/g, '')}`));
+    this.keywordWords(topic)
+      .slice(0, 3)
+      .forEach((word) => tags.add(`#${word.replace(/[^a-z0-9]/g, '')}`));
     tags.add('#affiliatemarketing');
     tags.add('#productreview');
-    return Array.from(tags).filter((tag) => tag.length > 1).slice(0, 8);
+    return Array.from(tags)
+      .filter((tag) => tag.length > 1)
+      .slice(0, 8);
   }
 
   private thumbnailPrompt(topic: string, title: string, content: string) {
     const parsed = this.parse(content);
-    const hook = this.clean(String(parsed.hook || parsed.scenes?.[0]?.caption || title));
+    const hook = this.clean(
+      String(parsed.hook || parsed.scenes?.[0]?.caption || title),
+    );
     return [
       'vertical YouTube Shorts thumbnail',
       `topic: ${topic}`,
@@ -438,11 +529,19 @@ export class ContentQualityService {
   }
 
   private ensureVisualPrompt(prompt: string) {
-    const base = this.clean(prompt) || 'person comparing an affiliate product before buying';
+    const base =
+      this.clean(prompt) ||
+      'person comparing an affiliate product before buying';
     const additions = [
-      /zoom|pan|push|camera|close-up|overhead/i.test(base) ? '' : 'slow push in camera movement',
-      /light|lighting|sunlight|bright|cinematic|natural/i.test(base) ? '' : 'bright natural lighting',
-      /realistic|documentary|lifestyle/i.test(base) ? '' : 'realistic lifestyle mood',
+      /zoom|pan|push|camera|close-up|overhead/i.test(base)
+        ? ''
+        : 'slow push in camera movement',
+      /light|lighting|sunlight|bright|cinematic|natural/i.test(base)
+        ? ''
+        : 'bright natural lighting',
+      /realistic|documentary|lifestyle/i.test(base)
+        ? ''
+        : 'realistic lifestyle mood',
       /no text/i.test(base) ? '' : 'no text',
     ].filter(Boolean);
     return [base, ...additions].join(', ');
@@ -452,7 +551,10 @@ export class ContentQualityService {
     try {
       return JSON.parse(content) as ScriptJson;
     } catch {
-      const lines = String(content || '').split('\n').map((line) => line.trim()).filter(Boolean);
+      const lines = String(content || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
       return {
         title: lines[0] || 'Untitled',
         hook: lines[0] || '',
@@ -468,7 +570,7 @@ export class ContentQualityService {
   }
 
   private estimatedSeconds(text: string) {
-    return Math.max(6, Math.min(12, this.wordCount(text) / 2.4));
+    return Math.max(2.5, Math.min(5, this.wordCount(text) / 2.4));
   }
 
   private normalizeSceneDurations(scenes: Scene[]) {
@@ -476,24 +578,50 @@ export class ContentQualityService {
 
     const normalized = scenes.map((scene) => ({
       ...scene,
-      seconds: Math.max(6, Math.min(12, Number(scene.seconds || this.estimatedSeconds(scene.narration || '')))),
+      seconds: Math.max(
+        2.5,
+        Math.min(
+          5,
+          Number(scene.seconds || this.estimatedSeconds(scene.narration || '')),
+        ),
+      ),
     }));
-    const total = normalized.reduce((sum, scene) => sum + Number(scene.seconds || 0), 0);
-    if (total >= 60 && total <= 90) return normalized;
+    const total = normalized.reduce(
+      (sum, scene) => sum + Number(scene.seconds || 0),
+      0,
+    );
+    if (total >= 30 && total <= 60) return normalized;
 
-    const scale = total > 0 ? 75 / total : 1;
+    const scale = total > 0 ? 45 / total : 1;
     return normalized.map((scene) => ({
       ...scene,
-      seconds: Number(Math.max(6, Math.min(12, Number(scene.seconds || 0) * scale)).toFixed(2)),
+      seconds: Number(
+        Math.max(2.5, Math.min(5, Number(scene.seconds || 0) * scale)).toFixed(
+          2,
+        ),
+      ),
     }));
   }
 
   private safeTitle(topic: string) {
-    return this.clean(topic).slice(0, 70) || 'Simple product pick to compare today';
+    return (
+      this.clean(topic).slice(0, 70) || 'Simple product pick to compare today'
+    );
   }
 
   private keywordWords(text: string) {
-    const stop = new Set(['this', 'that', 'with', 'from', 'your', 'about', 'before', 'after', 'simple', 'quick']);
+    const stop = new Set([
+      'this',
+      'that',
+      'with',
+      'from',
+      'your',
+      'about',
+      'before',
+      'after',
+      'simple',
+      'quick',
+    ]);
     return this.clean(text)
       .toLowerCase()
       .split(/\s+/)
@@ -501,7 +629,9 @@ export class ContentQualityService {
   }
 
   private clean(text: string) {
-    return String(text || '').replace(/\s+/g, ' ').trim();
+    return String(text || '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   private wordCount(text: string) {

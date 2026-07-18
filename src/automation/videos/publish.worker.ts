@@ -15,6 +15,7 @@ import { AuditService } from '../../audit/audit.service';
 import { safeErrorMessage } from '../../common/safe-metadata';
 import { SocialAccountsService } from '../../publishing/social-accounts.service';
 import { ProviderPublishingError } from '../../publishing/social-publishing.types';
+import { resolvePlatformCta } from './standard-video.mode';
 
 @Injectable()
 export class PublishWorker implements OnModuleInit {
@@ -22,11 +23,17 @@ export class PublishWorker implements OnModuleInit {
   private logger = new Logger(PublishWorker.name);
   private autoPublishPausedLogged = false;
   private readonly workerId = `publish-${process.pid}-${randomUUID()}`;
-  private readonly lockTtlMs = Number(process.env.WORKER_LOCK_TTL_MS || 30 * 60 * 1000);
-  private readonly maxPublishAttempts = Number(process.env.PUBLISH_MAX_ATTEMPTS || 6);
+  private readonly lockTtlMs = Number(
+    process.env.WORKER_LOCK_TTL_MS || 30 * 60 * 1000,
+  );
+  private readonly maxPublishAttempts = Number(
+    process.env.PUBLISH_MAX_ATTEMPTS || 6,
+  );
   private readonly enabled =
-    (process.env.WORKERS_ENABLED ??
-      (process.env.NODE_ENV === 'test' ? 'false' : 'true')).toLowerCase() === 'true';
+    (
+      process.env.WORKERS_ENABLED ??
+      (process.env.NODE_ENV === 'test' ? 'false' : 'true')
+    ).toLowerCase() === 'true';
 
   constructor(
     private prisma: PrismaService,
@@ -67,10 +74,7 @@ export class PublishWorker implements OnModuleInit {
         renderId: job.renderId,
         attempts: { lt: this.maxPublishAttempts },
         script: { reviewStatus: 'APPROVED' },
-        OR: [
-          { workerStage: 'PUBLISH_QUEUED' },
-          ...this.availableLeaseWhere(),
-        ],
+        OR: [{ workerStage: 'PUBLISH_QUEUED' }, ...this.availableLeaseWhere()],
       },
       data: {
         workerLockedAt: new Date(),
@@ -89,7 +93,10 @@ export class PublishWorker implements OnModuleInit {
     return false;
   }
 
-  private async releaseClaim(jobId: string, data: Record<string, unknown> = {}) {
+  private async releaseClaim(
+    jobId: string,
+    data: Record<string, unknown> = {},
+  ) {
     return this.prisma.videoJob.updateMany({
       where: { id: jobId, workerLockedBy: this.workerId },
       data: {
@@ -118,7 +125,9 @@ export class PublishWorker implements OnModuleInit {
     });
 
     if (recovered.count) {
-      this.logger.warn(`[PublishClaim] recovered stale claims count=${recovered.count}`);
+      this.logger.warn(
+        `[PublishClaim] recovered stale claims count=${recovered.count}`,
+      );
     }
   }
 
@@ -160,7 +169,9 @@ export class PublishWorker implements OnModuleInit {
     let lastReason = 'missing';
 
     for (const [name, configured] of candidates) {
-      const raw = configured ? String(configured).trim().replace(/\/+$/, '') : '';
+      const raw = configured
+        ? String(configured).trim().replace(/\/+$/, '')
+        : '';
       if (!raw) continue;
 
       try {
@@ -169,7 +180,11 @@ export class PublishWorker implements OnModuleInit {
           lastReason = `${name}:invalid_protocol`;
           continue;
         }
-        if (!url.hostname || url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+        if (
+          !url.hostname ||
+          url.hostname === 'localhost' ||
+          url.hostname === '127.0.0.1'
+        ) {
           lastReason = `${name}:non_public_host`;
           continue;
         }
@@ -182,14 +197,23 @@ export class PublishWorker implements OnModuleInit {
     return { url: null, reason: lastReason };
   }
 
-  private buildTrackingUrl(apiBaseUrl: string, offerId: string, jobId: string, youtubeId: string) {
+  private buildTrackingUrl(
+    apiBaseUrl: string,
+    offerId: string,
+    jobId: string,
+    youtubeId: string,
+  ) {
     const url = new URL(`/r/${encodeURIComponent(offerId)}`, `${apiBaseUrl}/`);
     url.searchParams.set('jobId', jobId);
     url.searchParams.set('yt', youtubeId);
     return url.toString();
   }
 
-  private buildDescriptionWithOfferLink(baseDesc: string, trackUrl: string, platform?: string | null) {
+  private buildDescriptionWithOfferLink(
+    baseDesc: string,
+    trackUrl: string,
+    platform?: string | null,
+  ) {
     const platformLine = platform ? `Affiliate platform: ${platform}\n` : '';
     const suffix = `Recommended product:
 ${platformLine}${trackUrl}
@@ -197,44 +221,49 @@ ${platformLine}${trackUrl}
 Disclosure: This video may contain affiliate links. We may earn a commission if you purchase through our link, at no extra cost to you.`;
     const separator = '\n\n';
     const maxDescriptionLength = 4500;
-    const maxBaseLength = Math.max(0, maxDescriptionLength - suffix.length - separator.length);
-    const trimmedBase = String(baseDesc || '').slice(0, maxBaseLength).trimEnd();
+    const maxBaseLength = Math.max(
+      0,
+      maxDescriptionLength - suffix.length - separator.length,
+    );
+    const trimmedBase = String(baseDesc || '')
+      .slice(0, maxBaseLength)
+      .trimEnd();
 
     return `${trimmedBase}${separator}${suffix}`.slice(0, maxDescriptionLength);
   }
 
   private isPublishRateLimited(err: any): { hit: boolean; reason: string } {
-  const reason =
-    err?.response?.data?.error?.errors?.[0]?.reason ||
-    err?.errors?.[0]?.reason ||
-    '';
+    const reason =
+      err?.response?.data?.error?.errors?.[0]?.reason ||
+      err?.errors?.[0]?.reason ||
+      '';
 
-  // sometimes message contains it too
-  const msg = String(err?.message || '');
+    // sometimes message contains it too
+    const msg = String(err?.message || '');
 
-  const hit =
-    reason === 'quotaExceeded' ||
-    reason === 'uploadLimitExceeded' ||
-    msg.includes('quota') ||
-    msg.includes('exceeded the number of videos');
+    const hit =
+      reason === 'quotaExceeded' ||
+      reason === 'uploadLimitExceeded' ||
+      msg.includes('quota') ||
+      msg.includes('exceeded the number of videos');
 
-  return { hit, reason: reason || 'unknown' };
-}
+    return { hit, reason: reason || 'unknown' };
+  }
 
   private async markPublishPaused(jobId: string, reason: string, msg: string) {
-  await this.releaseClaim(jobId, {
+    await this.releaseClaim(jobId, {
       status: 'FAILED_QUOTA', // or rename to 'PUBLISH_PAUSED' if you want
       attempts: { increment: 1 },
       error: `YouTube publish blocked (${reason}): ${msg}`,
-  });
-  await this.monitoring.warn({
-    stage: 'PUBLISH',
-    status: 'PAUSED_QUOTA',
-    message: `YouTube publish blocked (${reason}): ${msg}`,
-    jobId,
-    provider: 'youtube',
-  });
-}
+    });
+    await this.monitoring.warn({
+      stage: 'PUBLISH',
+      status: 'PAUSED_QUOTA',
+      message: `YouTube publish blocked (${reason}): ${msg}`,
+      jobId,
+      provider: 'youtube',
+    });
+  }
 
   private cleanWords(s: string) {
     return String(s || '')
@@ -258,7 +287,10 @@ Disclosure: This video may contain affiliate links. We may earn a commission if 
       'review',
     ];
 
-    const words = [...this.cleanWords(topicTitle), ...this.cleanWords(rawScript)];
+    const words = [
+      ...this.cleanWords(topicTitle),
+      ...this.cleanWords(rawScript),
+    ];
     const stop = new Set([
       'the',
       'and',
@@ -292,9 +324,21 @@ Disclosure: This video may contain affiliate links. We may earn a commission if 
     };
   }
 
-  private buildDescription(topicTitle: string, contentObj: any, rawScript: string) {
+  private platformCta(
+    platform: string | null | undefined,
+    format?: string | null,
+  ) {
+    return resolvePlatformCta(platform || 'YOUTUBE', format).text;
+  }
+
+  private buildDescription(
+    topicTitle: string,
+    contentObj: any,
+    rawScript: string,
+    platform = 'YOUTUBE',
+  ) {
     const hook = String(contentObj?.hook || '').trim();
-    const cta = String(contentObj?.cta || '').trim();
+    const cta = this.platformCta(platform, 'SHORT');
 
     const captionLine1 = hook || topicTitle || 'Quick affiliate product tip';
     const captionLine2 = cta || 'Save this and compare it today';
@@ -334,6 +378,7 @@ ${hashtags.join(' ')}`.slice(0, 4500);
     contentObj: any,
     rawScript: string,
     reviewed?: { youtubeDescription?: string | null; hashtags?: unknown },
+    platform = 'YOUTUBE',
   ) {
     const fallback = this.buildHashtags(topicTitle, rawScript);
     const reviewedTags = this.reviewedHashtags(reviewed?.hashtags);
@@ -345,7 +390,9 @@ ${hashtags.join(' ')}`.slice(0, 4500);
       .filter((tag) => tag && tag !== 'shorts')
       .slice(0, 25);
 
-    const reviewedDescription = String(reviewed?.youtubeDescription || '').trim();
+    const reviewedDescription = String(
+      reviewed?.youtubeDescription || '',
+    ).trim();
     if (reviewedDescription) {
       return {
         desc: `${reviewedDescription}
@@ -356,7 +403,7 @@ ${hashtags.join(' ')}`.slice(0, 4500),
     }
 
     const hook = String(contentObj?.hook || '').trim();
-    const cta = String(contentObj?.cta || '').trim();
+    const cta = this.platformCta(platform, 'SHORT');
     const captionLine1 = hook || topicTitle || 'Quick affiliate product tip';
     const captionLine2 = cta || 'Save this and try it today';
 
@@ -409,7 +456,10 @@ ${hashtags.join(' ')}`.slice(0, 4500),
   // -----------------------------
   // Cloudinary stability
   // -----------------------------
-  private async uploadToCloudinaryFromRemoteUrl(remoteUrl: string, publicId: string) {
+  private async uploadToCloudinaryFromRemoteUrl(
+    remoteUrl: string,
+    publicId: string,
+  ) {
     const folder = process.env.CLOUDINARY_FOLDER || 'jubily/videos';
 
     const res = await cloudinary.uploader.upload(remoteUrl, {
@@ -419,7 +469,8 @@ ${hashtags.join(' ')}`.slice(0, 4500),
       overwrite: true,
     });
 
-    if (!res?.secure_url) throw new Error('Cloudinary upload missing secure_url');
+    if (!res?.secure_url)
+      throw new Error('Cloudinary upload missing secure_url');
     return res.secure_url;
   }
 
@@ -429,8 +480,13 @@ ${hashtags.join(' ')}`.slice(0, 4500),
 
     // If we already have a URL, upload it to Cloudinary
     if (current) {
-      this.logger.warn(`Uploading existing videoUrl job=${job.id} host=${this.shortHost(current)}`);
-      const cloudUrl = await this.uploadToCloudinaryFromRemoteUrl(current, job.id);
+      this.logger.warn(
+        `Uploading existing videoUrl job=${job.id} host=${this.shortHost(current)}`,
+      );
+      const cloudUrl = await this.uploadToCloudinaryFromRemoteUrl(
+        current,
+        job.id,
+      );
 
       await this.prisma.videoJob.update({
         where: { id: job.id },
@@ -447,9 +503,13 @@ ${hashtags.join(' ')}`.slice(0, 4500),
     const { url: serveUrl, status } = await this.serve.getRenderAsset(renderId);
 
     if (!serveUrl) throw new Error(`Serve asset missing (status=${status})`);
-    if (String(status).toLowerCase() !== 'ready') throw new Error(`Serve asset not ready (status=${status})`);
+    if (String(status).toLowerCase() !== 'ready')
+      throw new Error(`Serve asset not ready (status=${status})`);
 
-    const cloudUrl = await this.uploadToCloudinaryFromRemoteUrl(serveUrl, job.id);
+    const cloudUrl = await this.uploadToCloudinaryFromRemoteUrl(
+      serveUrl,
+      job.id,
+    );
 
     await this.prisma.videoJob.update({
       where: { id: job.id },
@@ -473,7 +533,9 @@ ${hashtags.join(' ')}`.slice(0, 4500),
         const settings = await this.settingsService.getSettings();
         if (!settings.autoPublish) {
           if (!this.autoPublishPausedLogged) {
-            this.logger.warn('[PublishWorker] autoPublish=false; publish loop paused');
+            this.logger.warn(
+              '[PublishWorker] autoPublish=false; publish loop paused',
+            );
             this.autoPublishPausedLogged = true;
           }
           await new Promise((r) => setTimeout(r, 60_000));
@@ -582,18 +644,31 @@ ${hashtags.join(' ')}`.slice(0, 4500),
         contentObj = null;
       }
 
-      const videoTitle = String(fullJob.script.selectedTitle || contentObj?.title || topicTitle || 'Untitled').slice(0, 90);
-      const { desc: baseDesc, tags } = this.buildReviewedDescription(topicTitle, contentObj, rawContent, {
-        youtubeDescription: fullJob.script.youtubeDescription,
-        hashtags: fullJob.script.hashtags,
-      });
+      const videoTitle = String(
+        fullJob.script.selectedTitle ||
+          contentObj?.title ||
+          topicTitle ||
+          'Untitled',
+      ).slice(0, 90);
+      const { desc: baseDesc, tags } = this.buildReviewedDescription(
+        topicTitle,
+        contentObj,
+        rawContent,
+        {
+          youtubeDescription: fullJob.script.youtubeDescription,
+          hashtags: fullJob.script.hashtags,
+        },
+        fullJob.publishTarget || 'YOUTUBE',
+      );
 
       // Ensure stable URL (Cloudinary)
       if (fullJob.workspaceId) {
         await this.billing.assertWorkspaceActive(fullJob.workspaceId);
       }
       const stableUrl = await this.ensureStableUrl(fullJob);
-      this.logger.log(`Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`);
+      this.logger.log(
+        `Publishing job=${job.id} usingHost=${this.shortHost(stableUrl)}`,
+      );
 
       if (fullJob.publishTarget !== 'YOUTUBE') {
         const provider = String(fullJob.publishTarget || '').toLowerCase();
@@ -635,10 +710,16 @@ ${hashtags.join(' ')}`.slice(0, 4500),
             scriptId: fullJob.scriptId,
             provider,
           });
-          await this.releaseClaim(job.id, { status: 'COMPLETED', published: true });
+          await this.releaseClaim(job.id, {
+            status: 'COMPLETED',
+            published: true,
+          });
           return;
         } catch (error) {
-          const message = error instanceof ProviderPublishingError ? error.message : safeErrorMessage(error);
+          const message =
+            error instanceof ProviderPublishingError
+              ? error.message
+              : safeErrorMessage(error);
           await this.releaseClaim(job.id, {
             attempts: { increment: 1 },
             error: message,
@@ -664,7 +745,10 @@ ${hashtags.join(' ')}`.slice(0, 4500),
         offerId: fullJob.offerId ?? null,
         scriptId: fullJob.scriptId,
         provider: 'youtube',
-        meta: { renderId: fullJob.renderId, sourceHost: this.shortHost(stableUrl) },
+        meta: {
+          renderId: fullJob.renderId,
+          sourceHost: this.shortHost(stableUrl),
+        },
       });
 
       // Build + store SRT (non-fatal)
@@ -695,22 +779,34 @@ ${hashtags.join(' ')}`.slice(0, 4500),
       let youtubeUrl = fullJob.youtubeUrl || null;
 
       if (!youtubeId) {
-        if (fullJob.workspaceId && (job).workerStage !== 'PUBLISH_QUEUED') {
+        if (fullJob.workspaceId && job.workerStage !== 'PUBLISH_QUEUED') {
           await this.billing.consumePublish(fullJob.workspaceId);
         }
         try {
-  youtubeId = fullJob.workspaceId
-    ? await this.youtube.upload(videoTitle, baseDesc, stableUrl, tags, fullJob.workspaceId)
-    : await this.youtube.upload(videoTitle, baseDesc, stableUrl, tags);
-} catch (e: any) {
-  const gate = this.isPublishRateLimited(e);
-  if (gate.hit) {
-    await this.markPublishPaused(job.id, gate.reason, e?.message || String(e));
-    this.logger.warn(`YouTube publish blocked reason=${gate.reason} job=${job.id}`);
-    return; // ✅ stop retry loop
-  }
-  throw e;
-}
+          youtubeId = fullJob.workspaceId
+            ? await this.youtube.upload(
+                videoTitle,
+                baseDesc,
+                stableUrl,
+                tags,
+                fullJob.workspaceId,
+              )
+            : await this.youtube.upload(videoTitle, baseDesc, stableUrl, tags);
+        } catch (e: any) {
+          const gate = this.isPublishRateLimited(e);
+          if (gate.hit) {
+            await this.markPublishPaused(
+              job.id,
+              gate.reason,
+              e?.message || String(e),
+            );
+            this.logger.warn(
+              `YouTube publish blocked reason=${gate.reason} job=${job.id}`,
+            );
+            return; // ✅ stop retry loop
+          }
+          throw e;
+        }
         youtubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
 
         // ✅ Mark published immediately after upload so retries never re-upload
@@ -726,7 +822,9 @@ ${hashtags.join(' ')}`.slice(0, 4500),
         });
 
         if (savedUpload.count !== 1) {
-          this.logger.warn(`[PublishClaim] upload result skipped because claim was lost job=${job.id}`);
+          this.logger.warn(
+            `[PublishClaim] upload result skipped because claim was lost job=${job.id}`,
+          );
           return;
         }
 
@@ -744,7 +842,9 @@ ${hashtags.join(' ')}`.slice(0, 4500),
           new Date(),
         ]);
 
-        this.logger.log(`YouTube uploaded job=${job.id} youtubeId=${youtubeId}`);
+        this.logger.log(
+          `YouTube uploaded job=${job.id} youtubeId=${youtubeId}`,
+        );
         await this.monitoring.info({
           stage: 'PUBLISH',
           status: 'UPLOADED',
@@ -781,8 +881,17 @@ ${hashtags.join(' ')}`.slice(0, 4500),
       if (fullJob.offerId && youtubeId) {
         const apiBase = this.publicApiBaseUrl();
         if (apiBase.url) {
-          trackUrl = this.buildTrackingUrl(apiBase.url, fullJob.offerId, job.id, youtubeId);
-          finalDesc = this.buildDescriptionWithOfferLink(baseDesc, trackUrl, fullJob.offer?.network);
+          trackUrl = this.buildTrackingUrl(
+            apiBase.url,
+            fullJob.offerId,
+            job.id,
+            youtubeId,
+          );
+          finalDesc = this.buildDescriptionWithOfferLink(
+            baseDesc,
+            trackUrl,
+            fullJob.offer?.network,
+          );
         } else {
           this.logger.warn(
             `Tracking link skipped job=${job.id}; reason=${apiBase.reason}; set PUBLIC_API_BASE_URL or JUBILY_API_BASE_URL`,
@@ -790,7 +899,8 @@ ${hashtags.join(' ')}`.slice(0, 4500),
           await this.monitoring.warn({
             stage: 'PUBLISH',
             status: 'TRACKING_LINK_SKIPPED',
-            message: 'Tracking link skipped because public API base URL is not valid',
+            message:
+              'Tracking link skipped because public API base URL is not valid',
             jobId: job.id,
             offerId: fullJob.offerId,
             scriptId: fullJob.scriptId,
@@ -800,8 +910,12 @@ ${hashtags.join(' ')}`.slice(0, 4500),
         }
       }
 
-      const hasTrackingLink = Boolean(trackUrl && finalDesc.split('\n').includes(trackUrl));
-      const trackingLineIndex = trackUrl ? finalDesc.split('\n').indexOf(trackUrl) : -1;
+      const hasTrackingLink = Boolean(
+        trackUrl && finalDesc.split('\n').includes(trackUrl),
+      );
+      const trackingLineIndex = trackUrl
+        ? finalDesc.split('\n').indexOf(trackUrl)
+        : -1;
       this.logger.log(
         `[YouTubeMetadataQA] job=${job.id} descriptionLength=${finalDesc.length} hasTrackingLink=${hasTrackingLink} trackingLineIndex=${trackingLineIndex}`,
       );
@@ -813,9 +927,20 @@ ${hashtags.join(' ')}`.slice(0, 4500),
       // Update metadata (safe retry; never causes re-upload)
       try {
         if (fullJob.workspaceId) {
-          await this.youtube.updateMetadata(youtubeId, videoTitle, finalDesc, tags, fullJob.workspaceId);
+          await this.youtube.updateMetadata(
+            youtubeId,
+            videoTitle,
+            finalDesc,
+            tags,
+            fullJob.workspaceId,
+          );
         } else {
-          await this.youtube.updateMetadata(youtubeId, videoTitle, finalDesc, tags);
+          await this.youtube.updateMetadata(
+            youtubeId,
+            videoTitle,
+            finalDesc,
+            tags,
+          );
         }
         await this.monitoring.info({
           stage: 'PUBLISH',
@@ -838,7 +963,9 @@ ${hashtags.join(' ')}`.slice(0, 4500),
           where: { id: job.id, workerLockedBy: this.workerId },
           data: { error: `Metadata failed: ${msg}` },
         });
-        this.logger.warn(`Metadata failed job=${job.id} msg=${this.short(msg, 250)}`);
+        this.logger.warn(
+          `Metadata failed job=${job.id} msg=${this.short(msg, 250)}`,
+        );
         await this.monitoring.warn({
           stage: 'PUBLISH',
           status: 'METADATA_FAILED',
@@ -856,7 +983,11 @@ ${hashtags.join(' ')}`.slice(0, 4500),
       // -----------------------------
       try {
         if (fullJob.workspaceId) {
-          await this.youtube.uploadCaptions(youtubeId, srt, fullJob.workspaceId);
+          await this.youtube.uploadCaptions(
+            youtubeId,
+            srt,
+            fullJob.workspaceId,
+          );
         } else {
           await this.youtube.uploadCaptions(youtubeId, srt);
         }
@@ -864,7 +995,9 @@ ${hashtags.join(' ')}`.slice(0, 4500),
           where: { id: job.id, workerLockedBy: this.workerId },
           data: { publishStage: 'CAPTIONS_DONE' },
         });
-        this.logger.log(`Captions uploaded job=${job.id} youtubeId=${youtubeId}`);
+        this.logger.log(
+          `Captions uploaded job=${job.id} youtubeId=${youtubeId}`,
+        );
         await this.monitoring.info({
           stage: 'PUBLISH',
           status: 'CAPTIONS_DONE',
@@ -879,9 +1012,14 @@ ${hashtags.join(' ')}`.slice(0, 4500),
         const msg = e?.message || String(e);
         await this.prisma.videoJob.updateMany({
           where: { id: job.id, workerLockedBy: this.workerId },
-          data: { publishStage: 'CAPTIONS_FAILED', error: `Captions failed: ${msg}` },
+          data: {
+            publishStage: 'CAPTIONS_FAILED',
+            error: `Captions failed: ${msg}`,
+          },
         });
-        this.logger.warn(`Captions failed job=${job.id} msg=${this.short(msg, 250)}`);
+        this.logger.warn(
+          `Captions failed job=${job.id} msg=${this.short(msg, 250)}`,
+        );
         await this.monitoring.warn({
           stage: 'PUBLISH',
           status: 'CAPTIONS_FAILED',
@@ -913,7 +1051,9 @@ ${hashtags.join(' ')}`.slice(0, 4500),
       await this.releaseClaim(job.id, {
         attempts: { increment: 1 },
         error: msg,
-        ...(nextAttempts >= this.maxPublishAttempts ? { status: 'FAILED_PUBLISH' } : {}),
+        ...(nextAttempts >= this.maxPublishAttempts
+          ? { status: 'FAILED_PUBLISH' }
+          : {}),
       });
 
       // Only mark FAILED in sheet if it never got uploaded.
@@ -925,7 +1065,7 @@ ${hashtags.join(' ')}`.slice(0, 4500),
           topicTitle,
           offerName,
           'youtube',
-          
+
           'FAILED',
           '',
           msg,
@@ -933,13 +1073,20 @@ ${hashtags.join(' ')}`.slice(0, 4500),
           new Date(),
         ]);
       } catch (sheetErr: any) {
-        this.logger.warn(`Sheets append failed job=${job.id} msg=${this.short(sheetErr?.message || String(sheetErr), 200)}`);
+        this.logger.warn(
+          `Sheets append failed job=${job.id} msg=${this.short(sheetErr?.message || String(sheetErr), 200)}`,
+        );
       }
 
-      this.logger.warn(`Publish failed job=${job.id} msg=${this.short(msg, 300)}`);
+      this.logger.warn(
+        `Publish failed job=${job.id} msg=${this.short(msg, 300)}`,
+      );
       await this.monitoring.error({
         stage: 'PUBLISH',
-        status: nextAttempts >= this.maxPublishAttempts ? 'FAILED_PERMANENT' : 'FAILED',
+        status:
+          nextAttempts >= this.maxPublishAttempts
+            ? 'FAILED_PERMANENT'
+            : 'FAILED',
         message: msg,
         jobId: job.id,
         scriptId: job.scriptId ?? null,

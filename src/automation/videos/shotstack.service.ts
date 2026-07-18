@@ -8,6 +8,13 @@ import { AiImageService } from '../ai/ai-image.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import { shotstackHeaders, shotstackRenderUrl } from './shotstack.config';
+import {
+  buildModernCaptionChunks,
+  buildStandardRenderScenes,
+  motionEffectForScene,
+  transitionForScene,
+  validateStandardTimeline,
+} from './standard-video.mode';
 
 type ShotstackValidationIssue = {
   path: string;
@@ -62,10 +69,22 @@ const VALID_SHOTSTACK_EFFECTS = new Set([
 
 const VALID_ASSET_TYPES = new Set(['image', 'video', 'audio', 'html', 'title']);
 const VALID_OUTPUT_FORMATS = new Set(['mp4']);
-const VALID_OUTPUT_RESOLUTIONS = new Set(['preview', 'mobile', 'sd', 'hd', '1080']);
+const VALID_OUTPUT_RESOLUTIONS = new Set([
+  'preview',
+  'mobile',
+  'sd',
+  'hd',
+  '1080',
+]);
 const VALID_OUTPUT_ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1', '4:5']);
 const OUTPUT_ALLOWED_KEYS = new Set(['format', 'resolution', 'aspectRatio']);
-const VALID_CLIP_POSITION = new Set(['top', 'bottom', 'center', 'left', 'right']);
+const VALID_CLIP_POSITION = new Set([
+  'top',
+  'bottom',
+  'center',
+  'left',
+  'right',
+]);
 const CLIP_ALLOWED_KEYS = new Set([
   'asset',
   'start',
@@ -84,7 +103,15 @@ const ASSET_ALLOWED_KEYS: Record<string, Set<string>> = {
   video: new Set(['type', 'src', 'trim', 'volume', 'crop']),
   audio: new Set(['type', 'src', 'trim', 'volume']),
   html: new Set(['type', 'html', 'css', 'width', 'height', 'background']),
-  title: new Set(['type', 'text', 'style', 'color', 'size', 'background', 'position']),
+  title: new Set([
+    'type',
+    'text',
+    'style',
+    'color',
+    'size',
+    'background',
+    'position',
+  ]),
 };
 
 export type SafeShotstackProviderError = {
@@ -117,12 +144,14 @@ function collectValidationMessages(payload: any): string[] {
   const messages: string[] = [];
 
   for (const candidate of candidates.flatMap(asArray)) {
-    if (typeof candidate === 'string' && candidate.trim()) messages.push(candidate.trim());
+    if (typeof candidate === 'string' && candidate.trim())
+      messages.push(candidate.trim());
     if (candidate && typeof candidate === 'object') {
       const obj = candidate as Record<string, unknown>;
       for (const key of ['message', 'detail', 'description', 'error']) {
         const value = obj[key];
-        if (typeof value === 'string' && value.trim()) messages.push(value.trim());
+        if (typeof value === 'string' && value.trim())
+          messages.push(value.trim());
       }
     }
   }
@@ -130,14 +159,22 @@ function collectValidationMessages(payload: any): string[] {
   return [...new Set(messages)].slice(0, 10);
 }
 
-export function serializeShotstackProviderError(error: unknown): SafeShotstackProviderError {
+export function serializeShotstackProviderError(
+  error: unknown,
+): SafeShotstackProviderError {
   const response = (error as any)?.response;
   const data = response?.data;
   const headers = response?.headers || {};
   return {
     statusCode: typeof response?.status === 'number' ? response.status : null,
     requestId:
-      String(headers['x-request-id'] || headers['x-shotstack-request-id'] || data?.request_id || data?.requestId || '').trim() || null,
+      String(
+        headers['x-request-id'] ||
+          headers['x-shotstack-request-id'] ||
+          data?.request_id ||
+          data?.requestId ||
+          '',
+      ).trim() || null,
     validationMessages: collectValidationMessages(data),
   };
 }
@@ -147,11 +184,16 @@ function clonePayload<T>(payload: T): T {
 }
 
 function clampStart(value: unknown): number {
-  return Math.max(0, typeof value === 'number' && Number.isFinite(value) ? value : 0);
+  return Math.max(
+    0,
+    typeof value === 'number' && Number.isFinite(value) ? value : 0,
+  );
 }
 
 function safeLength(value: unknown, fallback = 1.5): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : fallback;
 }
 
 function escapeHtml(text: string) {
@@ -168,7 +210,9 @@ export function sanitizeShotstackEffect(effect: unknown): string | undefined {
   return VALID_SHOTSTACK_EFFECTS.has(effect) ? effect : undefined;
 }
 
-export function validateShotstackPayload(payload: any): ShotstackValidationResult {
+export function validateShotstackPayload(
+  payload: any,
+): ShotstackValidationResult {
   const sanitized = clonePayload(payload);
   const issues: ShotstackValidationIssue[] = [];
   const tracks = sanitized?.timeline?.tracks;
@@ -205,13 +249,31 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
       }
     }
     if (!VALID_OUTPUT_FORMATS.has(String(output.format || ''))) {
-      issues.push({ path: 'output.format', code: 'INVALID_OUTPUT', value: output.format });
+      issues.push({
+        path: 'output.format',
+        code: 'INVALID_OUTPUT',
+        value: output.format,
+      });
     }
-    if (output.resolution != null && !VALID_OUTPUT_RESOLUTIONS.has(String(output.resolution))) {
-      issues.push({ path: 'output.resolution', code: 'INVALID_OUTPUT', value: output.resolution });
+    if (
+      output.resolution != null &&
+      !VALID_OUTPUT_RESOLUTIONS.has(String(output.resolution))
+    ) {
+      issues.push({
+        path: 'output.resolution',
+        code: 'INVALID_OUTPUT',
+        value: output.resolution,
+      });
     }
-    if (output.aspectRatio != null && !VALID_OUTPUT_ASPECT_RATIOS.has(String(output.aspectRatio))) {
-      issues.push({ path: 'output.aspectRatio', code: 'INVALID_OUTPUT', value: output.aspectRatio });
+    if (
+      output.aspectRatio != null &&
+      !VALID_OUTPUT_ASPECT_RATIOS.has(String(output.aspectRatio))
+    ) {
+      issues.push({
+        path: 'output.aspectRatio',
+        code: 'INVALID_OUTPUT',
+        value: output.aspectRatio,
+      });
     }
   }
 
@@ -254,7 +316,13 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
         clip.start = clampStart(clip.start);
       }
 
-      if (typeof clip?.start !== 'number' || !Number.isFinite(clip.start) || typeof clip?.length !== 'number' || !Number.isFinite(clip.length) || clip.length <= 0) {
+      if (
+        typeof clip?.start !== 'number' ||
+        !Number.isFinite(clip.start) ||
+        typeof clip?.length !== 'number' ||
+        !Number.isFinite(clip.length) ||
+        clip.length <= 0
+      ) {
         issues.push({
           path,
           code: 'INVALID_CLIP_TIMING',
@@ -282,7 +350,11 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
 
       if (Object.prototype.hasOwnProperty.call(clip, 'volume')) {
         const volume = clip.volume;
-        if (clip?.asset?.type === 'audio' && typeof volume === 'number' && Number.isFinite(volume)) {
+        if (
+          clip?.asset?.type === 'audio' &&
+          typeof volume === 'number' &&
+          Number.isFinite(volume)
+        ) {
           clip.asset.volume = Math.max(0, Math.min(1, volume));
         }
         delete clip.volume;
@@ -300,7 +372,11 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
 
       const assetType = String(asset.type || '');
       if (!VALID_ASSET_TYPES.has(assetType)) {
-        issues.push({ path: `${path}.asset.type`, code: 'INVALID_ASSET_TYPE', value: asset.type });
+        issues.push({
+          path: `${path}.asset.type`,
+          code: 'INVALID_ASSET_TYPE',
+          value: asset.type,
+        });
         return;
       }
 
@@ -316,9 +392,16 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
         }
       }
 
-      const requiredContentField = assetType === 'html' ? 'html' : assetType === 'title' ? 'text' : 'src';
-      if (typeof asset[requiredContentField] !== 'string' || !asset[requiredContentField].trim()) {
-        issues.push({ path: `${path}.asset.${requiredContentField}`, code: 'MISSING_REQUIRED_FIELD' });
+      const requiredContentField =
+        assetType === 'html' ? 'html' : assetType === 'title' ? 'text' : 'src';
+      if (
+        typeof asset[requiredContentField] !== 'string' ||
+        !asset[requiredContentField].trim()
+      ) {
+        issues.push({
+          path: `${path}.asset.${requiredContentField}`,
+          code: 'MISSING_REQUIRED_FIELD',
+        });
       }
     });
   });
@@ -329,7 +412,6 @@ export function validateShotstackPayload(payload: any): ShotstackValidationResul
 @Injectable()
 export class ShotstackService {
   private readonly logger = new Logger(ShotstackService.name);
-  private readonly targetVideoSeconds = Number(process.env.VIDEO_TARGET_SECONDS || 75);
   private payloadDebugSequence = 0;
 
   constructor(
@@ -342,23 +424,16 @@ export class ShotstackService {
   // ------------------------
   private estimateSeconds(narration: string) {
     const words = narration.trim().split(/\s+/).filter(Boolean).length;
-    return Math.max(6, Math.min(12, words / 2.2));
+    return Math.max(2.5, Math.min(5, words / 2.45));
   }
 
   private normalizeRenderScenes(scenes: Scene[]) {
-    const measured = scenes.map((scene) => ({
+    return scenes.map((scene) => ({
       ...scene,
-      duration: safeLength(scene.duration || this.estimateSeconds(scene.narration)),
-    }));
-    const total = measured.reduce((sum, scene) => sum + scene.duration, 0);
-    const target = this.targetVideoSeconds >= 60 && this.targetVideoSeconds <= 90
-      ? this.targetVideoSeconds
-      : 75;
-    const scale = total > 0 ? target / total : 1;
-
-    return measured.map((scene) => ({
-      ...scene,
-      duration: Number((scene.duration * scale).toFixed(2)),
+      duration: safeLength(
+        scene.duration || this.estimateSeconds(scene.narration),
+        this.estimateSeconds(scene.narration),
+      ),
     }));
   }
 
@@ -387,41 +462,35 @@ export class ShotstackService {
   // 🎯 GROUPED SUBTITLES (OPTIMIZED — NOT WORD EXPLOSION)
   // ------------------------
   private buildGroupedSubtitles(text: string, start: number, duration: number) {
-    const words = text.split(' ').filter(Boolean);
+    const chunks = buildModernCaptionChunks(text, clampStart(start), duration);
 
-    // group words in chunks (prevents Shotstack overload)
-    const chunkSize = 3;
-    const chunks: string[] = [];
-
-    for (let i = 0; i < words.length; i += chunkSize) {
-      chunks.push(words.slice(i, i + chunkSize).join(' '));
-    }
-
-    const perChunk = safeLength(duration / Math.max(chunks.length, 1), duration);
-
-    const safeStart = clampStart(start);
-
-    return chunks.map((chunk, i) => ({
+    return chunks.map((chunk) => ({
       asset: {
         type: 'html',
-        html: `<p data-html-type="text">${escapeHtml(chunk)}</p>`,
-        css: 'p { color: #ffffff; font-size: 48px; line-height: 1.12; font-weight: 800; font-family: Arial, sans-serif; text-align: center; text-shadow: 0 3px 8px rgba(0,0,0,0.95); padding: 18px 26px; border-radius: 18px; }',
-        width: 960,
-        height: 220,
-        background: 'rgba(0,0,0,0.72)',
+        html: `<p data-html-type="text">${escapeHtml(chunk.text).replace(/&lt;br\/&gt;/g, '<br/>')}</p>`,
+        css: 'p { color: #ffffff; font-size: 42px; line-height: 1.16; font-weight: 800; font-family: Arial, sans-serif; text-align: center; text-shadow: 0 3px 10px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.9); padding: 12px 20px; border-radius: 14px; }',
+        width: 920,
+        height: 190,
+        background: 'rgba(0,0,0,0.42)',
       },
-      start: clampStart(safeStart + i * perChunk),
-      length: perChunk,
+      start: clampStart(chunk.start),
+      length: safeLength(chunk.length, duration),
       position: 'bottom',
-      offset: { x: 0, y: 0.1 },
+      offset: { x: 0, y: 0.15 },
     }));
   }
 
-  private buildSceneTimings(scenes: Scene[], byName: Map<string, number>, end: number) {
+  private buildSceneTimings(
+    scenes: Scene[],
+    byName: Map<string, number>,
+    end: number,
+  ) {
     let cursor = 0;
     const fallbackStarts = scenes.map((scene) => {
       const start = cursor;
-      cursor += safeLength(scene.duration || this.estimateSeconds(scene.narration));
+      cursor += safeLength(
+        scene.duration || this.estimateSeconds(scene.narration),
+      );
       return start;
     });
     const fallbackEnd = Math.max(cursor, end || 0);
@@ -430,11 +499,18 @@ export class ShotstackService {
     return scenes.map((scene, i) => {
       const markedStart = byName.get(`s${i + 1}`);
       const markedNext = byName.get(`s${i + 2}`);
-      const start = clampStart(typeof markedStart === 'number' ? markedStart : fallbackStarts[i]);
-      let next = typeof markedNext === 'number' ? clampStart(markedNext) : (fallbackStarts[i + 1] ?? totalEnd);
+      const start = clampStart(
+        typeof markedStart === 'number' ? markedStart : fallbackStarts[i],
+      );
+      let next =
+        typeof markedNext === 'number'
+          ? clampStart(markedNext)
+          : (fallbackStarts[i + 1] ?? totalEnd);
 
       if (next <= start) {
-        next = start + safeLength(scene.duration || this.estimateSeconds(scene.narration));
+        next =
+          start +
+          safeLength(scene.duration || this.estimateSeconds(scene.narration));
       }
 
       if (i === scenes.length - 1 && totalEnd > start) {
@@ -450,18 +526,24 @@ export class ShotstackService {
 
   private usableSceneMarks(scenes: Scene[], byName: Map<string, number>) {
     const marks = scenes.map((_, i) => byName.get(`s${i + 1}`));
-    if (marks.some((mark) => typeof mark !== 'number' || !Number.isFinite(mark))) {
+    if (
+      marks.some((mark) => typeof mark !== 'number' || !Number.isFinite(mark))
+    ) {
       return new Map<string, number>();
     }
 
     for (let i = 1; i < marks.length; i++) {
       if ((marks[i] as number) <= (marks[i - 1] as number)) {
-        this.logger.warn('[ShotstackTiming] ignoring non-monotonic TTS scene marks');
+        this.logger.warn(
+          '[ShotstackTiming] ignoring non-monotonic TTS scene marks',
+        );
         return new Map<string, number>();
       }
       const markedLength = (marks[i] as number) - (marks[i - 1] as number);
       if (markedLength < scenes[i - 1].duration * 0.5) {
-        this.logger.warn('[ShotstackTiming] ignoring compressed TTS scene marks');
+        this.logger.warn(
+          '[ShotstackTiming] ignoring compressed TTS scene marks',
+        );
         return new Map<string, number>();
       }
     }
@@ -489,25 +571,42 @@ export class ShotstackService {
     };
   }
 
-  private maybeSaveDebugPayload(jobId: string | undefined, payload: any): string | null {
+  private maybeSaveDebugPayload(
+    jobId: string | undefined,
+    payload: any,
+  ): string | null {
     if (process.env.DEBUG_SHOTSTACK_PAYLOAD !== 'true') return null;
 
     try {
       const dir = path.resolve(process.cwd(), 'tmp', 'shotstack-payloads');
       fs.mkdirSync(dir, { recursive: true });
-      const safeJobId = String(jobId || `job-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const file = path.join(dir, `${safeJobId}-${Date.now()}-${++this.payloadDebugSequence}.json`);
+      const safeJobId = String(jobId || `job-${Date.now()}`).replace(
+        /[^a-zA-Z0-9_-]/g,
+        '_',
+      );
+      const file = path.join(
+        dir,
+        `${safeJobId}-${Date.now()}-${++this.payloadDebugSequence}.json`,
+      );
       fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
       this.logger.log(`[ShotstackPayloadDebug] saved=${file}`);
       return file;
     } catch (error) {
-      this.logger.warn(`[ShotstackPayloadDebug] save failed msg=${error instanceof Error ? error.message : String(error)}`);
+      this.logger.warn(
+        `[ShotstackPayloadDebug] save failed msg=${error instanceof Error ? error.message : String(error)}`,
+      );
       return null;
     }
   }
 
-  private verifySceneImageUrls(images: string[], sceneCount: number, jobId?: string) {
-    const validImages = images.filter((url) => typeof url === 'string' && url.trim());
+  private verifySceneImageUrls(
+    images: string[],
+    sceneCount: number,
+    jobId?: string,
+  ) {
+    const validImages = images.filter(
+      (url) => typeof url === 'string' && url.trim(),
+    );
     const uniqueImages = new Set(validImages);
 
     this.logger.log(
@@ -515,16 +614,23 @@ export class ShotstackService {
     );
 
     if (validImages.length !== sceneCount) {
-      throw new Error(`Scene image generation returned ${validImages.length}/${sceneCount} usable URLs`);
+      throw new Error(
+        `Scene image generation returned ${validImages.length}/${sceneCount} usable URLs`,
+      );
     }
 
     if (sceneCount > 1 && uniqueImages.size <= 1) {
-      throw new Error(`Scene image generation returned one unique URL for ${sceneCount} scenes`);
+      throw new Error(
+        `Scene image generation returned one unique URL for ${sceneCount} scenes`,
+      );
     }
   }
 
   private verifyImageClipTiming(bgClips: any[], jobId?: string) {
-    const timingKeys = bgClips.map((clip) => `${Number(clip.start).toFixed(3)}:${Number(clip.length).toFixed(3)}`);
+    const timingKeys = bgClips.map(
+      (clip) =>
+        `${Number(clip.start).toFixed(3)}:${Number(clip.length).toFixed(3)}`,
+    );
     const uniqueTimingKeys = new Set(timingKeys);
 
     this.logger.log(
@@ -532,12 +638,16 @@ export class ShotstackService {
     );
 
     if (bgClips.length > 1 && uniqueTimingKeys.size !== bgClips.length) {
-      throw new Error(`Image clips must have unique start/duration pairs (${uniqueTimingKeys.size}/${bgClips.length})`);
+      throw new Error(
+        `Image clips must have unique start/duration pairs (${uniqueTimingKeys.size}/${bgClips.length})`,
+      );
     }
   }
 
   private verifyImageClipsSequential(bgClips: any[], jobId?: string) {
-    const sorted = [...bgClips].sort((a, b) => Number(a.start || 0) - Number(b.start || 0));
+    const sorted = [...bgClips].sort(
+      (a, b) => Number(a.start || 0) - Number(b.start || 0),
+    );
     let issues = 0;
 
     for (let i = 0; i < sorted.length; i++) {
@@ -561,11 +671,17 @@ export class ShotstackService {
     );
 
     if (issues > 0) {
-      throw new Error(`Image clips must be sequential with no timing gaps or overlaps (issues=${issues})`);
+      throw new Error(
+        `Image clips must be sequential with no timing gaps or overlaps (issues=${issues})`,
+      );
     }
   }
 
-  private verifyNoFullTimelineImageClip(bgClips: any[], renderEnd: number, jobId?: string) {
+  private verifyNoFullTimelineImageClip(
+    bgClips: any[],
+    renderEnd: number,
+    jobId?: string,
+  ) {
     const fullTimelineClips = bgClips.filter((clip) => {
       const start = Number(clip.start || 0);
       const length = Number(clip.length || 0);
@@ -577,16 +693,22 @@ export class ShotstackService {
     );
 
     if (bgClips.length > 1 && fullTimelineClips.length > 0) {
-      throw new Error(`Image clips must not cover the full timeline (${fullTimelineClips.length}/${bgClips.length})`);
+      throw new Error(
+        `Image clips must not cover the full timeline (${fullTimelineClips.length}/${bgClips.length})`,
+      );
     }
   }
 
   private verifySubtitleTrackAboveImages(tracks: any[], jobId?: string) {
-    const subtitleTrackIndex = tracks.findIndex((track) =>
-      Array.isArray(track?.clips) && track.clips.some((clip: any) => clip.asset?.type === 'html'),
+    const subtitleTrackIndex = tracks.findIndex(
+      (track) =>
+        Array.isArray(track?.clips) &&
+        track.clips.some((clip: any) => clip.asset?.type === 'html'),
     );
-    const imageTrackIndex = tracks.findIndex((track) =>
-      Array.isArray(track?.clips) && track.clips.some((clip: any) => clip.asset?.type === 'image'),
+    const imageTrackIndex = tracks.findIndex(
+      (track) =>
+        Array.isArray(track?.clips) &&
+        track.clips.some((clip: any) => clip.asset?.type === 'image'),
     );
 
     this.logger.log(
@@ -594,30 +716,61 @@ export class ShotstackService {
     );
 
     if (subtitleTrackIndex < 0 || imageTrackIndex < 0) {
-      throw new Error('Shotstack payload must include subtitle and image tracks');
+      throw new Error(
+        'Shotstack payload must include subtitle and image tracks',
+      );
     }
 
     if (subtitleTrackIndex >= imageTrackIndex) {
-      throw new Error(`Subtitle track must be above image track (${subtitleTrackIndex} >= ${imageTrackIndex})`);
+      throw new Error(
+        `Subtitle track must be above image track (${subtitleTrackIndex} >= ${imageTrackIndex})`,
+      );
     }
   }
 
   // ------------------------
   // 🚀 MAIN RENDER FUNCTION
   // ------------------------
-  async renderVideo(scenes: Scene[], jobId?: string): Promise<ShotstackRenderResult> {
+  async renderVideo(
+    scenes: Scene[],
+    jobId?: string,
+  ): Promise<ShotstackRenderResult> {
     if (!Array.isArray(scenes) || scenes.length === 0) {
       throw new Error('renderVideo: scenes empty');
     }
 
-    const renderScenes = this.normalizeRenderScenes(scenes);
+    const measuredScenes = this.normalizeRenderScenes(scenes);
+    const standardPlan = buildStandardRenderScenes(measuredScenes, {
+      platform: 'YOUTUBE_SHORTS',
+    });
+    const renderScenes = standardPlan.scenes;
     const jobKey = `job-${Date.now()}`;
     const narrations = renderScenes.map((s) => s.narration);
     const sceneDurations = renderScenes.map((s) => s.duration);
+    const plannedDuration = sceneDurations.reduce(
+      (sum, seconds) => sum + seconds,
+      0,
+    );
+
+    this.logger.log({
+      message: 'Standard image video mode selected',
+      mode: standardPlan.mode,
+      jobId: jobId || null,
+      totalDuration: Number(plannedDuration.toFixed(2)),
+      sceneCount: renderScenes.length,
+      averageSceneDuration: standardPlan.diagnostics.averageSceneDuration,
+      suppliedMediaUsage: standardPlan.diagnostics.suppliedMediaCount,
+      aiImageUsage: standardPlan.diagnostics.aiImageCount,
+      ctaType: standardPlan.cta.type,
+    });
 
     // 🎙️ TTS generation
     const { url: voiceoverUrl, timepoints } =
-      await this.tts.synthesizeWithMarksToCloudinaryMp3(narrations, jobKey, sceneDurations);
+      await this.tts.synthesizeWithMarksToCloudinaryMp3(
+        narrations,
+        jobKey,
+        sceneDurations,
+      );
 
     const byName = new Map<string, number>();
     for (const tp of timepoints || []) {
@@ -633,26 +786,29 @@ export class ShotstackService {
     }
 
     // 🎨 AI images (parallel)
-    const images = await this.aiImages.generateMultipleScenes(
-      renderScenes.map((s, i) => ({
-        visualPrompt: s.visualPrompt,
-        publicId: `${jobKey}-scene-${i}`,
-        jobId,
-      })),
-    );
+    const aiImageScenes = renderScenes
+      .map((scene, i) => ({ scene, i }))
+      .filter((item) => !item.scene.suppliedMediaUrl);
+    const generatedImages = aiImageScenes.length
+      ? await this.aiImages.generateMultipleScenes(
+          aiImageScenes.map(({ scene, i }) => ({
+            visualPrompt: scene.visualPrompt,
+            publicId: `${jobKey}-scene-${i}`,
+            jobId,
+          })),
+        )
+      : [];
+    const images: string[] = [];
+    let generatedIndex = 0;
+    for (const scene of renderScenes) {
+      images.push(scene.suppliedMediaUrl || generatedImages[generatedIndex++]);
+    }
     this.verifySceneImageUrls(images, renderScenes.length, jobId);
 
     const bgClips: any[] = [];
     const subtitleClips: any[] = [];
     const sfxClips: any[] = [];
 
-    const motionEffects = [
-      'zoomIn',
-      'zoomOut',
-      'slideLeft',
-      'slideRight',
-      'slideUp',
-    ];
     const timingMarks = this.usableSceneMarks(renderScenes, byName);
     const sceneTimings = this.buildSceneTimings(renderScenes, timingMarks, end);
     const renderEnd = Math.max(
@@ -667,7 +823,8 @@ export class ShotstackService {
       const scene = renderScenes[i];
       const { start, length } = sceneTimings[i];
 
-      const effect = sanitizeShotstackEffect(motionEffects[i % motionEffects.length]);
+      const effect = sanitizeShotstackEffect(motionEffectForScene(i));
+      const transition = transitionForScene(i, renderScenes.length);
 
       // ------------------------
       // 🎥 BACKGROUND IMAGE
@@ -678,6 +835,7 @@ export class ShotstackService {
         length,
         position: 'center',
         ...(effect ? { effect } : {}),
+        ...(transition ? { transition } : {}),
       });
 
       // ------------------------
@@ -707,6 +865,40 @@ export class ShotstackService {
     this.verifyImageClipTiming(bgClips, jobId);
     this.verifyImageClipsSequential(bgClips, jobId);
     this.verifyNoFullTimelineImageClip(bgClips, renderEnd, jobId);
+    const timelineValidation = validateStandardTimeline({
+      imageClips: bgClips,
+      subtitleClips,
+      renderEnd,
+      hasCtaOutro: renderScenes.some((scene) => scene.isCtaOutro),
+    });
+    this.logger.log({
+      message: 'Standard timeline validation complete',
+      jobId: jobId || null,
+      valid: timelineValidation.valid,
+      issueCount: timelineValidation.issues.length,
+      captionChunkCount: subtitleClips.length,
+      transitionCount: bgClips.filter((clip) => clip.transition).length,
+      motionEffectDistribution: bgClips.reduce<Record<string, number>>(
+        (acc, clip) => {
+          const key = String(clip.effect || 'none');
+          acc[key] = (acc[key] || 0) + 1;
+          return acc;
+        },
+        {},
+      ),
+    });
+    if (!timelineValidation.valid) {
+      throw new ShotstackProviderError(
+        'Video render failed because the render timeline was invalid.',
+        {
+          statusCode: null,
+          requestId: null,
+          validationMessages: timelineValidation.issues.map(
+            (issue) => `${issue.code}: ${issue.message}`,
+          ),
+        },
+      );
+    }
 
     // ------------------------
     // 🎞️ FINAL PAYLOAD
@@ -765,16 +957,30 @@ export class ShotstackService {
       );
     }
     const blockingIssues = validation.issues.filter((issue) =>
-      ['MISSING_REQUIRED_FIELD', 'INVALID_ASSET_TYPE', 'INVALID_CLIP_TIMING', 'INVALID_TIMELINE', 'INVALID_OUTPUT'].includes(issue.code),
+      [
+        'MISSING_REQUIRED_FIELD',
+        'INVALID_ASSET_TYPE',
+        'INVALID_CLIP_TIMING',
+        'INVALID_TIMELINE',
+        'INVALID_OUTPUT',
+      ].includes(issue.code),
     );
     if (blockingIssues.length > 0) {
-      throw new ShotstackProviderError('Video render failed because the render payload was invalid.', {
-        statusCode: null,
-        requestId: null,
-        validationMessages: blockingIssues.map((issue) => `${issue.code} at ${issue.path}`),
-      });
+      throw new ShotstackProviderError(
+        'Video render failed because the render payload was invalid.',
+        {
+          statusCode: null,
+          requestId: null,
+          validationMessages: blockingIssues.map(
+            (issue) => `${issue.code} at ${issue.path}`,
+          ),
+        },
+      );
     }
-    const shotstackPayloadDebugPath = this.maybeSaveDebugPayload(jobId, validation.payload);
+    const shotstackPayloadDebugPath = this.maybeSaveDebugPayload(
+      jobId,
+      validation.payload,
+    );
 
     this.logger.log(
       `[ShotstackRender] scenes=${renderScenes.length} duration=${Math.ceil(renderEnd)}`,
@@ -790,7 +996,9 @@ export class ShotstackService {
       const safe = serializeShotstackProviderError(error);
       const hasValidationFailure =
         safe.statusCode === 400 ||
-        safe.validationMessages.some((message) => /validation|unknown property|timeline|asset/i.test(message));
+        safe.validationMessages.some((message) =>
+          /validation|unknown property|timeline|asset/i.test(message),
+        );
       const publicMessage = hasValidationFailure
         ? 'Video render failed because the render payload was invalid.'
         : 'Video render failed at the render provider.';

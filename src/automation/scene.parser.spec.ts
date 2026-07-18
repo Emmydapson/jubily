@@ -1,7 +1,7 @@
 import { extractScenes } from './scene.parser';
 
 describe('extractScenes duration targeting', () => {
-  it('scales short JSON scripts toward the 60-90 second target range', () => {
+  it('keeps short JSON scripts in the Standard short-form pacing range', () => {
     const script = JSON.stringify({
       scenes: Array.from({ length: 8 }, (_, index) => ({
         narration: `Scene ${index + 1} explains one practical step in the routine.`,
@@ -16,11 +16,11 @@ describe('extractScenes duration targeting', () => {
     const total = scenes.reduce((sum, scene) => sum + scene.duration, 0);
 
     expect(scenes).toHaveLength(8);
-    expect(total).toBeGreaterThanOrEqual(60);
-    expect(total).toBeLessThanOrEqual(90);
+    expect(total).toBe(40);
+    expect(scenes.every((scene) => scene.duration <= 5)).toBe(true);
   });
 
-  it('scales 12-scene scripts into the 60-90 second target range', () => {
+  it('keeps 12-scene scripts in the Standard short-form target range', () => {
     const script = JSON.stringify({
       scenes: Array.from({ length: 12 }, (_, index) => ({
         narration: `Scene ${index + 1} explains one practical step in the routine.`,
@@ -35,11 +35,11 @@ describe('extractScenes duration targeting', () => {
     const total = scenes.reduce((sum, scene) => sum + scene.duration, 0);
 
     expect(scenes).toHaveLength(12);
-    expect(total).toBeGreaterThanOrEqual(60);
-    expect(total).toBeLessThanOrEqual(90);
+    expect(total).toBe(48);
+    expect(scenes.every((scene) => scene.duration <= 5)).toBe(true);
   });
 
-  it('scales plain text fallback scripts toward the 60-90 second target range', () => {
+  it('keeps plain text fallback scripts paced as short visual beats', () => {
     const script = Array.from(
       { length: 8 },
       (_, index) => `Plain text scene ${index + 1} for a wellness video.`,
@@ -48,7 +48,10 @@ describe('extractScenes duration targeting', () => {
     const total = scenes.reduce((sum, scene) => sum + scene.duration, 0);
 
     expect(scenes).toHaveLength(8);
-    expect(total).toBeGreaterThanOrEqual(60);
-    expect(total).toBeLessThanOrEqual(90);
+    expect(total).toBeGreaterThanOrEqual(20);
+    expect(total).toBeLessThanOrEqual(40);
+    expect(
+      scenes.every((scene) => scene.duration >= 2.5 && scene.duration <= 5),
+    ).toBe(true);
   });
 });

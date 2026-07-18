@@ -8,7 +8,7 @@ Base URL:
 
 ```ts
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
 ```
 
 Swagger:
@@ -67,6 +67,12 @@ YOUTUBE_REDIRECT_URI=https://api.joinjubily.com/api/auth/youtube/callback
 YOUTUBE_PUBLISHING_ENABLED=true
 
 SHOTSTACK_BASE_URL=https://api.shotstack.io/edit/v1
+VIDEO_STANDARD_MIN_SCENE_SECONDS=2.5
+VIDEO_STANDARD_MAX_SCENE_SECONDS=5
+VIDEO_CAPTION_MAX_LINES=2
+VIDEO_ENABLE_IMAGE_MOTION=true
+VIDEO_ENABLE_TRANSITIONS=true
+VIDEO_ENABLE_CTA_OUTRO=true
 TERMS_VERSION=terms-2026-07
 PRIVACY_POLICY_VERSION=privacy-2026-07
 
@@ -109,15 +115,15 @@ Notes:
 
 Common statuses:
 
-| Status | Meaning |
-| --- | --- |
-| `400` | Invalid body/query/param, invalid OAuth code, unsupported provider |
-| `401` | Missing/invalid token, invalid credentials, invalid/expired verification/reset/OAuth token |
-| `403` | Wrong JWT kind, insufficient role, unverified email, suspended workspace |
-| `404` | Entity not found or not in active workspace |
-| `409` | Duplicate resource, script gate, plan limit, render/publish precondition |
-| `429` | Throttled endpoint |
-| `500` | Server/provider failure |
+| Status | Meaning                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------ |
+| `400`  | Invalid body/query/param, invalid OAuth code, unsupported provider                         |
+| `401`  | Missing/invalid token, invalid credentials, invalid/expired verification/reset/OAuth token |
+| `403`  | Wrong JWT kind, insufficient role, unverified email, suspended workspace                   |
+| `404`  | Entity not found or not in active workspace                                                |
+| `409`  | Duplicate resource, script gate, plan limit, render/publish precondition                   |
+| `429`  | Throttled endpoint                                                                         |
+| `500`  | Server/provider failure                                                                    |
 
 Provider error safety:
 
@@ -128,68 +134,94 @@ Provider error safety:
 Shared enums:
 
 ```ts
-type AdminRole = "SUPER_ADMIN" | "ADMIN" | "SUPPORT";
-type WorkspaceRole = "OWNER" | "ADMIN" | "MEMBER";
-type Plan = "FREE" | "PRO" | "PREMIUM";
-type SubscriptionStatus = "ACTIVE" | "TRIALING" | "PAST_DUE" | "CANCELED" | "EXPIRED";
-type BillingProvider = "PAYSTACK" | "STRIPE";
-type BillingInterval = "monthly" | "yearly";
-type PromoDiscountType = "PERCENTAGE" | "FIXED" | "NONE";
-type PromoDiscountDuration = "ONE_TIME";
-type PromoAppliesToPlan = "PRO" | "PREMIUM" | "ALL";
-type PromoRegionScope = "ALL" | "GLOBAL" | "AFRICA" | "NIGERIA" | "CUSTOM_COUNTRIES";
-type PaystackDiscountMode = "TRACKING_ONLY" | "ONE_TIME_AMOUNT_DISCOUNT" | "UNSUPPORTED";
-type PromoAttributionStatus = "SIGNUP" | "CHECKOUT_STARTED" | "SUBSCRIBED" | "FAILED" | "CANCELLED";
-type RunSlot = "MORNING" | "AFTERNOON" | "EVENING";
-type VideoJobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "FAILED_PERMANENT" | "FAILED_QUOTA" | "FAILED_PUBLISH" | "CANCELLED";
-type ScriptReviewStatus = "PENDING" | "APPROVED" | "NEEDS_REVIEW" | "REJECTED";
-type ThumbnailStatus = "PENDING" | "GENERATING" | "READY" | "FAILED";
+type AdminRole = 'SUPER_ADMIN' | 'ADMIN' | 'SUPPORT';
+type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER';
+type Plan = 'FREE' | 'PRO' | 'PREMIUM';
+type SubscriptionStatus =
+  | 'ACTIVE'
+  | 'TRIALING'
+  | 'PAST_DUE'
+  | 'CANCELED'
+  | 'EXPIRED';
+type BillingProvider = 'PAYSTACK' | 'STRIPE';
+type BillingInterval = 'monthly' | 'yearly';
+type PromoDiscountType = 'PERCENTAGE' | 'FIXED' | 'NONE';
+type PromoDiscountDuration = 'ONE_TIME';
+type PromoAppliesToPlan = 'PRO' | 'PREMIUM' | 'ALL';
+type PromoRegionScope =
+  | 'ALL'
+  | 'GLOBAL'
+  | 'AFRICA'
+  | 'NIGERIA'
+  | 'CUSTOM_COUNTRIES';
+type PaystackDiscountMode =
+  | 'TRACKING_ONLY'
+  | 'ONE_TIME_AMOUNT_DISCOUNT'
+  | 'UNSUPPORTED';
+type PromoAttributionStatus =
+  | 'SIGNUP'
+  | 'CHECKOUT_STARTED'
+  | 'SUBSCRIBED'
+  | 'FAILED'
+  | 'CANCELLED';
+type RunSlot = 'MORNING' | 'AFTERNOON' | 'EVENING';
+type VideoJobStatus =
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'FAILED_PERMANENT'
+  | 'FAILED_QUOTA'
+  | 'FAILED_PUBLISH'
+  | 'CANCELLED';
+type ScriptReviewStatus = 'PENDING' | 'APPROVED' | 'NEEDS_REVIEW' | 'REJECTED';
+type ThumbnailStatus = 'PENDING' | 'GENERATING' | 'READY' | 'FAILED';
 
 type AffiliateNiche =
-  | "HEALTH_WELLNESS"
-  | "FINANCE"
-  | "AI_SOFTWARE"
-  | "TECHNOLOGY"
-  | "BUSINESS"
-  | "EDUCATION"
-  | "FITNESS"
-  | "BEAUTY"
-  | "TRAVEL"
-  | "GAMING"
-  | "ECOMMERCE"
-  | "REAL_ESTATE"
-  | "PARENTING"
-  | "PETS"
-  | "PERSONAL_DEVELOPMENT"
-  | "FOOD"
-  | "FASHION"
-  | "HOME_GARDEN"
-  | "AUTOMOTIVE"
-  | "DIY"
-  | "RELATIONSHIPS"
-  | "SPIRITUALITY"
-  | "OTHER";
+  | 'HEALTH_WELLNESS'
+  | 'FINANCE'
+  | 'AI_SOFTWARE'
+  | 'TECHNOLOGY'
+  | 'BUSINESS'
+  | 'EDUCATION'
+  | 'FITNESS'
+  | 'BEAUTY'
+  | 'TRAVEL'
+  | 'GAMING'
+  | 'ECOMMERCE'
+  | 'REAL_ESTATE'
+  | 'PARENTING'
+  | 'PETS'
+  | 'PERSONAL_DEVELOPMENT'
+  | 'FOOD'
+  | 'FASHION'
+  | 'HOME_GARDEN'
+  | 'AUTOMOTIVE'
+  | 'DIY'
+  | 'RELATIONSHIPS'
+  | 'SPIRITUALITY'
+  | 'OTHER';
 
 type AffiliatePlatform =
-  | "CLICKBANK"
-  | "DIGISTORE24"
-  | "WARRIORPLUS"
-  | "JVZOO"
-  | "AMAZON_ASSOCIATES"
-  | "TEMU"
-  | "ALIEXPRESS"
-  | "SELAR"
-  | "IMPACT"
-  | "PARTNERSTACK"
-  | "CJ_AFFILIATE"
-  | "SHAREASALE"
-  | "RAKUTEN"
-  | "AWIN"
-  | "FLEXOFFERS"
-  | "AVANGATE"
-  | "EBAY_PARTNER_NETWORK"
-  | "SHOPIFY_COLLABS"
-  | "CUSTOM";
+  | 'CLICKBANK'
+  | 'DIGISTORE24'
+  | 'WARRIORPLUS'
+  | 'JVZOO'
+  | 'AMAZON_ASSOCIATES'
+  | 'TEMU'
+  | 'ALIEXPRESS'
+  | 'SELAR'
+  | 'IMPACT'
+  | 'PARTNERSTACK'
+  | 'CJ_AFFILIATE'
+  | 'SHAREASALE'
+  | 'RAKUTEN'
+  | 'AWIN'
+  | 'FLEXOFFERS'
+  | 'AVANGATE'
+  | 'EBAY_PARTNER_NETWORK'
+  | 'SHOPIFY_COLLABS'
+  | 'CUSTOM';
 ```
 
 Display label for `SELAR` is `Selar`.
@@ -224,8 +256,8 @@ Response:
 ```ts
 {
   success: false;
-  code: "EMAIL_NOT_VERIFIED";
-  message: "Email verification required. Verification email sent.";
+  code: 'EMAIL_NOT_VERIFIED';
+  message: 'Email verification required. Verification email sent.';
   requiresEmailVerification: true;
   emailVerified: false;
   user: {
@@ -236,7 +268,7 @@ Response:
     emailVerifiedAt: null;
     acceptedTermsAt: string;
     acceptedPrivacyPolicyAt: string;
-  };
+  }
 }
 ```
 
@@ -265,7 +297,10 @@ Auth: public. Throttled at 5/min plus failed-login backoff.
 Request:
 
 ```ts
-{ email: string; password: string } // password min length 6
+{
+  email: string;
+  password: string;
+} // password min length 6
 ```
 
 Response:
@@ -280,7 +315,7 @@ Response:
     name: string | null;
     emailVerified: boolean;
     emailVerifiedAt: string | null;
-  };
+  }
 }
 ```
 
@@ -350,7 +385,10 @@ Auth: public. Throttled at 5/min.
 Request:
 
 ```ts
-{ token: string; password: string } // password min length 8
+{
+  token: string;
+  password: string;
+} // password min length 8
 ```
 
 Response: `{ ok: true }`
@@ -375,7 +413,7 @@ Response:
     name: string | null;
     emailVerified: boolean;
     emailVerifiedAt: string | null;
-  };
+  }
 }
 ```
 
@@ -404,7 +442,10 @@ Auth: public. Throttled at 5/min plus failed-login backoff.
 Request:
 
 ```ts
-{ email: string; password: string } // password min length 6
+{
+  email: string;
+  password: string;
+} // password min length 6
 ```
 
 Response:
@@ -412,7 +453,11 @@ Response:
 ```ts
 {
   accessToken: string;
-  admin: { id: string; email: string; role: AdminRole };
+  admin: {
+    id: string;
+    email: string;
+    role: AdminRole;
+  }
 }
 ```
 
@@ -530,16 +575,16 @@ Array<{
   affiliateNiches: AffiliateNiche[];
   affiliatePlatforms: AffiliatePlatform[];
   primaryAffiliateLink: string; // "" when unset
-  affiliateLinks: unknown;      // {} when unset
+  affiliateLinks: unknown; // {} when unset
   preferredContentTone: string; // "" when unset
-  preferredLanguage: string;    // "" when unset
-  targetAudience: string;       // "" when unset
-  contentGoal: string;          // "" when unset
+  preferredLanguage: string; // "" when unset
+  targetAudience: string; // "" when unset
+  contentGoal: string; // "" when unset
   onboardingComplete: boolean;
   createdAt: string;
   updatedAt: string;
   role: WorkspaceRole;
-}>
+}>;
 ```
 
 ### `GET /workspaces/:workspaceId`
@@ -627,14 +672,18 @@ Response:
 
 ```ts
 {
-  workspace: { id: string; name: string; slug: string | null };
+  workspace: {
+    id: string;
+    name: string;
+    slug: string | null;
+  }
   counts: {
     offers: number;
     topics: number;
     scripts: number;
     videoJobs: number;
     published: number;
-  };
+  }
   youtube: YoutubeDiagnostics;
 }
 ```
@@ -673,7 +722,7 @@ type YoutubeDiagnostics = {
     legacyFileWriteFallbackEnabled: boolean;
   };
   error: string | null;
-}
+};
 
 type YoutubeChannelSummary = {
   id: string;
@@ -734,10 +783,10 @@ Raw OAuth tokens are never returned to the frontend.
 
 ### Connect URLs
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/auth/tiktok/connect` | Returns `{ url }` for TikTok OAuth. |
-| `GET` | `/auth/facebook/connect` | Returns `{ url }` for Facebook/Instagram OAuth. |
+| Method | Path                     | Description                                     |
+| ------ | ------------------------ | ----------------------------------------------- |
+| `GET`  | `/auth/tiktok/connect`   | Returns `{ url }` for TikTok OAuth.             |
+| `GET`  | `/auth/facebook/connect` | Returns `{ url }` for Facebook/Instagram OAuth. |
 
 TikTok scopes requested by default: `user.info.basic`, `video.publish`.
 
@@ -745,10 +794,10 @@ Meta scopes requested by default: `pages_show_list`, `pages_read_engagement`, `p
 
 ### OAuth Callbacks
 
-| Method | Path | Success redirect | Invalid state redirect |
-| --- | --- | --- | --- |
-| `GET` | `/auth/tiktok/callback?code=...&state=...` | `https://joinjubily.com/publishing?connected=tiktok` | `https://joinjubily.com/publishing?error=INVALID_CALLBACK_STATE` |
-| `GET` | `/auth/facebook/callback?code=...&state=...` | `https://joinjubily.com/publishing?connected=facebook` | `https://joinjubily.com/publishing?error=INVALID_CALLBACK_STATE` |
+| Method | Path                                         | Success redirect                                       | Invalid state redirect                                           |
+| ------ | -------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
+| `GET`  | `/auth/tiktok/callback?code=...&state=...`   | `https://joinjubily.com/publishing?connected=tiktok`   | `https://joinjubily.com/publishing?error=INVALID_CALLBACK_STATE` |
+| `GET`  | `/auth/facebook/callback?code=...&state=...` | `https://joinjubily.com/publishing?connected=facebook` | `https://joinjubily.com/publishing?error=INVALID_CALLBACK_STATE` |
 
 Facebook OAuth stores available Pages and connected Instagram Business Accounts in account `metadata.pages` and `metadata.instagramBusinessAccounts`. Frontend should let users select the default Page and/or Instagram Business Account after connection.
 
@@ -956,9 +1005,16 @@ Response:
     conversions: number;
     videoJobs: number;
     conversionRate: number;
-    revenueByCurrency: Array<{ currency: string; conversions: number; amount: number }>;
-  };
-  recent: { lastClickAt: string | null; lastConversionAt: string | null };
+    revenueByCurrency: Array<{
+      currency: string;
+      conversions: number;
+      amount: number;
+    }>;
+  }
+  recent: {
+    lastClickAt: string | null;
+    lastConversionAt: string | null;
+  }
 }
 ```
 
@@ -1026,7 +1082,7 @@ Customer video status shape:
   status: VideoJobStatus;
   provider: string | null;
   published: boolean;
-  platform: "youtube" | null;
+  platform: 'youtube' | null;
   slot: RunSlot;
   scheduledFor: string;
   createdAt: string;
@@ -1037,22 +1093,26 @@ Customer video status shape:
   youtubeUrl: string | null;
   youtubeVideoId: string | null;
   hasCaptions: boolean;
-  worker: { lockedAt: string | null; lockedBy: string | null; stage: string | null };
+  worker: {
+    lockedAt: string | null;
+    lockedBy: string | null;
+    stage: string | null;
+  }
   thumbnail: {
     prompt: string | null;
     imageUrl: string | null;
     status: ThumbnailStatus | string;
     error: string | null;
     generatedAt: string | null;
-  };
+  }
   qa: {
     durationSeconds: number | null;
     sceneCount: number | null;
     hasBurnedSubtitles: boolean;
     hasTrackingLink: boolean;
     shotstackPayloadDebugPath: string | null;
-  };
-  renderStatus: "NOT_STARTED" | "SUBMITTED" | "PROCESSING" | "READY";
+  }
+  renderStatus: 'NOT_STARTED' | 'SUBMITTED' | 'PROCESSING' | 'READY';
   progress: number | null;
   trackingUrl: string | null;
 }
@@ -1192,10 +1252,10 @@ Response:
   videoId: string; // VideoJob.id
   scriptId: string;
   status: VideoJobStatus;
-  renderStatus: "NOT_STARTED" | "SUBMITTED" | "PROCESSING" | "READY";
+  renderStatus: 'NOT_STARTED' | 'SUBMITTED' | 'PROCESSING' | 'READY';
   progress: number | null;
   trackingUrl: string | null;
-  message: "Render started" | "Render already started";
+  message: 'Render started' | 'Render already started';
 }
 ```
 
@@ -1211,6 +1271,18 @@ Rules:
 - Response is intentionally customer-safe and does not include `renderId`, worker lease fields, provider debug paths, or admin-only internals.
 - A FREE-plan workspace can create a video only while within its plan limit. If the plan limit is exhausted, the backend returns `409` with a clear plan/credits message and does not call Shotstack.
 - Render provider failures are stored on the `VideoJob.error` field with a sanitized message. Frontend should show the returned Nest error message for immediate create failures and poll `GET /automation/videos/:id` for later render status.
+
+Standard image video mode:
+
+- The default low-cost render mode uses AI images, narration, captions, subtle Shotstack image motion, restrained transitions, and a final CTA outro. It does not use Runway, Veo, Kling, Luma, Pika, or another paid AI video provider.
+- Short-form scripts target roughly 30-60 seconds for YouTube Shorts and 20-45 seconds for TikTok/Reels where the current script settings allow it. Long-form keeps the requested duration.
+- Standard image scenes are planned as short visual beats, normally 2.5-5 seconds each. Long narration sections may be split into multiple visual beats so a still image is not held for 7-10 seconds.
+- Captions are phrase-aware, limited to two lines per overlay, styled with readable text, shadow/stroke or subtle background treatment, and kept within vertical safe zones.
+- Media priority is: user-provided product media, offer or landing-page media, product screenshots, brand assets, then AI-generated supporting images. If no supplied media exists, AI image fallback remains available.
+- Optional branding such as logo, product name, brand colors, and CTA styling is used when present. Missing optional branding must not block rendering.
+- The final visual beat is a CTA outro. It should show a short instruction such as `Link in profile`, not a long raw UUID tracking URL.
+- Platform CTA copy is centralized: YouTube Shorts uses channel/profile-link language, normal YouTube uses `Link in the description`, and TikTok/Instagram use `Link in bio`.
+- The public tracking URL can still be included in publishing metadata for attribution and copyable surfaces even when the on-screen CTA says `Link in profile` or `Link in bio`.
 
 Publishing metadata:
 
@@ -1290,7 +1362,7 @@ Queued response:
 ```ts
 {
   queued: true;
-  status: "QUEUED_FOR_PUBLISH";
+  status: 'QUEUED_FOR_PUBLISH';
   trackingUrl: string | null;
   job: VideoJobCustomerStatus;
 }
@@ -1301,7 +1373,7 @@ Already handled response:
 ```ts
 {
   queued: false;
-  status: "PUBLISHED" | "ALREADY_QUEUED";
+  status: 'PUBLISHED' | 'ALREADY_QUEUED';
   job: VideoJobCustomerStatus;
 }
 ```
@@ -1340,8 +1412,8 @@ type PromoCode = {
   regionScope: PromoRegionScope;
   allowedCountries: string[]; // ISO alpha-2 country codes
   stripePromotionCodeId: string | null; // starts with promo_
-  stripeCouponId: string | null;        // starts with coupon_
-  stripeDiscountConfigured: boolean;    // derived by frontend as Boolean(stripePromotionCodeId)
+  stripeCouponId: string | null; // starts with coupon_
+  stripeDiscountConfigured: boolean; // derived by frontend as Boolean(stripePromotionCodeId)
   paystackDiscountMode: PaystackDiscountMode;
   maxRedemptions: number | null;
   redemptionCount: number;
@@ -1428,18 +1500,18 @@ Example validation response:
 
 Region validation examples:
 
-| Scope | `allowedCountries` | `countryCode` examples | Result |
-| --- | --- | --- | --- |
-| `ALL` | `[]` | omitted, `NG`, `US` | valid |
-| `CUSTOM_COUNTRIES` | `[]` | any | admin create/update and public validation fail |
-| `CUSTOM_COUNTRIES` | `["US", "CA"]` | `US`, `CA` | valid |
-| `CUSTOM_COUNTRIES` | `["US", "CA"]` | `GB`, omitted | invalid |
-| `NIGERIA` | any | `NG` | valid |
-| `NIGERIA` | any | `US`, omitted | invalid |
-| `AFRICA` | any | `NG`, `GH`, `KE` | valid |
-| `AFRICA` | any | `US`, `GB`, omitted | invalid |
-| `GLOBAL` | any | `US`, `GB` | valid |
-| `GLOBAL` | any | `NG`, `GH`, `KE`, omitted | invalid |
+| Scope              | `allowedCountries` | `countryCode` examples    | Result                                         |
+| ------------------ | ------------------ | ------------------------- | ---------------------------------------------- |
+| `ALL`              | `[]`               | omitted, `NG`, `US`       | valid                                          |
+| `CUSTOM_COUNTRIES` | `[]`               | any                       | admin create/update and public validation fail |
+| `CUSTOM_COUNTRIES` | `["US", "CA"]`     | `US`, `CA`                | valid                                          |
+| `CUSTOM_COUNTRIES` | `["US", "CA"]`     | `GB`, omitted             | invalid                                        |
+| `NIGERIA`          | any                | `NG`                      | valid                                          |
+| `NIGERIA`          | any                | `US`, omitted             | invalid                                        |
+| `AFRICA`           | any                | `NG`, `GH`, `KE`          | valid                                          |
+| `AFRICA`           | any                | `US`, `GB`, omitted       | invalid                                        |
+| `GLOBAL`           | any                | `US`, `GB`                | valid                                          |
+| `GLOBAL`           | any                | `NG`, `GH`, `KE`, omitted | invalid                                        |
 
 ## Billing
 
@@ -1459,7 +1531,7 @@ Array<{
     renderMinutes: number;
     storageBytes: string;
   };
-}>
+}>;
 ```
 
 Current limits:
@@ -1492,7 +1564,13 @@ Response:
   createdAt: string;
   updatedAt: string;
   effectivePlan: Plan;
-  limits: { videoGenerations: number; publishes: number; aiGenerations: number; renderMinutes: number; storageBytes: string };
+  limits: {
+    videoGenerations: number;
+    publishes: number;
+    aiGenerations: number;
+    renderMinutes: number;
+    storageBytes: string;
+  }
 }
 ```
 
@@ -1516,9 +1594,15 @@ Response:
     storageBytes: string;
     createdAt: string;
     updatedAt: string;
-  };
+  }
   plan: Plan;
-  limits: { videoGenerations: number; publishes: number; aiGenerations: number; renderMinutes: number; storageBytes: string };
+  limits: {
+    videoGenerations: number;
+    publishes: number;
+    aiGenerations: number;
+    renderMinutes: number;
+    storageBytes: string;
+  }
 }
 ```
 
@@ -1631,9 +1715,23 @@ Response:
 ```ts
 {
   timeZone: string;
-  range: { from: string; to: string; days: number };
-  points: Array<{ date: string; day: string; clicks: number; conversions: number; revenue: number }>;
-  totals: { clicks: number; conversions: number; revenue: number };
+  range: {
+    from: string;
+    to: string;
+    days: number;
+  }
+  points: Array<{
+    date: string;
+    day: string;
+    clicks: number;
+    conversions: number;
+    revenue: number;
+  }>;
+  totals: {
+    clicks: number;
+    conversions: number;
+    revenue: number;
+  }
 }
 ```
 
@@ -1660,7 +1758,7 @@ Behavior:
 `trackingUrl` returned from video APIs is built as:
 
 ```ts
-`${PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL}/r/${offerId}?jobId=${jobId}&yt=${youtubeVideoId}`
+`${PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL}/r/${offerId}?jobId=${jobId}&yt=${youtubeVideoId}`;
 ```
 
 `PUBLIC_API_BASE_URL` should be the public backend origin, for example `https://api.joinjubily.com`, with no `/api` suffix. Trailing slashes are trimmed before joining. It is `null` when no offer exists or no public API base URL is configured.
@@ -1671,30 +1769,30 @@ Admin routes require admin JWT unless public. `@Roles("ADMIN")` accepts `SUPER_A
 
 ### `/admin/auth/*`
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `POST` | `/admin/auth/login` | Admin login | Public | `{ email; password }` | `{ accessToken; admin }` |
-| `GET` | `/admin/auth/me` | Current admin profile | Any active admin | none | `{ kind: "admin"; admin } \| null` |
-| `GET` | `/admin/auth/youtube` | Redirect to global/admin YouTube OAuth | Any active admin | none | `302` |
-| `POST` | `/admin/auth/youtube/connect` | Create global/admin YouTube OAuth URL | Any active admin | none | `{ url: string }` |
-| `GET` | `/admin/auth/youtube/channel` | Global/admin YouTube diagnostics | Any active admin | none | `YoutubeDiagnostics` |
-| `GET` | `/admin/auth/youtube/callback` | Google callback | Public | query `{ code; state }` | plain text |
+| Method | Path                           | Purpose                                | Role             | Request                 | Response                           |
+| ------ | ------------------------------ | -------------------------------------- | ---------------- | ----------------------- | ---------------------------------- |
+| `POST` | `/admin/auth/login`            | Admin login                            | Public           | `{ email; password }`   | `{ accessToken; admin }`           |
+| `GET`  | `/admin/auth/me`               | Current admin profile                  | Any active admin | none                    | `{ kind: "admin"; admin } \| null` |
+| `GET`  | `/admin/auth/youtube`          | Redirect to global/admin YouTube OAuth | Any active admin | none                    | `302`                              |
+| `POST` | `/admin/auth/youtube/connect`  | Create global/admin YouTube OAuth URL  | Any active admin | none                    | `{ url: string }`                  |
+| `GET`  | `/admin/auth/youtube/channel`  | Global/admin YouTube diagnostics       | Any active admin | none                    | `YoutubeDiagnostics`               |
+| `GET`  | `/admin/auth/youtube/callback` | Google callback                        | Public           | query `{ code; state }` | plain text                         |
 
 ### `/admin/workflow/*`
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `GET` | `/admin/workflow/status` | Workflow dashboard status | Admin role | none | `WorkflowService.getStatus()` object |
+| Method | Path                     | Purpose                   | Role       | Request | Response                             |
+| ------ | ------------------------ | ------------------------- | ---------- | ------- | ------------------------------------ |
+| `GET`  | `/admin/workflow/status` | Workflow dashboard status | Admin role | none    | `WorkflowService.getStatus()` object |
 
 ### `/admin/manual-ops/*`
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `POST` | `/admin/manual-ops/ingest` | Ingest topics now | Admin role | none | `{ ok: true; created: number }` |
-| `POST` | `/admin/manual-ops/topics/seed` | Seed default topics | Admin role | none | `{ ok: true; created: number }` |
-| `POST` | `/admin/manual-ops/orchestrator/run` | Run orchestrator slot | Admin role | `RunSlotDto` | orchestrator result |
-| `POST` | `/admin/manual-ops/orchestrator/run-now` | Run slot immediately | Admin role | `RunSlotDto` | orchestrator result |
-| `POST` | `/admin/manual-ops/publish-result` | Register manual publish result | Admin role | `PublishResultDto` | updated `VideoJob` row |
+| Method | Path                                     | Purpose                        | Role       | Request            | Response                        |
+| ------ | ---------------------------------------- | ------------------------------ | ---------- | ------------------ | ------------------------------- |
+| `POST` | `/admin/manual-ops/ingest`               | Ingest topics now              | Admin role | none               | `{ ok: true; created: number }` |
+| `POST` | `/admin/manual-ops/topics/seed`          | Seed default topics            | Admin role | none               | `{ ok: true; created: number }` |
+| `POST` | `/admin/manual-ops/orchestrator/run`     | Run orchestrator slot          | Admin role | `RunSlotDto`       | orchestrator result             |
+| `POST` | `/admin/manual-ops/orchestrator/run-now` | Run slot immediately           | Admin role | `RunSlotDto`       | orchestrator result             |
+| `POST` | `/admin/manual-ops/publish-result`       | Register manual publish result | Admin role | `PublishResultDto` | updated `VideoJob` row          |
 
 ```ts
 type RunSlotDto = { slot: RunSlot; scheduledFor?: string; force?: boolean };
@@ -1703,19 +1801,19 @@ type PublishResultDto = {
   videoId?: string;
   platform: string;
   platformPostId: string;
-  status: "SUCCESS" | "FAILED";
+  status: 'SUCCESS' | 'FAILED';
   errorMessage?: string;
 };
 ```
 
 ### `/admin/manual-ops/videos/*`
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `POST` | `/admin/manual-ops/videos` | Register rendered video | Admin role | `RegisterVideoDto` | customer video status |
-| `PATCH` | `/admin/manual-ops/videos/:id/published` | Mark job published | Admin role | none | customer video status |
-| `PATCH` | `/admin/manual-ops/videos/:id/failed` | Mark job failed | Admin role | none | customer video status |
-| `POST` | `/admin/manual-ops/videos/:scriptId/render` | Render from approved script | Admin role | `CreateVideoJobDto` | `{ jobId; renderId; resumed?; qa? }` |
+| Method  | Path                                        | Purpose                     | Role       | Request             | Response                             |
+| ------- | ------------------------------------------- | --------------------------- | ---------- | ------------------- | ------------------------------------ |
+| `POST`  | `/admin/manual-ops/videos`                  | Register rendered video     | Admin role | `RegisterVideoDto`  | customer video status                |
+| `PATCH` | `/admin/manual-ops/videos/:id/published`    | Mark job published          | Admin role | none                | customer video status                |
+| `PATCH` | `/admin/manual-ops/videos/:id/failed`       | Mark job failed             | Admin role | none                | customer video status                |
+| `POST`  | `/admin/manual-ops/videos/:scriptId/render` | Render from approved script | Admin role | `CreateVideoJobDto` | `{ jobId; renderId; resumed?; qa? }` |
 
 ```ts
 type RegisterVideoDto = {
@@ -1727,24 +1825,24 @@ type RegisterVideoDto = {
 };
 type CreateVideoJobDto = {
   offerId?: string;
-  slot?: RunSlot;        // default MORNING
+  slot?: RunSlot; // default MORNING
   scheduledFor?: string; // default now
 };
 ```
 
 ### `/admin/jobs/*`
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `GET` | `/admin/jobs` | List jobs | Admin role | query `ListJobsQueryDto` | paginated `VideoJobSummary` |
-| `GET` | `/admin/jobs/summary` | Failure summary | Admin role | none | `{ failedToday; stuckProcessing }` |
-| `GET` | `/admin/jobs/workers/status` | Worker/queue status | Admin role | none | worker status object |
-| `GET` | `/admin/jobs/:id` | Job detail | Admin role | UUID | `VideoJobSummary` |
-| `GET` | `/admin/jobs/:id/assets` | Job assets/captions | Admin role | UUID | `{ job; script; captionsSrt }` |
-| `POST` | `/admin/jobs/run-slot` | Queue schedule slot async | Admin role | `RunSlotDto` | `{ ok; queued; slot; scheduledFor; force; note }` |
-| `POST` | `/admin/jobs/:id/cancel` | Cancel job | Admin role | `{ status?: "CANCELLED" \| "FAILED_PERMANENT" }` | `{ ok: true }` |
-| `POST` | `/admin/jobs/:id/reset-render` | Reset failed render | Admin role | none | `{ ok: true }` |
-| `POST` | `/admin/jobs/:id/retry` | Retry job | Admin role | none | `{ ok: true }` |
+| Method | Path                           | Purpose                   | Role       | Request                                          | Response                                          |
+| ------ | ------------------------------ | ------------------------- | ---------- | ------------------------------------------------ | ------------------------------------------------- |
+| `GET`  | `/admin/jobs`                  | List jobs                 | Admin role | query `ListJobsQueryDto`                         | paginated `VideoJobSummary`                       |
+| `GET`  | `/admin/jobs/summary`          | Failure summary           | Admin role | none                                             | `{ failedToday; stuckProcessing }`                |
+| `GET`  | `/admin/jobs/workers/status`   | Worker/queue status       | Admin role | none                                             | worker status object                              |
+| `GET`  | `/admin/jobs/:id`              | Job detail                | Admin role | UUID                                             | `VideoJobSummary`                                 |
+| `GET`  | `/admin/jobs/:id/assets`       | Job assets/captions       | Admin role | UUID                                             | `{ job; script; captionsSrt }`                    |
+| `POST` | `/admin/jobs/run-slot`         | Queue schedule slot async | Admin role | `RunSlotDto`                                     | `{ ok; queued; slot; scheduledFor; force; note }` |
+| `POST` | `/admin/jobs/:id/cancel`       | Cancel job                | Admin role | `{ status?: "CANCELLED" \| "FAILED_PERMANENT" }` | `{ ok: true }`                                    |
+| `POST` | `/admin/jobs/:id/reset-render` | Reset failed render       | Admin role | none                                             | `{ ok: true }`                                    |
+| `POST` | `/admin/jobs/:id/retry`        | Retry job                 | Admin role | none                                             | `{ ok: true }`                                    |
 
 ```ts
 type ListJobsQueryDto = {
@@ -1761,9 +1859,9 @@ type ListJobsQueryDto = {
 
 ### `/admin/logs/automation`
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `GET` | `/admin/logs/automation` | Google Sheets automation logs | Admin role | query `{ limit?: number }`, max 200 | `{ items: AutomationLogItem[] }` |
+| Method | Path                     | Purpose                       | Role       | Request                             | Response                         |
+| ------ | ------------------------ | ----------------------------- | ---------- | ----------------------------------- | -------------------------------- |
+| `GET`  | `/admin/logs/automation` | Google Sheets automation logs | Admin role | query `{ limit?: number }`, max 200 | `{ items: AutomationLogItem[] }` |
 
 ```ts
 type AutomationLogItem = {
@@ -1782,18 +1880,18 @@ type AutomationLogItem = {
 
 ### `/admin/monitoring/pipeline/*`
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `GET` | `/admin/monitoring/pipeline/health` | Readiness | Admin role | none | `{ ok; checks; timestamp }` |
-| `GET` | `/admin/monitoring/pipeline/diagnostics` | Safe diagnostics | Admin role | none | diagnostics object, no secrets |
-| `GET` | `/admin/monitoring/pipeline/events` | List events | Admin role | query `MonitoringEventsQueryDto` | `PipelineEvent[]` |
-| `GET` | `/admin/monitoring/pipeline/summary` | Event summary | Admin role | query `{ hours?: number }` | summary object |
+| Method | Path                                     | Purpose          | Role       | Request                          | Response                       |
+| ------ | ---------------------------------------- | ---------------- | ---------- | -------------------------------- | ------------------------------ |
+| `GET`  | `/admin/monitoring/pipeline/health`      | Readiness        | Admin role | none                             | `{ ok; checks; timestamp }`    |
+| `GET`  | `/admin/monitoring/pipeline/diagnostics` | Safe diagnostics | Admin role | none                             | diagnostics object, no secrets |
+| `GET`  | `/admin/monitoring/pipeline/events`      | List events      | Admin role | query `MonitoringEventsQueryDto` | `PipelineEvent[]`              |
+| `GET`  | `/admin/monitoring/pipeline/summary`     | Event summary    | Admin role | query `{ hours?: number }`       | summary object                 |
 
 ```ts
 type MonitoringEventsQueryDto = {
   limit?: number;
-  stage?: "IMAGE_GENERATION" | "RENDER" | "PUBLISH" | "TRACKING" | "CONVERSION";
-  severity?: "INFO" | "WARN" | "ERROR";
+  stage?: 'IMAGE_GENERATION' | 'RENDER' | 'PUBLISH' | 'TRACKING' | 'CONVERSION';
+  severity?: 'INFO' | 'WARN' | 'ERROR';
   status?: string;
   jobId?: string;
   offerId?: string;
@@ -1806,22 +1904,28 @@ type MonitoringEventsQueryDto = {
 ### `/admin/api-keys/*`
 
 ```ts
-type IntegrationProvider = "GOOGLE" | "OPENAI" | "DIGISTORE" | "CLICKBANK" | "YOUTUBE" | "SHOTSTACK";
+type IntegrationProvider =
+  | 'GOOGLE'
+  | 'OPENAI'
+  | 'DIGISTORE'
+  | 'CLICKBANK'
+  | 'YOUTUBE'
+  | 'SHOTSTACK';
 ```
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `GET` | `/admin/api-keys` | List key metadata | Admin role | none | `Array<{ provider; masked; updatedAt; createdAt }>` |
-| `PUT` | `/admin/api-keys/:provider` | Create/replace key | Admin role | `{ key: string }`, min 6 | `{ provider; masked; updatedAt }` |
-| `DELETE` | `/admin/api-keys/:provider` | Delete key | Admin role | none | `{ ok: true }` |
+| Method   | Path                        | Purpose            | Role       | Request                  | Response                                            |
+| -------- | --------------------------- | ------------------ | ---------- | ------------------------ | --------------------------------------------------- |
+| `GET`    | `/admin/api-keys`           | List key metadata  | Admin role | none                     | `Array<{ provider; masked; updatedAt; createdAt }>` |
+| `PUT`    | `/admin/api-keys/:provider` | Create/replace key | Admin role | `{ key: string }`, min 6 | `{ provider; masked; updatedAt }`                   |
+| `DELETE` | `/admin/api-keys/:provider` | Delete key         | Admin role | none                     | `{ ok: true }`                                      |
 
 ### `/admin/platform/settings`
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `GET` | `/admin/platform/settings` | Get settings | Admin role | none | app settings |
-| `PATCH` | `/admin/platform/settings` | Update settings | Admin role | `UpdateSettingsDto` | app settings |
-| `GET` | `/admin/platform/health` | Basic health/debug | Admin role | none | plain string |
+| Method  | Path                       | Purpose            | Role       | Request             | Response     |
+| ------- | -------------------------- | ------------------ | ---------- | ------------------- | ------------ |
+| `GET`   | `/admin/platform/settings` | Get settings       | Admin role | none                | app settings |
+| `PATCH` | `/admin/platform/settings` | Update settings    | Admin role | `UpdateSettingsDto` | app settings |
+| `GET`   | `/admin/platform/health`   | Basic health/debug | Admin role | none                | plain string |
 
 ```ts
 type UpdateSettingsDto = {
@@ -1830,7 +1934,7 @@ type UpdateSettingsDto = {
   autoPublish?: boolean;
   timezone?: string;
   videosPerDay?: number; // 1..3
-  runHours?: number[];   // integers 0..23, non-empty
+  runHours?: number[]; // integers 0..23, non-empty
 };
 ```
 
@@ -1842,31 +1946,31 @@ Required on create: `code` and `influencerName`.
 
 Defaulted on create when omitted: `discountType: "NONE"`, `discountDuration: "ONE_TIME"`, `appliesToPlans: "ALL"`, `regionScope: "ALL"`, `allowedCountries: []`, `isActive: true`, and `paystackDiscountMode: "TRACKING_ONLY"` for tracking-only codes or `"UNSUPPORTED"` for discount codes.
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `POST` | `/admin/promo-codes` | Create influencer promo code | Admin role | `CreatePromoCodeDto` | `PromoCode` |
-| `GET` | `/admin/promo-codes` | List promo codes | Admin role | none | `PromoCode[]` |
-| `GET` | `/admin/promo-codes/:id` | Get promo code | Admin role | UUID | `PromoCode` |
-| `PATCH` | `/admin/promo-codes/:id` | Update promo code | Admin role | `UpdatePromoCodeDto` | `PromoCode` |
-| `DELETE` | `/admin/promo-codes/:id` | Delete promo code | Admin role | UUID | `PromoCode` |
-| `POST` | `/admin/promo-codes/:id/deactivate` | Deactivate promo code | Admin role | UUID | `PromoCode` |
-| `POST` | `/admin/promo-codes/:id/reactivate` | Reactivate promo code | Admin role | UUID | `PromoCode` |
-| `GET` | `/admin/promo-codes/:id/performance` | Promo attribution/revenue performance | Admin role | UUID | `PromoCodePerformance` |
+| Method   | Path                                 | Purpose                               | Role       | Request              | Response               |
+| -------- | ------------------------------------ | ------------------------------------- | ---------- | -------------------- | ---------------------- |
+| `POST`   | `/admin/promo-codes`                 | Create influencer promo code          | Admin role | `CreatePromoCodeDto` | `PromoCode`            |
+| `GET`    | `/admin/promo-codes`                 | List promo codes                      | Admin role | none                 | `PromoCode[]`          |
+| `GET`    | `/admin/promo-codes/:id`             | Get promo code                        | Admin role | UUID                 | `PromoCode`            |
+| `PATCH`  | `/admin/promo-codes/:id`             | Update promo code                     | Admin role | `UpdatePromoCodeDto` | `PromoCode`            |
+| `DELETE` | `/admin/promo-codes/:id`             | Delete promo code                     | Admin role | UUID                 | `PromoCode`            |
+| `POST`   | `/admin/promo-codes/:id/deactivate`  | Deactivate promo code                 | Admin role | UUID                 | `PromoCode`            |
+| `POST`   | `/admin/promo-codes/:id/reactivate`  | Reactivate promo code                 | Admin role | UUID                 | `PromoCode`            |
+| `GET`    | `/admin/promo-codes/:id/performance` | Promo attribution/revenue performance | Admin role | UUID                 | `PromoCodePerformance` |
 
 ```ts
 type CreatePromoCodeDto = {
-  code: string;                    // required, trimmed and uppercased
-  influencerName: string;          // required
+  code: string; // required, trimmed and uppercased
+  influencerName: string; // required
   influencerEmail?: string;
   description?: string;
   discountType?: PromoDiscountType; // default NONE
-  discountValue?: number;           // required when discountType is PERCENTAGE or FIXED
+  discountValue?: number; // required when discountType is PERCENTAGE or FIXED
   discountDuration?: PromoDiscountDuration; // default ONE_TIME; only ONE_TIME is accepted
   appliesToPlans?: PromoAppliesToPlan; // default ALL
-  regionScope?: PromoRegionScope;       // default ALL
-  allowedCountries?: string[];          // ISO 3166-1 alpha-2; required for CUSTOM_COUNTRIES
-  stripePromotionCodeId?: string;       // must start with promo_
-  stripeCouponId?: string;              // must start with coupon_
+  regionScope?: PromoRegionScope; // default ALL
+  allowedCountries?: string[]; // ISO 3166-1 alpha-2; required for CUSTOM_COUNTRIES
+  stripePromotionCodeId?: string; // must start with promo_
+  stripeCouponId?: string; // must start with coupon_
   paystackDiscountMode?: PaystackDiscountMode; // default TRACKING_ONLY when discountType is NONE, otherwise UNSUPPORTED
   maxRedemptions?: number;
   startsAt?: string;
@@ -1888,7 +1992,11 @@ Admin region rules:
 Validation errors are returned as `400` unless noted:
 
 ```json
-{ "statusCode": 400, "message": "discountValue is required for discount promo codes", "error": "Bad Request" }
+{
+  "statusCode": 400,
+  "message": "discountValue is required for discount promo codes",
+  "error": "Bad Request"
+}
 ```
 
 Important admin validation messages:
@@ -1971,7 +2079,6 @@ Provider setup notes:
 - `TRACKING_ONLY` discount promos can attribute signups/checkouts but do not reduce the payment amount.
 
 ```ts
-
 type PromoAttribution = {
   id: string;
   promoCodeId: string;
@@ -1980,12 +2087,12 @@ type PromoAttribution = {
   subscriptionId: string | null;
   provider: BillingProvider | null;
   plan: Plan | null;
-  interval: "MONTHLY" | "YEARLY" | null;
-  amount: number | null;         // provider minor amount when available
+  interval: 'MONTHLY' | 'YEARLY' | null;
+  amount: number | null; // provider minor amount when available
   originalAmount: number | null; // standard checkout amount before promo
   discountAmount: number | null;
-  finalAmount: number | null;    // amount charged for this checkout
-  renewalAmount: number | null;  // normal renewal amount after one-time discount
+  finalAmount: number | null; // amount charged for this checkout
+  renewalAmount: number | null; // normal renewal amount after one-time discount
   currency: string | null; // uppercased when available
   countryCode: string | null;
   regionScope: PromoRegionScope | null;
@@ -2026,15 +2133,15 @@ type PromoCodePerformance = {
 
 ### `/admin/users`, `/admin/workspaces/*`, `/admin/billing/workspaces/:workspaceId/subscription`
 
-| Method | Path | Purpose | Role | Request | Response |
-| --- | --- | --- | --- | --- | --- |
-| `GET` | `/admin/users` | List SaaS users | Admin role | none | user list with counts |
-| `GET` | `/admin/workspaces` | List SaaS workspaces | Admin role | none | workspace list with owner, subscription, counts |
-| `GET` | `/admin/workspaces/:workspaceId/usage` | View workspace usage | Admin role | UUID | billing usage response |
-| `POST` | `/admin/workspaces/:workspaceId/suspend` | Suspend workspace | Admin role | `{ reason?: string }`, max 500 | workspace row |
-| `POST` | `/admin/workspaces/:workspaceId/unsuspend` | Unsuspend workspace | Admin role | none | workspace row |
-| `GET` | `/admin/billing/workspaces/:workspaceId/subscription` | View subscription | Admin role | UUID | subscription response |
-| `PATCH` | `/admin/billing/workspaces/:workspaceId/subscription` | Update subscription manually | Admin role | `UpdateSubscriptionDto` | subscription response |
+| Method  | Path                                                  | Purpose                      | Role       | Request                        | Response                                        |
+| ------- | ----------------------------------------------------- | ---------------------------- | ---------- | ------------------------------ | ----------------------------------------------- |
+| `GET`   | `/admin/users`                                        | List SaaS users              | Admin role | none                           | user list with counts                           |
+| `GET`   | `/admin/workspaces`                                   | List SaaS workspaces         | Admin role | none                           | workspace list with owner, subscription, counts |
+| `GET`   | `/admin/workspaces/:workspaceId/usage`                | View workspace usage         | Admin role | UUID                           | billing usage response                          |
+| `POST`  | `/admin/workspaces/:workspaceId/suspend`              | Suspend workspace            | Admin role | `{ reason?: string }`, max 500 | workspace row                                   |
+| `POST`  | `/admin/workspaces/:workspaceId/unsuspend`            | Unsuspend workspace          | Admin role | none                           | workspace row                                   |
+| `GET`   | `/admin/billing/workspaces/:workspaceId/subscription` | View subscription            | Admin role | UUID                           | subscription response                           |
+| `PATCH` | `/admin/billing/workspaces/:workspaceId/subscription` | Update subscription manually | Admin role | `UpdateSubscriptionDto`        | subscription response                           |
 
 ```ts
 type UpdateSubscriptionDto = {
@@ -2054,21 +2161,21 @@ type UpdateSubscriptionDto = {
 
 These remain workspace-scoped customer routes:
 
-| Method | Path | Purpose | Request | Response |
-| --- | --- | --- | --- | --- |
-| `POST` | `/automation/topics` | Create topic | `{ title: string; source?: string; score?: number }` | `Topic` |
-| `GET` | `/automation/topics` | List topics | none | `Topic[]` |
-| `GET` | `/automation/topics/pending` | Up to 5 pending topics | none | `Topic[]` |
-| `PATCH` | `/automation/topics/:id/used` | Mark topic used | none | `Topic` |
-| `POST` | `/automation/scripts` | Create reviewed script from content | `{ topicId: string; content: string }` | `Script` |
-| `POST` | `/automation/scripts/ai` | Generate AI script | `{ topicId: string; topic: string }` | `Script` |
-| `GET` | `/automation/scripts` | List scripts | none | `Script[]` |
-| `GET` | `/automation/scripts/:id/thumbnail` | Script thumbnail metadata | none | thumbnail metadata |
-| `POST` | `/automation/scripts/:id/thumbnail` | Generate script thumbnail | `{ prompt?: string }` | thumbnail metadata |
-| `PATCH` | `/automation/scripts/:id/thumbnail` | Regenerate script thumbnail | `{ prompt?: string }` | thumbnail metadata |
-| `GET` | `/automation/videos/:id/thumbnail` | Video thumbnail metadata | none | thumbnail metadata |
-| `POST` | `/automation/videos/:id/thumbnail` | Generate video thumbnail | `{ prompt?: string }` | thumbnail metadata |
-| `PATCH` | `/automation/videos/:id/thumbnail` | Regenerate video thumbnail | `{ prompt?: string }` | thumbnail metadata |
+| Method  | Path                                | Purpose                             | Request                                              | Response           |
+| ------- | ----------------------------------- | ----------------------------------- | ---------------------------------------------------- | ------------------ |
+| `POST`  | `/automation/topics`                | Create topic                        | `{ title: string; source?: string; score?: number }` | `Topic`            |
+| `GET`   | `/automation/topics`                | List topics                         | none                                                 | `Topic[]`          |
+| `GET`   | `/automation/topics/pending`        | Up to 5 pending topics              | none                                                 | `Topic[]`          |
+| `PATCH` | `/automation/topics/:id/used`       | Mark topic used                     | none                                                 | `Topic`            |
+| `POST`  | `/automation/scripts`               | Create reviewed script from content | `{ topicId: string; content: string }`               | `Script`           |
+| `POST`  | `/automation/scripts/ai`            | Generate AI script                  | `{ topicId: string; topic: string }`                 | `Script`           |
+| `GET`   | `/automation/scripts`               | List scripts                        | none                                                 | `Script[]`         |
+| `GET`   | `/automation/scripts/:id/thumbnail` | Script thumbnail metadata           | none                                                 | thumbnail metadata |
+| `POST`  | `/automation/scripts/:id/thumbnail` | Generate script thumbnail           | `{ prompt?: string }`                                | thumbnail metadata |
+| `PATCH` | `/automation/scripts/:id/thumbnail` | Regenerate script thumbnail         | `{ prompt?: string }`                                | thumbnail metadata |
+| `GET`   | `/automation/videos/:id/thumbnail`  | Video thumbnail metadata            | none                                                 | thumbnail metadata |
+| `POST`  | `/automation/videos/:id/thumbnail`  | Generate video thumbnail            | `{ prompt?: string }`                                | thumbnail metadata |
+| `PATCH` | `/automation/videos/:id/thumbnail`  | Regenerate video thumbnail          | `{ prompt?: string }`                                | thumbnail metadata |
 
 ## Public Webhooks
 
