@@ -1645,13 +1645,17 @@ Public:
 GET /r/:offerId?jobId=:videoJobId&yt=:youtubeVideoId
 ```
 
+This public redirect is intentionally served without the global `/api` prefix so published links can use `https://api.joinjubily.com/r/:offerId`. Normal application APIs remain under `/api/...`.
+
 Behavior:
 
-- Creates a click.
-- Redirects to offer `hoplink`.
+- Loads the trusted stored offer destination and redirects with `302 Found`.
+- Creates a click when analytics storage is available.
 - Adds click id as `tid` for ClickBank and `custom` for Digistore24.
 - Optional `AFFILIATE_CLICK_PARAM` adds a second click-id query param.
-- Failure returns `500` plain text `Tracking redirect failed`.
+- Unknown offers return `404`; inactive offers return `410`.
+- Analytics failures are logged but do not block a valid redirect.
+- Query-string destination parameters are ignored; redirects only use the stored offer `hoplink`.
 
 `trackingUrl` returned from video APIs is built as:
 
@@ -1659,7 +1663,7 @@ Behavior:
 `${PUBLIC_API_BASE_URL || JUBILY_API_BASE_URL}/r/${offerId}?jobId=${jobId}&yt=${youtubeVideoId}`
 ```
 
-It is `null` when no offer exists or no public API base URL is configured.
+`PUBLIC_API_BASE_URL` should be the public backend origin, for example `https://api.joinjubily.com`, with no `/api` suffix. Trailing slashes are trimmed before joining. It is `null` when no offer exists or no public API base URL is configured.
 
 ## Admin API
 

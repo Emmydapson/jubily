@@ -603,6 +603,24 @@ describe('PublishWorker', () => {
     });
   });
 
+  it('joins the public API base and tracking route without duplicate slashes or /api/r', async () => {
+    process.env.PUBLIC_API_BASE_URL = 'https://api.joinjubily.com///';
+
+    await worker.publish(job);
+
+    expect(youtube.updateMetadata).toHaveBeenCalledWith(
+      'youtube-1',
+      expect.any(String),
+      expect.stringContaining(
+        'https://api.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1',
+      ),
+      expect.any(Array),
+    );
+    const finalDescription = youtube.updateMetadata.mock.calls[0][2] as string;
+    expect(finalDescription).not.toContain('https://api.joinjubily.com//r/');
+    expect(finalDescription).not.toContain('/api/r/offer-1');
+  });
+
   it('falls back to topic title when script content is not JSON and rebuilds an empty SRT safely', async () => {
     prisma.videoJob.findUnique.mockResolvedValue({
       ...fullJob,

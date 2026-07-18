@@ -130,4 +130,64 @@ describe('TrackingService', () => {
       'https://vendor.example/path?tid=click-2&subid=click-2',
     );
   });
+
+  it('loads only active redirect offers and returns inactive offers as gone', async () => {
+    prisma.offer.findUnique.mockResolvedValueOnce({
+      id: 'offer-1',
+      hoplink: 'https://vendor.example/product',
+      network: 'SELAR',
+      active: true,
+    });
+
+    await expect(service.getRedirectOffer('offer-1')).resolves.toEqual({
+      id: 'offer-1',
+      hoplink: 'https://vendor.example/product',
+      network: 'SELAR',
+      active: true,
+    });
+
+    prisma.offer.findUnique.mockResolvedValueOnce({
+      id: 'offer-2',
+      hoplink: 'https://vendor.example/product',
+      network: 'SELAR',
+      active: false,
+    });
+
+    await expect(service.getRedirectOffer('offer-2')).rejects.toThrow(
+      'Offer is inactive',
+    );
+  });
+
+  it('rejects invalid trusted offer destinations before redirecting', async () => {
+    prisma.offer.findUnique.mockResolvedValueOnce({
+      id: 'offer-1',
+      hoplink: 'javascript:alert(1)',
+      network: 'CUSTOM',
+      active: true,
+    });
+
+    await expect(service.getRedirectOffer('offer-1')).rejects.toThrow(
+      'Invalid offer destination URL',
+    );
+    expect(() =>
+      service.buildTrustedOfferUrl({
+        hoplink: 'javascript:alert(1)',
+        network: 'CUSTOM',
+      }),
+    ).toThrow('Invalid offer destination URL');
+  });
+
+  it('builds a trusted destination from the stored offer and optional click id only', () => {
+    const offer = {
+      hoplink: 'https://vendor.example/product?existing=1',
+      network: 'clickbank',
+    };
+
+    expect(service.buildTrustedOfferUrl(offer, null)).toBe(
+      'https://vendor.example/product?existing=1',
+    );
+    expect(service.buildTrustedOfferUrl(offer, 'click-1')).toBe(
+      'https://vendor.example/product?existing=1&tid=click-1',
+    );
+  });
 });

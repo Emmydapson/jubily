@@ -1,17 +1,23 @@
-/* eslint-disable prettier/prettier */
 import 'dotenv/config';
+import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { Reflector } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { json, urlencoded } from 'express';
+import { json, type Request, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
-export const allowedCorsOrigins = ['https://joinjubily.com', 'https://www.joinjubily.com'];
+export const allowedCorsOrigins = [
+  'https://joinjubily.com',
+  'https://www.joinjubily.com',
+];
 
-export function corsOrigin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+export function corsOrigin(
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean) => void,
+) {
   if (!origin || allowedCorsOrigins.includes(origin)) {
     callback(null, true);
     return;
@@ -19,8 +25,12 @@ export function corsOrigin(origin: string | undefined, callback: (err: Error | n
   callback(new Error('Not allowed by CORS'));
 }
 
-export async function configureApp(app: any) {
-  app.setGlobalPrefix('api');
+type RawBodyRequest = Request & { rawBody?: Buffer };
+
+export function configureApp(app: INestApplication) {
+  app.setGlobalPrefix('api', {
+    exclude: [{ path: 'r/:offerId', method: RequestMethod.GET }],
+  });
 
   app.enableCors({
     origin: corsOrigin,
@@ -40,15 +50,19 @@ export async function configureApp(app: any) {
   );
 
   app.use(urlencoded({ extended: false }));
-  app.use(json({
-    verify: (req: any, _res, buf) => {
-      req.rawBody = Buffer.from(buf);
-    },
-  }));
+  app.use(
+    json({
+      verify: (req: RawBodyRequest, _res, buf) => {
+        req.rawBody = Buffer.from(buf);
+      },
+    }),
+  );
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Jubily Automation Core API')
-    .setDescription('Backend API for authentication, automation, video jobs, publishing, tracking, webhooks, settings, and pipeline monitoring.')
+    .setDescription(
+      'Backend API for authentication, automation, video jobs, publishing, tracking, webhooks, settings, and pipeline monitoring.',
+    )
     .setVersion('1.0')
     .addBearerAuth(
       {
@@ -64,7 +78,8 @@ export async function configureApp(app: any) {
         type: 'apiKey',
         in: 'query',
         name: 'key',
-        description: 'ClickBank INS shared secret query parameter for POST /api/webhooks/clickbank.',
+        description:
+          'ClickBank INS shared secret query parameter for POST /api/webhooks/clickbank.',
       },
       'clickbank-key',
     )
@@ -84,7 +99,7 @@ export async function configureApp(app: any) {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  await configureApp(app);
+  configureApp(app);
   await app.listen(Number(process.env.PORT) || 3000);
 }
 

@@ -1,5 +1,9 @@
-/* eslint-disable prettier/prettier */
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  GoneException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MonitoringService } from 'src/monitoring/monitoring.service';
 
@@ -37,10 +41,14 @@ export class TrackingService {
       }
 
       if (job.offerId && job.offerId !== data.offerId) {
-        throw new Error(`Video job ${data.videoJobId} does not belong to offer ${data.offerId}`);
+        throw new Error(
+          `Video job ${data.videoJobId} does not belong to offer ${data.offerId}`,
+        );
       }
       if (job.workspaceId !== offer.workspaceId) {
-        throw new Error(`Video job ${data.videoJobId} does not belong to offer workspace`);
+        throw new Error(
+          `Video job ${data.videoJobId} does not belong to offer workspace`,
+        );
       }
 
       videoJobId = job.id;
@@ -77,35 +85,68 @@ export class TrackingService {
     return created;
   }
 
+  async getRedirectOffer(offerId: string) {
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+      select: { id: true, hoplink: true, network: true, active: true },
+    });
+
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (!offer.active) throw new GoneException('Offer is inactive');
+
+    try {
+      const url = new URL(offer.hoplink);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        throw new Error('Unsupported destination protocol');
+      }
+    } catch {
+      throw new BadRequestException('Invalid offer destination URL');
+    }
+
+    return offer;
+  }
+
+  buildTrustedOfferUrl(
+    offer: { hoplink: string; network?: string | null },
+    clickId?: string | null,
+  ) {
+    const url = new URL(offer.hoplink);
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new BadRequestException('Invalid offer destination URL');
+    }
+
+    if (!clickId) return url.toString();
+
+    const net = String(offer.network || '').toLowerCase();
+
+    // ✅ ClickBank uses "tid"
+    if (net === 'clickbank') {
+      url.searchParams.set('tid', clickId);
+    }
+    // ✅ Digistore24 uses "custom"
+    else if (net === 'digistore24' || net === 'digistore') {
+      url.searchParams.set('custom', clickId);
+    }
+    // ✅ default fallback
+    else {
+      url.searchParams.set('tid', clickId);
+    }
+
+    // Optional override: allow forcing an extra param via env
+    // Example: "click_id" or "subid"
+    const extraParam = process.env.AFFILIATE_CLICK_PARAM;
+    if (extraParam) url.searchParams.set(extraParam, clickId);
+
+    return url.toString();
+  }
+
   async buildOfferUrl(offerId: string, clickId: string) {
-  const offer = await this.prisma.offer.findUnique({
-    where: { id: offerId },
-    select: { id: true, hoplink: true, network: true },
-  });
-  if (!offer) throw new Error('Offer not found');
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+      select: { id: true, hoplink: true, network: true },
+    });
+    if (!offer) throw new Error('Offer not found');
 
-  const url = new URL(offer.hoplink);
-
-  const net = String(offer.network || '').toLowerCase();
-
-  // ✅ ClickBank uses "tid"
-  if (net === 'clickbank') {
-    url.searchParams.set('tid', clickId);
+    return this.buildTrustedOfferUrl(offer, clickId);
   }
-  // ✅ Digistore24 uses "custom"
-  else if (net === 'digistore24' || net === 'digistore') {
-    url.searchParams.set('custom', clickId);
-  }
-  // ✅ default fallback
-  else {
-    url.searchParams.set('tid', clickId);
-  }
-
-  // Optional override: allow forcing an extra param via env
-  // Example: "click_id" or "subid"
-  const extraParam = process.env.AFFILIATE_CLICK_PARAM;
-  if (extraParam) url.searchParams.set(extraParam, clickId);
-
-  return url.toString();
-}
 }
