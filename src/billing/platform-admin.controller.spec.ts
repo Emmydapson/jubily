@@ -23,6 +23,8 @@ describe('PlatformAdminController', () => {
       }),
     };
 
-    expect(() => guard.canActivate(context as never)).toThrow('Insufficient role');
+    expect(() => guard.canActivate(context as never)).toThrow(
+      'Insufficient role',
+    );
   });
 });

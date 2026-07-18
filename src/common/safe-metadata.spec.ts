@@ -16,8 +16,8 @@ describe('safe metadata helpers', () => {
   });
 
   it('redacts bearer tokens and query token values from error messages', () => {
-    expect(safeErrorMessage(new Error('failed Bearer abc.def access_token=123'))).toBe(
-      'failed Bearer [REDACTED] access_token=[REDACTED]',
-    );
+    expect(
+      safeErrorMessage(new Error('failed Bearer abc.def access_token=123')),
+    ).toBe('failed Bearer [REDACTED] access_token=[REDACTED]');
   });
 });

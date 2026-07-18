@@ -10,7 +10,10 @@ import {
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OFFER_NETWORKS, OFFER_NICHES } from '../offer.constants';
-import { normalizeAffiliateNiche, normalizeAffiliatePlatform } from '../../affiliates/affiliate.constants';
+import {
+  normalizeAffiliateNiche,
+  normalizeAffiliatePlatform,
+} from '../../affiliates/affiliate.constants';
 
 export class ListOffersQueryDto {
   @ApiPropertyOptional({ example: 1, minimum: 1 })

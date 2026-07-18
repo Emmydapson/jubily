@@ -1,18 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
+import { shotstackHeaders, shotstackRenderAssetUrl } from './shotstack.config';
 
 @Injectable()
 export class ShotstackServeService {
-  // Serve API (stage). Returns CDN-hosted assets (not the private S3 stage-output URL)
-  private readonly baseUrl = 'https://api.shotstack.io/serve/stage';
-
-  private apiKey(): string {
-    const k = process.env.SHOTSTACK_API_KEY;
-    if (!k) throw new Error('Missing SHOTSTACK_API_KEY');
-    return k;
-  }
-
   /**
    * Returns { url, status } for the render asset.
    * status is typically "ready" when the CDN URL is usable.
@@ -22,11 +14,8 @@ export class ShotstackServeService {
   ): Promise<{ url: string | null; status: string }> {
     if (!renderId) throw new Error('Missing renderId');
 
-    const res = await axios.get(`${this.baseUrl}/assets/render/${renderId}`, {
-      headers: {
-        'x-api-key': this.apiKey(),
-        'Content-Type': 'application/json',
-      },
+    const res = await axios.get(shotstackRenderAssetUrl(renderId), {
+      headers: shotstackHeaders(),
       timeout: 20000,
       maxRedirects: 5,
       // allow 404 so we can treat it as "not ready / missing"

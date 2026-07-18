@@ -92,16 +92,25 @@ export function normalizeAffiliateNiche(value: unknown): AffiliateNiche | null {
   const raw = String(value || '').trim();
   if (!raw) return null;
   const token = normalizeToken(raw);
-  const legacy = NICHE_ALIASES[raw.toUpperCase()] ?? NICHE_ALIASES[token.replace(/_/g, '-')];
+  const legacy =
+    NICHE_ALIASES[raw.toUpperCase()] ?? NICHE_ALIASES[token.replace(/_/g, '-')];
   if (legacy) return legacy;
-  return AFFILIATE_NICHES.includes(token as AffiliateNiche) ? (token as AffiliateNiche) : null;
+  return AFFILIATE_NICHES.includes(token as AffiliateNiche)
+    ? (token as AffiliateNiche)
+    : null;
 }
 
-export function normalizeAffiliatePlatform(value: unknown): AffiliatePlatform | null {
+export function normalizeAffiliatePlatform(
+  value: unknown,
+): AffiliatePlatform | null {
   const raw = String(value || '').trim();
   if (!raw) return null;
   const token = normalizeToken(raw);
-  const platform = PLATFORM_ALIASES[token] ?? (AFFILIATE_PLATFORMS.includes(token as AffiliatePlatform) ? (token as AffiliatePlatform) : null);
+  const platform =
+    PLATFORM_ALIASES[token] ??
+    (AFFILIATE_PLATFORMS.includes(token as AffiliatePlatform)
+      ? (token as AffiliatePlatform)
+      : null);
   return platform;
 }
 
@@ -113,10 +122,22 @@ export function affiliatePlatformLabel(value: unknown): string | null {
 
 export function normalizeAffiliateNiches(values: unknown): AffiliateNiche[] {
   const input = Array.isArray(values) ? values : values == null ? [] : [values];
-  return Array.from(new Set(input.map(normalizeAffiliateNiche).filter(Boolean) as AffiliateNiche[]));
+  return Array.from(
+    new Set(
+      input.map(normalizeAffiliateNiche).filter(Boolean) as AffiliateNiche[],
+    ),
+  );
 }
 
-export function normalizeAffiliatePlatforms(values: unknown): AffiliatePlatform[] {
+export function normalizeAffiliatePlatforms(
+  values: unknown,
+): AffiliatePlatform[] {
   const input = Array.isArray(values) ? values : values == null ? [] : [values];
-  return Array.from(new Set(input.map(normalizeAffiliatePlatform).filter(Boolean) as AffiliatePlatform[]));
+  return Array.from(
+    new Set(
+      input
+        .map(normalizeAffiliatePlatform)
+        .filter(Boolean) as AffiliatePlatform[],
+    ),
+  );
 }

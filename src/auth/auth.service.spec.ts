@@ -15,9 +15,23 @@ describe('AuthService', () => {
     user: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
     workspace: { create: jest.Mock };
     workspaceMember: { findMany: jest.Mock };
-    emailVerificationToken: { create: jest.Mock; findUnique: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
-    passwordResetToken: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
-    userSession: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
+    emailVerificationToken: {
+      create: jest.Mock;
+      findUnique: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+    };
+    passwordResetToken: {
+      create: jest.Mock;
+      findUnique: jest.Mock;
+      update: jest.Mock;
+    };
+    userSession: {
+      create: jest.Mock;
+      findUnique: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
   };
   let jwt: { signAsync: jest.Mock };
   let audit: { record: jest.Mock };
@@ -77,7 +91,12 @@ describe('AuthService', () => {
       sendPasswordResetEmail: jest.fn().mockResolvedValue({ queued: true }),
       sendPasswordChangedEmail: jest.fn().mockResolvedValue({ queued: true }),
     };
-    service = new AuthService(prisma as never, jwt as never, audit as never, emails as never);
+    service = new AuthService(
+      prisma as never,
+      jwt as never,
+      audit as never,
+      emails as never,
+    );
     jest.mocked(bcrypt.compare).mockReset();
     jest.mocked(bcrypt.hash).mockReset();
   });
@@ -96,7 +115,9 @@ describe('AuthService', () => {
     });
     jest.mocked(bcrypt.compare).mockResolvedValue(true as never);
 
-    await expect(service.adminLogin('  ADMIN@JoinJubily.com ', 'secret')).resolves.toEqual({
+    await expect(
+      service.adminLogin('  ADMIN@JoinJubily.com ', 'secret'),
+    ).resolves.toEqual({
       accessToken: 'signed.jwt.token',
       admin: { id: 'admin-1', email: 'admin@joinjubily.com', role: 'ADMIN' },
     });
@@ -108,10 +129,12 @@ describe('AuthService', () => {
       where: { id: 'admin-1' },
       data: { lastLoginAt: expect.any(Date) },
     });
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'LOGIN',
-      adminId: 'admin-1',
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'LOGIN',
+        adminId: 'admin-1',
+      }),
+    );
     expect(jwt.signAsync).toHaveBeenCalledWith({
       sub: 'admin-1',
       email: 'admin@joinjubily.com',
@@ -123,9 +146,9 @@ describe('AuthService', () => {
   it('does not let the customer login path authenticate admin credentials', async () => {
     prisma.user.findUnique.mockResolvedValue(null);
 
-    await expect(service.login('admin@joinjubily.com', 'secret')).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      service.login('admin@joinjubily.com', 'secret'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
 
     expect(prisma.adminUser.findUnique).not.toHaveBeenCalled();
     expect(jwt.signAsync).not.toHaveBeenCalled();
@@ -144,7 +167,11 @@ describe('AuthService', () => {
     prisma.workspaceMember.findMany.mockResolvedValue([
       {
         role: 'OWNER',
-        workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace' },
+        workspace: {
+          id: 'workspace-1',
+          name: 'User Workspace',
+          slug: 'user-workspace',
+        },
       },
     ]);
     jest.mocked(bcrypt.compare).mockResolvedValue(true as never);
@@ -162,8 +189,20 @@ describe('AuthService', () => {
         acceptedTermsAt: null,
         acceptedPrivacyPolicyAt: null,
       },
-      workspaces: [{ id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' }],
-      workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' },
+      workspaces: [
+        {
+          id: 'workspace-1',
+          name: 'User Workspace',
+          slug: 'user-workspace',
+          role: 'OWNER',
+        },
+      ],
+      workspace: {
+        id: 'workspace-1',
+        name: 'User Workspace',
+        slug: 'user-workspace',
+        role: 'OWNER',
+      },
       onboarding: {
         emailVerified: true,
         hasWorkspace: true,
@@ -228,29 +267,47 @@ describe('AuthService', () => {
   it('records failed login attempts and rejects unknown SaaS users', async () => {
     prisma.user.findUnique.mockResolvedValue(null);
 
-    await expect(service.login('attacker@example.com', 'secret')).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      service.login('attacker@example.com', 'secret'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
 
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'LOGIN_FAILED',
-      metadata: expect.objectContaining({ failedAttempts: 1 }),
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'LOGIN_FAILED',
+        metadata: expect.objectContaining({ failedAttempts: 1 }),
+      }),
+    );
     expect(jwt.signAsync).not.toHaveBeenCalled();
   });
 
   it('rejects signup without acceptedTerms', async () => {
     await expect(
-      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
-        acceptedTerms: false,
-        acceptedPrivacyPolicy: true,
-      }),
-    ).rejects.toThrow('You must accept the Terms of Service and Privacy Policy to create an account.');
+      service.signup(
+        'USER@example.com',
+        'password123',
+        'User',
+        undefined,
+        undefined,
+        {
+          acceptedTerms: false,
+          acceptedPrivacyPolicy: true,
+        },
+      ),
+    ).rejects.toThrow(
+      'You must accept the Terms of Service and Privacy Policy to create an account.',
+    );
 
     await expect(
-      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
-        acceptedPrivacyPolicy: true,
-      }),
+      service.signup(
+        'USER@example.com',
+        'password123',
+        'User',
+        undefined,
+        undefined,
+        {
+          acceptedPrivacyPolicy: true,
+        },
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.user.create).not.toHaveBeenCalled();
     expect(jest.mocked(bcrypt.hash)).not.toHaveBeenCalled();
@@ -258,16 +315,32 @@ describe('AuthService', () => {
 
   it('rejects signup without acceptedPrivacyPolicy', async () => {
     await expect(
-      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
-        acceptedTerms: true,
-        acceptedPrivacyPolicy: false,
-      }),
-    ).rejects.toThrow('You must accept the Terms of Service and Privacy Policy to create an account.');
+      service.signup(
+        'USER@example.com',
+        'password123',
+        'User',
+        undefined,
+        undefined,
+        {
+          acceptedTerms: true,
+          acceptedPrivacyPolicy: false,
+        },
+      ),
+    ).rejects.toThrow(
+      'You must accept the Terms of Service and Privacy Policy to create an account.',
+    );
 
     await expect(
-      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
-        acceptedTerms: true,
-      }),
+      service.signup(
+        'USER@example.com',
+        'password123',
+        'User',
+        undefined,
+        undefined,
+        {
+          acceptedTerms: true,
+        },
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.user.create).not.toHaveBeenCalled();
     expect(jest.mocked(bcrypt.hash)).not.toHaveBeenCalled();
@@ -293,10 +366,17 @@ describe('AuthService', () => {
     });
 
     await expect(
-      service.signup('USER@example.com', 'password123', 'User', undefined, undefined, {
-        acceptedTerms: true,
-        acceptedPrivacyPolicy: true,
-      }),
+      service.signup(
+        'USER@example.com',
+        'password123',
+        'User',
+        undefined,
+        undefined,
+        {
+          acceptedTerms: true,
+          acceptedPrivacyPolicy: true,
+        },
+      ),
     ).resolves.toEqual({
       success: false,
       code: 'EMAIL_NOT_VERIFIED',
@@ -351,11 +431,13 @@ describe('AuthService', () => {
       },
       select: { id: true, slug: true },
     });
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'WORKSPACE_CREATED',
-      workspaceId: 'workspace-1',
-      userId: 'user-123456789',
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'WORKSPACE_CREATED',
+        workspaceId: 'workspace-1',
+        userId: 'user-123456789',
+      }),
+    );
     expect(prisma.emailVerificationToken.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: 'user-123456789',
@@ -364,7 +446,10 @@ describe('AuthService', () => {
       }),
     });
     expect(emails.sendVerificationEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'user-123456789', email: 'user@example.com' }),
+      expect.objectContaining({
+        id: 'user-123456789',
+        email: 'user@example.com',
+      }),
       expect.any(String),
     );
     expect(jwt.signAsync).not.toHaveBeenCalled();
@@ -384,10 +469,7 @@ describe('AuthService', () => {
       success: true,
       message: 'Email verified successfully.',
     });
-    expect(prisma.$transaction).toHaveBeenCalledWith([
-      undefined,
-      undefined,
-    ]);
+    expect(prisma.$transaction).toHaveBeenCalledWith([undefined, undefined]);
     expect(prisma.emailVerificationToken.update).toHaveBeenCalledWith({
       where: { id: 'verification-1' },
       data: { usedAt: expect.any(Date) },
@@ -441,7 +523,9 @@ describe('AuthService', () => {
     });
     prisma.emailVerificationToken.findFirst.mockResolvedValue(null);
 
-    await expect(service.resendVerification('USER@example.com')).resolves.toEqual({
+    await expect(
+      service.resendVerification('USER@example.com'),
+    ).resolves.toEqual({
       success: true,
       message: 'Verification email sent.',
     });
@@ -459,7 +543,9 @@ describe('AuthService', () => {
       emailVerifiedAt: new Date(),
     });
 
-    await expect(service.resendVerification('user@example.com')).resolves.toEqual({
+    await expect(
+      service.resendVerification('user@example.com'),
+    ).resolves.toEqual({
       success: true,
       message: 'Email already verified.',
     });
@@ -472,12 +558,17 @@ describe('AuthService', () => {
       emailVerified: false,
       emailVerifiedAt: null,
     });
-    prisma.emailVerificationToken.findFirst.mockResolvedValueOnce({ createdAt: new Date(Date.now() - 30_000) });
+    prisma.emailVerificationToken.findFirst.mockResolvedValueOnce({
+      createdAt: new Date(Date.now() - 30_000),
+    });
 
-    await expect(service.resendVerification('new@example.com')).rejects.toMatchObject({
+    await expect(
+      service.resendVerification('new@example.com'),
+    ).rejects.toMatchObject({
       response: {
         success: false,
-        message: 'Please wait 60 seconds before requesting another verification email.',
+        message:
+          'Please wait 60 seconds before requesting another verification email.',
       },
       status: 429,
     });
@@ -491,7 +582,9 @@ describe('AuthService', () => {
       active: true,
     });
 
-    await expect(service.forgotPassword('USER@example.com')).resolves.toEqual({ ok: true });
+    await expect(service.forgotPassword('USER@example.com')).resolves.toEqual({
+      ok: true,
+    });
     expect(prisma.passwordResetToken.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: 'user-1',
@@ -510,7 +603,9 @@ describe('AuthService', () => {
     });
     jest.mocked(bcrypt.hash).mockResolvedValue('new-hash' as never);
 
-    await expect(service.resetPassword('reset-token', 'new-password')).resolves.toEqual({ ok: true });
+    await expect(
+      service.resetPassword('reset-token', 'new-password'),
+    ).resolves.toEqual({ ok: true });
     expect(prisma.passwordResetToken.update).toHaveBeenCalledWith({
       where: { id: 'reset-1' },
       data: { usedAt: expect.any(Date) },
@@ -533,9 +628,9 @@ describe('AuthService', () => {
       user: { id: 'user-1', email: 'user@example.com', name: 'User' },
     });
 
-    await expect(service.resetPassword('expired-reset', 'new-password')).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      service.resetPassword('expired-reset', 'new-password'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('rotates refresh tokens and rejects reuse of the old token', async () => {
@@ -560,7 +655,11 @@ describe('AuthService', () => {
     prisma.workspaceMember.findMany.mockResolvedValue([
       {
         role: 'OWNER',
-        workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace' },
+        workspace: {
+          id: 'workspace-1',
+          name: 'User Workspace',
+          slug: 'user-workspace',
+        },
       },
     ]);
 
@@ -577,8 +676,20 @@ describe('AuthService', () => {
         acceptedTermsAt: null,
         acceptedPrivacyPolicyAt: null,
       },
-      workspaces: [{ id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' }],
-      workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' },
+      workspaces: [
+        {
+          id: 'workspace-1',
+          name: 'User Workspace',
+          slug: 'user-workspace',
+          role: 'OWNER',
+        },
+      ],
+      workspace: {
+        id: 'workspace-1',
+        name: 'User Workspace',
+        slug: 'user-workspace',
+        role: 'OWNER',
+      },
       onboarding: {
         emailVerified: true,
         hasWorkspace: true,
@@ -593,7 +704,10 @@ describe('AuthService', () => {
       data: { revokedAt: expect.any(Date), rotatedAt: expect.any(Date) },
     });
     expect(prisma.userSession.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ userId: 'user-1', refreshTokenHash: expect.any(String) }),
+      data: expect.objectContaining({
+        userId: 'user-1',
+        refreshTokenHash: expect.any(String),
+      }),
     });
 
     prisma.userSession.findUnique.mockResolvedValueOnce({
@@ -603,7 +717,9 @@ describe('AuthService', () => {
       expiresAt: new Date(Date.now() + 60_000),
       user: { active: true },
     });
-    await expect(service.refresh('refresh-token')).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.refresh('refresh-token')).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
   });
 
   it('returns current user with onboarding and workspace state', async () => {
@@ -620,7 +736,11 @@ describe('AuthService', () => {
       memberships: [
         {
           role: 'OWNER',
-          workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace' },
+          workspace: {
+            id: 'workspace-1',
+            name: 'User Workspace',
+            slug: 'user-workspace',
+          },
         },
       ],
     });
@@ -629,8 +749,20 @@ describe('AuthService', () => {
       kind: 'user',
       user: expect.objectContaining({ id: 'user-1', emailVerified: true }),
       emailVerified: true,
-      workspaces: [{ id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' }],
-      workspace: { id: 'workspace-1', name: 'User Workspace', slug: 'user-workspace', role: 'OWNER' },
+      workspaces: [
+        {
+          id: 'workspace-1',
+          name: 'User Workspace',
+          slug: 'user-workspace',
+          role: 'OWNER',
+        },
+      ],
+      workspace: {
+        id: 'workspace-1',
+        name: 'User Workspace',
+        slug: 'user-workspace',
+        role: 'OWNER',
+      },
       onboarding: {
         emailVerified: true,
         hasWorkspace: true,
@@ -682,7 +814,10 @@ describe('AuthService', () => {
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       memberships: [],
     });
-    prisma.workspace.create.mockResolvedValue({ id: 'workspace-1', slug: 'user-s-workspace-user-1' });
+    prisma.workspace.create.mockResolvedValue({
+      id: 'workspace-1',
+      slug: 'user-s-workspace-user-1',
+    });
     prisma.workspaceMember.findMany.mockResolvedValue([]);
 
     await expect(service.me({ userId: 'user-1' })).rejects.toMatchObject({
@@ -708,15 +843,36 @@ describe('AuthService', () => {
       .mockResolvedValueOnce([
         {
           role: 'OWNER',
-          workspace: { id: 'workspace-1', name: "Legacy's Workspace", slug: 'legacy-s-workspace-legacy-u' },
+          workspace: {
+            id: 'workspace-1',
+            name: "Legacy's Workspace",
+            slug: 'legacy-s-workspace-legacy-u',
+          },
         },
       ]);
-    prisma.workspace.create.mockResolvedValue({ id: 'workspace-1', slug: 'legacy-s-workspace-legacy-u' });
+    prisma.workspace.create.mockResolvedValue({
+      id: 'workspace-1',
+      slug: 'legacy-s-workspace-legacy-u',
+    });
     jest.mocked(bcrypt.compare).mockResolvedValue(true as never);
 
-    await expect(service.login('legacy@example.com', 'secret')).resolves.toMatchObject({
-      workspaces: [{ id: 'workspace-1', name: "Legacy's Workspace", slug: 'legacy-s-workspace-legacy-u', role: 'OWNER' }],
-      workspace: { id: 'workspace-1', name: "Legacy's Workspace", slug: 'legacy-s-workspace-legacy-u', role: 'OWNER' },
+    await expect(
+      service.login('legacy@example.com', 'secret'),
+    ).resolves.toMatchObject({
+      workspaces: [
+        {
+          id: 'workspace-1',
+          name: "Legacy's Workspace",
+          slug: 'legacy-s-workspace-legacy-u',
+          role: 'OWNER',
+        },
+      ],
+      workspace: {
+        id: 'workspace-1',
+        name: "Legacy's Workspace",
+        slug: 'legacy-s-workspace-legacy-u',
+        role: 'OWNER',
+      },
       onboarding: {
         hasWorkspace: true,
         needsWorkspace: false,
@@ -755,14 +911,35 @@ describe('AuthService', () => {
       .mockResolvedValueOnce([
         {
           role: 'OWNER',
-          workspace: { id: 'workspace-1', name: 'My Workspace', slug: 'my-workspace-legacy-u' },
+          workspace: {
+            id: 'workspace-1',
+            name: 'My Workspace',
+            slug: 'my-workspace-legacy-u',
+          },
         },
       ]);
-    prisma.workspace.create.mockResolvedValue({ id: 'workspace-1', slug: 'my-workspace-legacy-u' });
+    prisma.workspace.create.mockResolvedValue({
+      id: 'workspace-1',
+      slug: 'my-workspace-legacy-u',
+    });
 
-    await expect(service.me({ userId: 'legacy-user-1' })).resolves.toMatchObject({
-      workspaces: [{ id: 'workspace-1', name: 'My Workspace', slug: 'my-workspace-legacy-u', role: 'OWNER' }],
-      workspace: { id: 'workspace-1', name: 'My Workspace', slug: 'my-workspace-legacy-u', role: 'OWNER' },
+    await expect(
+      service.me({ userId: 'legacy-user-1' }),
+    ).resolves.toMatchObject({
+      workspaces: [
+        {
+          id: 'workspace-1',
+          name: 'My Workspace',
+          slug: 'my-workspace-legacy-u',
+          role: 'OWNER',
+        },
+      ],
+      workspace: {
+        id: 'workspace-1',
+        name: 'My Workspace',
+        slug: 'my-workspace-legacy-u',
+        role: 'OWNER',
+      },
       onboarding: {
         hasWorkspace: true,
         needsWorkspace: false,
@@ -795,14 +972,22 @@ describe('AuthService', () => {
       memberships: [
         {
           role: 'OWNER',
-          workspace: { id: 'workspace-1', name: 'Existing Workspace', slug: 'existing-workspace' },
+          workspace: {
+            id: 'workspace-1',
+            name: 'Existing Workspace',
+            slug: 'existing-workspace',
+          },
         },
       ],
     });
     prisma.workspaceMember.findMany.mockResolvedValue([
       {
         role: 'OWNER',
-        workspace: { id: 'workspace-1', name: 'Existing Workspace', slug: 'existing-workspace' },
+        workspace: {
+          id: 'workspace-1',
+          name: 'Existing Workspace',
+          slug: 'existing-workspace',
+        },
       },
     ]);
     jest.mocked(bcrypt.compare).mockResolvedValue(true as never);

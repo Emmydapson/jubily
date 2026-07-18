@@ -19,7 +19,10 @@ function displayName(name?: string | null) {
 }
 
 function supportEmail() {
-  return String(process.env.SUPPORT_EMAIL || DEFAULT_SUPPORT_EMAIL).trim() || DEFAULT_SUPPORT_EMAIL;
+  return (
+    String(process.env.SUPPORT_EMAIL || DEFAULT_SUPPORT_EMAIL).trim() ||
+    DEFAULT_SUPPORT_EMAIL
+  );
 }
 
 function escapeHtml(value: string) {

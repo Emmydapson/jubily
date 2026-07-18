@@ -11,14 +11,21 @@ describe('WorkspacesService', () => {
     script: { count: jest.Mock };
     videoJob: { count: jest.Mock };
   };
-  let youtube: { getWorkspaceChannelDiagnostics: jest.Mock; disconnectWorkspace: jest.Mock };
+  let youtube: {
+    getWorkspaceChannelDiagnostics: jest.Mock;
+    disconnectWorkspace: jest.Mock;
+  };
   let audit: { record: jest.Mock };
   let service: WorkspacesService;
 
   beforeEach(() => {
     prisma = {
       user: { findUnique: jest.fn() },
-      workspace: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+      workspace: {
+        create: jest.fn(),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
       workspaceMember: { findMany: jest.fn(), findUnique: jest.fn() },
       offer: { count: jest.fn() },
       topic: { count: jest.fn() },
@@ -26,15 +33,24 @@ describe('WorkspacesService', () => {
       videoJob: { count: jest.fn() },
     };
     youtube = {
-      getWorkspaceChannelDiagnostics: jest.fn().mockResolvedValue({ connected: false }),
+      getWorkspaceChannelDiagnostics: jest
+        .fn()
+        .mockResolvedValue({ connected: false }),
       disconnectWorkspace: jest.fn(),
     };
     audit = { record: jest.fn().mockResolvedValue(null) };
-    service = new WorkspacesService(prisma as never, youtube as never, audit as never);
+    service = new WorkspacesService(
+      prisma as never,
+      youtube as never,
+      audit as never,
+    );
   });
 
   it('creates an owner membership when creating a workspace', async () => {
-    prisma.workspace.create.mockResolvedValue({ id: 'workspace-1', name: 'Acme' });
+    prisma.workspace.create.mockResolvedValue({
+      id: 'workspace-1',
+      name: 'Acme',
+    });
 
     await service.createWorkspace('user-1', {
       name: 'Acme Team',
@@ -66,13 +82,17 @@ describe('WorkspacesService', () => {
           },
         },
       },
-      include: { members: { where: { userId: 'user-1' }, select: { role: true } } },
+      include: {
+        members: { where: { userId: 'user-1' }, select: { role: true } },
+      },
     });
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'WORKSPACE_CREATED',
-      workspaceId: 'workspace-1',
-      userId: 'user-1',
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'WORKSPACE_CREATED',
+        workspaceId: 'workspace-1',
+        userId: 'user-1',
+      }),
+    );
   });
 
   it('lists only workspaces where the user is a member', async () => {
@@ -97,7 +117,11 @@ describe('WorkspacesService', () => {
 
   it('returns an empty workspace list clearly for newly verified users without memberships', async () => {
     prisma.workspaceMember.findMany.mockResolvedValue([]);
-    prisma.user.findUnique.mockResolvedValue({ id: 'fresh-user-1', name: 'Fresh', emailVerified: false });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'fresh-user-1',
+      name: 'Fresh',
+      emailVerified: false,
+    });
 
     await expect(service.listMine('fresh-user-1')).resolves.toEqual([]);
   });
@@ -108,10 +132,18 @@ describe('WorkspacesService', () => {
       .mockResolvedValueOnce([
         {
           role: 'OWNER',
-          workspace: { id: 'workspace-1', name: "Fresh's Workspace", slug: 'fresh-s-workspace-fresh-us' },
+          workspace: {
+            id: 'workspace-1',
+            name: "Fresh's Workspace",
+            slug: 'fresh-s-workspace-fresh-us',
+          },
         },
       ]);
-    prisma.user.findUnique.mockResolvedValue({ id: 'fresh-user-1', name: 'Fresh User', emailVerified: true });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'fresh-user-1',
+      name: 'Fresh User',
+      emailVerified: true,
+    });
     prisma.workspace.create.mockResolvedValue({
       id: 'workspace-1',
       name: "Fresh's Workspace",
@@ -142,7 +174,9 @@ describe('WorkspacesService', () => {
           },
         },
       },
-      include: { members: { where: { userId: 'fresh-user-1' }, select: { role: true } } },
+      include: {
+        members: { where: { userId: 'fresh-user-1' }, select: { role: true } },
+      },
     });
   });
 
@@ -150,7 +184,11 @@ describe('WorkspacesService', () => {
     prisma.workspaceMember.findMany.mockResolvedValue([
       {
         role: 'OWNER',
-        workspace: { id: 'workspace-1', name: 'Existing Workspace', slug: 'existing-workspace' },
+        workspace: {
+          id: 'workspace-1',
+          name: 'Existing Workspace',
+          slug: 'existing-workspace',
+        },
       },
     ]);
 
@@ -171,7 +209,11 @@ describe('WorkspacesService', () => {
     });
 
     await expect(
-      service.createWorkspace('fresh-user-1', { name: 'Fresh Workspace', countryCode: 'NG', countryName: 'Nigeria' }),
+      service.createWorkspace('fresh-user-1', {
+        name: 'Fresh Workspace',
+        countryCode: 'NG',
+        countryName: 'Nigeria',
+      }),
     ).resolves.toMatchObject({
       id: 'workspace-1',
       slug: 'fresh-workspace',
@@ -199,16 +241,22 @@ describe('WorkspacesService', () => {
           },
         },
       },
-      include: { members: { where: { userId: 'fresh-user-1' }, select: { role: true } } },
+      include: {
+        members: { where: { userId: 'fresh-user-1' }, select: { role: true } },
+      },
     });
   });
 
   it('maps duplicate workspace slug errors to a clean conflict response', async () => {
     prisma.workspace.create.mockRejectedValue({ code: 'P2002' });
 
-    await expect(service.createWorkspace('user-1', { name: 'Acme Team', countryCode: 'US', countryName: 'United States' })).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(
+      service.createWorkspace('user-1', {
+        name: 'Acme Team',
+        countryCode: 'US',
+        countryName: 'United States',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('updates affiliate onboarding profile and keeps legacy profiles readable', async () => {
@@ -261,13 +309,15 @@ describe('WorkspacesService', () => {
       affiliatePlatforms: [],
     });
 
-    await expect(service.getProfile('legacy-workspace')).resolves.toMatchObject({
-      countryCode: null,
-      countryName: null,
-      affiliateNiches: [],
-      affiliatePlatforms: [],
-      onboardingComplete: false,
-    });
+    await expect(service.getProfile('legacy-workspace')).resolves.toMatchObject(
+      {
+        countryCode: null,
+        countryName: null,
+        affiliateNiches: [],
+        affiliatePlatforms: [],
+        onboardingComplete: false,
+      },
+    );
   });
 
   it('blocks non-members and allows owners/admins for YouTube ownership actions', async () => {

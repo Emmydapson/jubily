@@ -5,7 +5,9 @@ describe('validateEnv', () => {
   const key = Buffer.alloc(32, 1).toString('base64');
 
   it('requires a strong JWT secret', () => {
-    expect(() => validateEnv({ JWT_SECRET: 'short' })).toThrow('JWT_SECRET must be at least');
+    expect(() => validateEnv({ JWT_SECRET: 'short' })).toThrow(
+      'JWT_SECRET must be at least',
+    );
     expect(() => validateEnv({ JWT_SECRET: strongSecret })).not.toThrow();
   });
 
@@ -20,7 +22,8 @@ describe('validateEnv', () => {
         FRONTEND_URL: 'https://joinjubily.com',
         API_URL: 'https://api.example.com',
         PUBLIC_API_BASE_URL: 'http://localhost:5000',
-        YOUTUBE_REDIRECT_URI: 'https://api.joinjubily.com/api/auth/youtube/callback',
+        YOUTUBE_REDIRECT_URI:
+          'https://api.joinjubily.com/api/auth/youtube/callback',
         YOUTUBE_CLIENT_ID: 'client',
         YOUTUBE_CLIENT_SECRET: 'secret',
         OPENAI_API_KEY: 'openai',
@@ -62,7 +65,8 @@ describe('validateEnv', () => {
         FRONTEND_URL: 'https://joinjubily.com',
         API_URL: 'https://api.example.com',
         PUBLIC_API_BASE_URL: 'https://api.example.com',
-        YOUTUBE_REDIRECT_URI: 'https://api.joinjubily.com/api/auth/youtube/callback',
+        YOUTUBE_REDIRECT_URI:
+          'https://api.joinjubily.com/api/auth/youtube/callback',
         YOUTUBE_CLIENT_ID: 'client',
         YOUTUBE_CLIENT_SECRET: 'secret',
         OPENAI_API_KEY: 'openai',
@@ -128,10 +132,16 @@ describe('validateEnv', () => {
       PUBLIC_API_BASE_URL: 'https://api.example.com',
     };
 
-    expect(() => validateEnv({ ...hostedBase, FRONTEND_URL: 'http://localhost:3000', API_URL: 'https://api.example.com' }))
-      .toThrow('FRONTEND_URL must not use a local host');
-    expect(() => validateEnv({ ...hostedBase, FRONTEND_URL: 'https://joinjubily.com' }))
-      .toThrow('API_URL is required');
+    expect(() =>
+      validateEnv({
+        ...hostedBase,
+        FRONTEND_URL: 'http://localhost:3000',
+        API_URL: 'https://api.example.com',
+      }),
+    ).toThrow('FRONTEND_URL must not use a local host');
+    expect(() =>
+      validateEnv({ ...hostedBase, FRONTEND_URL: 'https://joinjubily.com' }),
+    ).toThrow('API_URL is required');
     expect(() =>
       validateEnv({
         ...hostedBase,
@@ -220,5 +230,44 @@ describe('validateEnv', () => {
         EMAIL_PROVIDER: 'bad',
       }),
     ).toThrow('EMAIL_PROVIDER must be log, smtp, or resend');
+  });
+
+  it('rejects accidental Shotstack staging configuration in production', () => {
+    const productionBase = {
+      NODE_ENV: 'production',
+      JWT_SECRET: strongSecret,
+      DATABASE_URL: 'postgresql://user:pass@db/app',
+      ADMIN_EMAILS: 'admin@example.com',
+      SETTINGS_MASTER_KEY_BASE64: key,
+      FRONTEND_URL: 'https://joinjubily.com',
+      API_URL: 'https://api.example.com',
+      PUBLIC_API_BASE_URL: 'https://api.example.com',
+      YOUTUBE_PUBLISHING_ENABLED: 'false',
+      OPENAI_API_KEY: 'openai',
+      SHOTSTACK_OWNER_ID: 'owner',
+      EMAIL_PROVIDER: 'log',
+      EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
+      SUPPORT_EMAIL: 'info@joinjubily.com',
+    };
+
+    expect(() =>
+      validateEnv({ ...productionBase, SHOTSTACK_API_KEY: '   ' }),
+    ).toThrow('SHOTSTACK_API_KEY is required');
+    expect(() =>
+      validateEnv({
+        ...productionBase,
+        SHOTSTACK_API_KEY: 'shotstack',
+        SHOTSTACK_BASE_URL: 'https://api.shotstack.io/edit/stage',
+      }),
+    ).toThrow(
+      'SHOTSTACK_BASE_URL must use the production v1 API in production',
+    );
+    expect(() =>
+      validateEnv({
+        ...productionBase,
+        SHOTSTACK_API_KEY: 'shotstack',
+        SHOTSTACK_BASE_URL: 'https://api.shotstack.io/edit/v1',
+      }),
+    ).not.toThrow();
   });
 });

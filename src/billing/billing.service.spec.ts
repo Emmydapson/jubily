@@ -10,16 +10,35 @@ describe('BillingService', () => {
   const periodEnd = new Date('2026-07-01T00:00:00.000Z');
   let prisma: any;
   let audit: { record: jest.Mock };
-  let webhookAdapter: { verify: jest.Mock; extractEventId: jest.Mock; extractEventType: jest.Mock };
-  let stripe: { createCheckout: jest.Mock; cancelSubscription: jest.Mock; verifyWebhook: jest.Mock; parseWebhook: jest.Mock };
-  let paystack: { createCheckout: jest.Mock; cancelSubscription: jest.Mock; verifyWebhook: jest.Mock; parseWebhook: jest.Mock; verifyTransaction: jest.Mock };
+  let webhookAdapter: {
+    verify: jest.Mock;
+    extractEventId: jest.Mock;
+    extractEventType: jest.Mock;
+  };
+  let stripe: {
+    createCheckout: jest.Mock;
+    cancelSubscription: jest.Mock;
+    verifyWebhook: jest.Mock;
+    parseWebhook: jest.Mock;
+  };
+  let paystack: {
+    createCheckout: jest.Mock;
+    cancelSubscription: jest.Mock;
+    verifyWebhook: jest.Mock;
+    parseWebhook: jest.Mock;
+    verifyTransaction: jest.Mock;
+  };
   let service: BillingService;
 
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date('2026-06-04T12:00:00.000Z'));
     prisma = {
       workspace: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'workspace-1', suspended: false, suspensionReason: null }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'workspace-1',
+          suspended: false,
+          suspensionReason: null,
+        }),
         findMany: jest.fn(),
         update: jest.fn(),
       },
@@ -35,8 +54,20 @@ describe('BillingService', () => {
           trialEndsAt: null,
         }),
         create: jest.fn(),
-        update: jest.fn((args) => Promise.resolve({ id: 'sub-1', workspaceId: 'workspace-1', ...args.data })),
-        upsert: jest.fn((args) => Promise.resolve({ id: 'sub-1', workspaceId: args.where.workspaceId, ...args.update })),
+        update: jest.fn((args) =>
+          Promise.resolve({
+            id: 'sub-1',
+            workspaceId: 'workspace-1',
+            ...args.data,
+          }),
+        ),
+        upsert: jest.fn((args) =>
+          Promise.resolve({
+            id: 'sub-1',
+            workspaceId: args.where.workspaceId,
+            ...args.update,
+          }),
+        ),
       },
       workspaceUsage: {
         upsert: jest.fn().mockResolvedValue({
@@ -112,7 +143,9 @@ describe('BillingService', () => {
       storageBytes: 0n,
     });
 
-    await expect(service.assertCanGenerateVideo('workspace-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.assertCanGenerateVideo('workspace-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('allows pro and premium workspaces within their limits', async () => {
@@ -138,7 +171,9 @@ describe('BillingService', () => {
       storageBytes: 0n,
     });
 
-    await expect(service.assertCanGenerateVideo('workspace-1')).resolves.toBeUndefined();
+    await expect(
+      service.assertCanGenerateVideo('workspace-1'),
+    ).resolves.toBeUndefined();
 
     prisma.workspaceSubscription.findUnique.mockResolvedValue({
       id: 'sub-1',
@@ -162,11 +197,18 @@ describe('BillingService', () => {
       storageBytes: 0n,
     });
 
-    await expect(service.assertCanGenerateVideo('workspace-1')).resolves.toBeUndefined();
+    await expect(
+      service.assertCanGenerateVideo('workspace-1'),
+    ).resolves.toBeUndefined();
   });
 
   it('increments usage counters in the current billing period', async () => {
-    await service.incrementUsage('workspace-1', { videoGenerations: 1, publishes: 1, aiGenerations: 2, renderMinutes: 1.5 });
+    await service.incrementUsage('workspace-1', {
+      videoGenerations: 1,
+      publishes: 1,
+      aiGenerations: 2,
+      renderMinutes: 1.5,
+    });
 
     expect(prisma.workspaceUsage.update).toHaveBeenCalledWith({
       where: { id: 'usage-1' },
@@ -200,7 +242,9 @@ describe('BillingService', () => {
       .mockResolvedValueOnce({ count: 0 });
 
     await expect(service.consumePublish('workspace-1')).resolves.toBeTruthy();
-    await expect(service.consumePublish('workspace-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.consumePublish('workspace-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 
   it('allows only one concurrent publish consumption at the final free-plan slot', async () => {
@@ -216,16 +260,24 @@ describe('BillingService', () => {
       service.consumePublish('workspace-1'),
     ]);
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(2);
-    expect(prisma.workspaceUsage.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ publishes: { lte: 0 } }),
-      data: expect.objectContaining({ publishes: { increment: 1 } }),
-    }));
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'rejected'),
+    ).toHaveLength(2);
+    expect(prisma.workspaceUsage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ publishes: { lte: 0 } }),
+        data: expect.objectContaining({ publishes: { increment: 1 } }),
+      }),
+    );
   });
 
   it('returns subscription and usage payloads with limits for billing endpoints', async () => {
-    await expect(service.getSubscriptionResponse('workspace-1')).resolves.toEqual(
+    await expect(
+      service.getSubscriptionResponse('workspace-1'),
+    ).resolves.toEqual(
       expect.objectContaining({
         plan: Plan.FREE,
         effectivePlan: Plan.FREE,
@@ -254,7 +306,9 @@ describe('BillingService', () => {
       trialEndsAt: null,
     });
 
-    await expect(service.getSubscriptionResponse('workspace-1')).resolves.toEqual(
+    await expect(
+      service.getSubscriptionResponse('workspace-1'),
+    ).resolves.toEqual(
       expect.objectContaining({
         plan: Plan.FREE,
         effectivePlan: Plan.FREE,
@@ -272,7 +326,10 @@ describe('BillingService', () => {
   it('returns plan limits with displayed Stripe and Paystack pricing metadata', () => {
     expect(service.listPlans()).toEqual({
       plans: expect.arrayContaining([
-        expect.objectContaining({ plan: Plan.FREE, limits: expect.objectContaining({ videoGenerations: 3 }) }),
+        expect.objectContaining({
+          plan: Plan.FREE,
+          limits: expect.objectContaining({ videoGenerations: 3 }),
+        }),
       ]),
       pricing: expect.arrayContaining([
         expect.objectContaining({
@@ -291,7 +348,10 @@ describe('BillingService', () => {
               interval: 'yearly',
               amountMinor: 27399,
               formatted: '$273.99',
-              savings: expect.objectContaining({ label: '1 month free', monthsFree: 1 }),
+              savings: expect.objectContaining({
+                label: '1 month free',
+                monthsFree: 1,
+              }),
             }),
           ]),
         }),
@@ -304,7 +364,10 @@ describe('BillingService', () => {
               currency: 'NGN',
               amountMinor: 8250000,
               formatted: expect.any(String),
-              savings: expect.objectContaining({ label: '1 month free', monthsFree: 1 }),
+              savings: expect.objectContaining({
+                label: '1 month free',
+                monthsFree: 1,
+              }),
             }),
             expect.objectContaining({
               plan: Plan.PREMIUM,
@@ -338,14 +401,23 @@ describe('BillingService', () => {
     await service.suspendWorkspace('workspace-1', 'policy');
     expect(prisma.workspace.update).toHaveBeenCalledWith({
       where: { id: 'workspace-1' },
-      data: expect.objectContaining({ suspended: true, suspensionReason: 'policy' }),
+      data: expect.objectContaining({
+        suspended: true,
+        suspensionReason: 'policy',
+      }),
     });
   });
 
   it('blocks usage checks for suspended workspaces', async () => {
-    prisma.workspace.findUnique.mockResolvedValue({ id: 'workspace-1', suspended: true, suspensionReason: 'billing issue' });
+    prisma.workspace.findUnique.mockResolvedValue({
+      id: 'workspace-1',
+      suspended: true,
+      suspensionReason: 'billing issue',
+    });
 
-    await expect(service.assertCanPublish('workspace-1')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      service.assertCanPublish('workspace-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('treats expired paid subscriptions as free and blocks paid actions over free limits', async () => {
@@ -371,14 +443,18 @@ describe('BillingService', () => {
       storageBytes: 0n,
     });
 
-    await expect(service.assertCanGenerateVideo('workspace-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.assertCanGenerateVideo('workspace-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('persists billing webhooks once and ignores duplicates safely', async () => {
     prisma.billingWebhookEvent.create.mockResolvedValueOnce({
       providerEventId: 'evt-1',
     });
-    await expect(service.handleWebhook('generic', { id: 'evt-1', secret: 'hidden' })).resolves.toEqual(
+    await expect(
+      service.handleWebhook('generic', { id: 'evt-1', secret: 'hidden' }),
+    ).resolves.toEqual(
       expect.objectContaining({ duplicate: false, providerEventId: 'evt-1' }),
     );
     expect(prisma.billingWebhookEvent.create).toHaveBeenCalledWith({
@@ -390,29 +466,64 @@ describe('BillingService', () => {
     });
 
     prisma.billingWebhookEvent.create.mockRejectedValueOnce({ code: 'P2002' });
-    await expect(service.handleWebhook('generic', { id: 'evt-1' })).resolves.toEqual(
+    await expect(
+      service.handleWebhook('generic', { id: 'evt-1' }),
+    ).resolves.toEqual(
       expect.objectContaining({ duplicate: true, status: 'IGNORED_DUPLICATE' }),
     );
   });
 
   it('rejects invalid checkout providers', async () => {
     await expect(
-      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: 'bad-provider', interval: BillingInterval.MONTHLY, country: 'US' }),
+      service.startCheckout(
+        'workspace-1',
+        Plan.PRO,
+        { userId: 'user-1' },
+        {
+          provider: 'bad-provider',
+          interval: BillingInterval.MONTHLY,
+          country: 'US',
+        },
+      ),
     ).rejects.toThrow('provider must be STRIPE or PAYSTACK');
   });
 
   it('returns distinct checkout validation errors for missing required fields', async () => {
     await expect(
-      service.startCheckout('workspace-1', undefined, { userId: 'user-1' }, { provider: BillingProvider.STRIPE, interval: BillingInterval.MONTHLY, country: 'US' }),
+      service.startCheckout(
+        'workspace-1',
+        undefined,
+        { userId: 'user-1' },
+        {
+          provider: BillingProvider.STRIPE,
+          interval: BillingInterval.MONTHLY,
+          country: 'US',
+        },
+      ),
     ).rejects.toThrow('plan is required');
     await expect(
-      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { interval: BillingInterval.MONTHLY, country: 'US' }),
+      service.startCheckout(
+        'workspace-1',
+        Plan.PRO,
+        { userId: 'user-1' },
+        { interval: BillingInterval.MONTHLY, country: 'US' },
+      ),
     ).rejects.toThrow('provider is required');
     await expect(
-      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.STRIPE, country: 'US' }),
+      service.startCheckout(
+        'workspace-1',
+        Plan.PRO,
+        { userId: 'user-1' },
+        { provider: BillingProvider.STRIPE, country: 'US' },
+      ),
     ).rejects.toThrow('interval is required');
     await expect(
-      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.STRIPE, interval: BillingInterval.MONTHLY }),
+      service.startCheckout(
+        'workspace-1',
+        Plan.PRO,
+        { userId: 'user-1' },
+        { provider: BillingProvider.STRIPE, interval: BillingInterval.MONTHLY },
+      ),
     ).rejects.toThrow('country is required');
   });
 
@@ -427,7 +538,16 @@ describe('BillingService', () => {
     });
 
     await expect(
-      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.STRIPE, interval: BillingInterval.MONTHLY, country: 'US' }),
+      service.startCheckout(
+        'workspace-1',
+        Plan.PRO,
+        { userId: 'user-1' },
+        {
+          provider: BillingProvider.STRIPE,
+          interval: BillingInterval.MONTHLY,
+          country: 'US',
+        },
+      ),
     ).resolves.toEqual({
       provider: BillingProvider.STRIPE,
       checkoutUrl: 'https://checkout.stripe.com/session',
@@ -435,15 +555,17 @@ describe('BillingService', () => {
       promo: null,
     });
 
-    expect(stripe.createCheckout).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: 'workspace-1',
-      userId: 'user-1',
-      email: 'user@example.com',
-      plan: Plan.PRO,
-      interval: BillingInterval.MONTHLY,
-      successUrl: 'https://joinjubily.com/billing/success',
-      cancelUrl: 'https://joinjubily.com/billing/cancelled',
-    }));
+    expect(stripe.createCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'workspace-1',
+        userId: 'user-1',
+        email: 'user@example.com',
+        plan: Plan.PRO,
+        interval: BillingInterval.MONTHLY,
+        successUrl: 'https://joinjubily.com/billing/success',
+        cancelUrl: 'https://joinjubily.com/billing/cancelled',
+      }),
+    );
   });
 
   it('uses FRONTEND_URL for Paystack checkout callback redirects', async () => {
@@ -457,7 +579,16 @@ describe('BillingService', () => {
     });
 
     await expect(
-      service.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, { provider: BillingProvider.PAYSTACK, interval: BillingInterval.MONTHLY, country: 'NG' }),
+      service.startCheckout(
+        'workspace-1',
+        Plan.PRO,
+        { userId: 'user-1' },
+        {
+          provider: BillingProvider.PAYSTACK,
+          interval: BillingInterval.MONTHLY,
+          country: 'NG',
+        },
+      ),
     ).resolves.toEqual({
       provider: BillingProvider.PAYSTACK,
       checkoutUrl: 'https://paystack.com/pay/ref',
@@ -465,20 +596,28 @@ describe('BillingService', () => {
       promo: null,
     });
 
-    expect(paystack.createCheckout).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: 'workspace-1',
-      userId: 'user-1',
-      email: 'user@example.com',
-      plan: Plan.PRO,
-      interval: BillingInterval.MONTHLY,
-      successUrl: 'https://joinjubily.com/billing/paystack/callback',
-      cancelUrl: 'https://joinjubily.com/billing/cancelled',
-    }));
+    expect(paystack.createCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'workspace-1',
+        userId: 'user-1',
+        email: 'user@example.com',
+        plan: Plan.PRO,
+        interval: BillingInterval.MONTHLY,
+        successUrl: 'https://joinjubily.com/billing/paystack/callback',
+        cancelUrl: 'https://joinjubily.com/billing/cancelled',
+      }),
+    );
   });
 
   it('keeps selected provider when validating promos', async () => {
     process.env.FRONTEND_URL = 'https://joinjubily.com';
-    prisma.workspace.findUnique.mockResolvedValue({ id: 'workspace-1', suspended: false, suspensionReason: null, countryCode: 'NG', countryName: 'Nigeria' });
+    prisma.workspace.findUnique.mockResolvedValue({
+      id: 'workspace-1',
+      suspended: false,
+      suspensionReason: null,
+      countryCode: 'NG',
+      countryName: 'Nigeria',
+    });
     prisma.user.findUnique.mockResolvedValue({ email: 'user@example.com' });
     const promos = {
       recordCheckoutStarted: jest.fn().mockResolvedValue({
@@ -512,21 +651,32 @@ describe('BillingService', () => {
     });
 
     await expect(
-      withPromos.startCheckout('workspace-1', Plan.PRO, { userId: 'user-1' }, {
-        provider: BillingProvider.PAYSTACK,
-        interval: BillingInterval.MONTHLY,
-        country: 'NG',
-        promoCode: 'nga20',
-      }),
-    ).resolves.toEqual(expect.objectContaining({ provider: BillingProvider.PAYSTACK }));
+      withPromos.startCheckout(
+        'workspace-1',
+        Plan.PRO,
+        { userId: 'user-1' },
+        {
+          provider: BillingProvider.PAYSTACK,
+          interval: BillingInterval.MONTHLY,
+          country: 'NG',
+          promoCode: 'nga20',
+        },
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({ provider: BillingProvider.PAYSTACK }),
+    );
 
-    expect(promos.recordCheckoutStarted).toHaveBeenCalledWith(expect.objectContaining({
-      countryCode: 'NG',
-      provider: BillingProvider.PAYSTACK,
-    }));
-    expect(paystack.createCheckout).toHaveBeenCalledWith(expect.objectContaining({
-      promo: expect.objectContaining({ finalAmount: 600000 }),
-    }));
+    expect(promos.recordCheckoutStarted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        countryCode: 'NG',
+        provider: BillingProvider.PAYSTACK,
+      }),
+    );
+    expect(paystack.createCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promo: expect.objectContaining({ finalAmount: 600000 }),
+      }),
+    );
   });
 
   it('verifies Paystack callbacks and applies subscription updates', async () => {
@@ -551,10 +701,14 @@ describe('BillingService', () => {
     });
 
     expect(paystack.verifyTransaction).toHaveBeenCalledWith('ref-1');
-    expect(prisma.workspaceSubscription.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { workspaceId: 'workspace-1' },
-      update: expect.objectContaining({ billingProvider: BillingProvider.PAYSTACK }),
-    }));
+    expect(prisma.workspaceSubscription.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId: 'workspace-1' },
+        update: expect.objectContaining({
+          billingProvider: BillingProvider.PAYSTACK,
+        }),
+      }),
+    );
   });
 
   it('cancels through the active provider adapter', async () => {
@@ -575,7 +729,10 @@ describe('BillingService', () => {
 
     await service.cancel('workspace-1', { userId: 'user-1' });
 
-    expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub-provider-1', 'cus-1');
+    expect(stripe.cancelSubscription).toHaveBeenCalledWith(
+      'sub-provider-1',
+      'cus-1',
+    );
   });
 
   it('processes provider webhook subscription updates after idempotency insert', async () => {
@@ -592,19 +749,29 @@ describe('BillingService', () => {
         currentPeriodEnd: periodEnd,
       },
     });
-    prisma.billingWebhookEvent.create.mockResolvedValueOnce({ id: 'webhook-1', providerEventId: 'evt-stripe-1' });
+    prisma.billingWebhookEvent.create.mockResolvedValueOnce({
+      id: 'webhook-1',
+      providerEventId: 'evt-stripe-1',
+    });
 
-    await expect(service.handleWebhook('stripe', { id: 'evt-stripe-1' }, {}, '{}')).resolves.toEqual(
-      expect.objectContaining({ providerEventId: 'evt-stripe-1', status: 'PROCESSED' }),
+    await expect(
+      service.handleWebhook('stripe', { id: 'evt-stripe-1' }, {}, '{}'),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        providerEventId: 'evt-stripe-1',
+        status: 'PROCESSED',
+      }),
     );
 
-    expect(prisma.workspaceSubscription.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { workspaceId: 'workspace-1' },
-      update: expect.objectContaining({
-        plan: Plan.PREMIUM,
-        status: SubscriptionStatus.ACTIVE,
-        billingProvider: BillingProvider.STRIPE,
+    expect(prisma.workspaceSubscription.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId: 'workspace-1' },
+        update: expect.objectContaining({
+          plan: Plan.PREMIUM,
+          status: SubscriptionStatus.ACTIVE,
+          billingProvider: BillingProvider.STRIPE,
+        }),
       }),
-    }));
+    );
   });
 });

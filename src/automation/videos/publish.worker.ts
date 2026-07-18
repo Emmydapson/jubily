@@ -695,7 +695,7 @@ ${hashtags.join(' ')}`.slice(0, 4500),
       let youtubeUrl = fullJob.youtubeUrl || null;
 
       if (!youtubeId) {
-        if (fullJob.workspaceId && (job as any).workerStage !== 'PUBLISH_QUEUED') {
+        if (fullJob.workspaceId && (job).workerStage !== 'PUBLISH_QUEUED') {
           await this.billing.consumePublish(fullJob.workspaceId);
         }
         try {

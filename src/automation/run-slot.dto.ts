@@ -23,7 +23,8 @@ export class RunSlotDto {
 
   @ApiPropertyOptional({
     example: false,
-    description: 'When true, failed terminal jobs for the same slot can be reset and rerun.',
+    description:
+      'When true, failed terminal jobs for the same slot can be reset and rerun.',
   })
   @IsOptional()
   @IsBoolean()

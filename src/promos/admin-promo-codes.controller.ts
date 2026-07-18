@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../auth/roles.decorator';
 import { AdminGuard } from '../auth/admin.guard';
@@ -40,7 +51,10 @@ export class AdminPromoCodesController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a promo code' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePromoCodeDto) {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePromoCodeDto,
+  ) {
     return this.promos.update(id, dto);
   }
 
@@ -63,7 +77,9 @@ export class AdminPromoCodesController {
   }
 
   @Get(':id/performance')
-  @ApiOperation({ summary: 'Get promo code attribution and revenue performance' })
+  @ApiOperation({
+    summary: 'Get promo code attribution and revenue performance',
+  })
   performance(@Param('id', ParseUUIDPipe) id: string) {
     return this.promos.performance(id);
   }

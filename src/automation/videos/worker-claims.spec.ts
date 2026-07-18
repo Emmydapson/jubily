@@ -49,11 +49,17 @@ describe('Worker lease claims', () => {
   }
 
   it('claims pending render jobs only when a single conditional update wins', async () => {
-    const prisma = { videoJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } };
+    const prisma = {
+      videoJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
     const worker = renderWorker(prisma);
 
     await expect(
-      (worker as never as { claimPendingRender: (job: unknown) => Promise<boolean> }).claimPendingRender({
+      (
+        worker as never as {
+          claimPendingRender: (job: unknown) => Promise<boolean>;
+        }
+      ).claimPendingRender({
         id: 'job-1',
       }),
     ).resolves.toBe(true);
@@ -81,11 +87,17 @@ describe('Worker lease claims', () => {
   });
 
   it('skips render claims when another worker already owns the lease', async () => {
-    const prisma = { videoJob: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) } };
+    const prisma = {
+      videoJob: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    };
     const worker = renderWorker(prisma);
 
     await expect(
-      (worker as never as { claimRenderPoll: (job: unknown) => Promise<boolean> }).claimRenderPoll({
+      (
+        worker as never as {
+          claimRenderPoll: (job: unknown) => Promise<boolean>;
+        }
+      ).claimRenderPoll({
         id: 'job-1',
         renderId: 'render-1',
       }),
@@ -103,7 +115,9 @@ describe('Worker lease claims', () => {
     };
     const worker = renderWorker(prisma);
 
-    await (worker as never as { recoverStaleClaims: () => Promise<void> }).recoverStaleClaims();
+    await (
+      worker as never as { recoverStaleClaims: () => Promise<void> }
+    ).recoverStaleClaims();
 
     expect(prisma.videoJob.updateMany).toHaveBeenNthCalledWith(
       1,
@@ -124,7 +138,10 @@ describe('Worker lease claims', () => {
     expect(prisma.videoJob.updateMany).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        where: expect.objectContaining({ workerStage: 'RENDER_POLL', status: 'PROCESSING' }),
+        where: expect.objectContaining({
+          workerStage: 'RENDER_POLL',
+          status: 'PROCESSING',
+        }),
         data: {
           workerLockedAt: null,
           workerLockedBy: null,
@@ -135,11 +152,17 @@ describe('Worker lease claims', () => {
   });
 
   it('claims publish jobs with status, renderId, attempt, and lease guards', async () => {
-    const prisma = { videoJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } };
+    const prisma = {
+      videoJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
     const worker = publishWorker(prisma);
 
     await expect(
-      (worker as never as { claimPublishJob: (job: unknown) => Promise<boolean> }).claimPublishJob({
+      (
+        worker as never as {
+          claimPublishJob: (job: unknown) => Promise<boolean>;
+        }
+      ).claimPublishJob({
         id: 'job-1',
         renderId: 'render-1',
       }),
@@ -169,10 +192,14 @@ describe('Worker lease claims', () => {
   });
 
   it('recovers stale publish leases without changing completed unpublished jobs otherwise', async () => {
-    const prisma = { videoJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } };
+    const prisma = {
+      videoJob: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
     const worker = publishWorker(prisma);
 
-    await (worker as never as { recoverStaleClaims: () => Promise<void> }).recoverStaleClaims();
+    await (
+      worker as never as { recoverStaleClaims: () => Promise<void> }
+    ).recoverStaleClaims();
 
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
       where: {

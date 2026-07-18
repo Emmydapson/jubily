@@ -6,7 +6,12 @@ import { WorkspaceGuard } from '../workspaces/workspace.guard';
 import { AdminGuard } from './admin.guard';
 
 describe('RBAC and JWT validation', () => {
-  function contextFor(user?: { role?: string; kind?: 'admin' | 'user'; adminId?: string; userId?: string }) {
+  function contextFor(user?: {
+    role?: string;
+    kind?: 'admin' | 'user';
+    adminId?: string;
+    userId?: string;
+  }) {
     return {
       getHandler: jest.fn(),
       getClass: jest.fn(),
@@ -36,18 +41,36 @@ describe('RBAC and JWT validation', () => {
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
 
-    expect(guard.canActivate(contextFor({ role: 'ADMIN', kind: 'admin', adminId: 'admin-1' }) as never)).toBe(true);
-    expect(() => guard.canActivate(contextFor({ role: 'EDITOR' }) as never)).toThrow(
-      ForbiddenException,
-    );
+    expect(
+      guard.canActivate(
+        contextFor({
+          role: 'ADMIN',
+          kind: 'admin',
+          adminId: 'admin-1',
+        }) as never,
+      ),
+    ).toBe(true);
+    expect(() =>
+      guard.canActivate(contextFor({ role: 'EDITOR' }) as never),
+    ).toThrow(ForbiddenException);
   });
 
   it('rejects customer principals from admin routes and accepts admin principals', () => {
     const guard = new AdminGuard();
-    expect(() => guard.canActivate(contextFor({ role: 'USER', kind: 'user', userId: 'user-1' }) as never)).toThrow(
-      ForbiddenException,
-    );
-    expect(guard.canActivate(contextFor({ role: 'SUPPORT', kind: 'admin', adminId: 'admin-1' }) as never)).toBe(true);
+    expect(() =>
+      guard.canActivate(
+        contextFor({ role: 'USER', kind: 'user', userId: 'user-1' }) as never,
+      ),
+    ).toThrow(ForbiddenException);
+    expect(
+      guard.canActivate(
+        contextFor({
+          role: 'SUPPORT',
+          kind: 'admin',
+          adminId: 'admin-1',
+        }) as never,
+      ),
+    ).toBe(true);
   });
 
   it('hydrates active admins from JWT payloads and rejects missing or inactive users', async () => {
@@ -64,15 +87,21 @@ describe('RBAC and JWT validation', () => {
     };
     const strategy = new JwtStrategy(prisma as never);
 
-    await expect(strategy.validate({ sub: 'admin-1', kind: 'admin' })).resolves.toEqual({
+    await expect(
+      strategy.validate({ sub: 'admin-1', kind: 'admin' }),
+    ).resolves.toEqual({
       adminId: 'admin-1',
       email: 'admin@joinjubily.com',
       role: 'ADMIN',
       kind: 'admin',
     });
 
-    await expect(strategy.validate({ sub: 'admin-1' })).rejects.toBeInstanceOf(UnauthorizedException);
-    await expect(strategy.validate({})).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(strategy.validate({ sub: 'admin-1' })).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    await expect(strategy.validate({})).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
 
     prisma.adminUser.findUnique.mockResolvedValueOnce({
       id: 'admin-2',
@@ -93,7 +122,11 @@ describe('RBAC and JWT validation', () => {
       getAllAndOverride: jest.fn(),
     } as unknown as Reflector;
     const audit = { record: jest.fn().mockResolvedValue(null) };
-    const guard = new WorkspaceGuard(prisma as never, reflector, audit as never);
+    const guard = new WorkspaceGuard(
+      prisma as never,
+      reflector,
+      audit as never,
+    );
     const context = {
       switchToHttp: () => ({
         getRequest: () => ({
@@ -114,12 +147,16 @@ describe('RBAC and JWT validation', () => {
       getClass: jest.fn(),
     };
 
-    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(prisma.workspaceMember.findUnique).not.toHaveBeenCalled();
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'PERMISSION_DENIED',
-      metadata: { reason: 'email_not_verified' },
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'PERMISSION_DENIED',
+        metadata: { reason: 'email_not_verified' },
+      }),
+    );
   });
 
   it('does not allow admin tokens to satisfy workspace-scoped guards', async () => {
@@ -130,7 +167,11 @@ describe('RBAC and JWT validation', () => {
       getAllAndOverride: jest.fn(),
     } as unknown as Reflector;
     const audit = { record: jest.fn().mockResolvedValue(null) };
-    const guard = new WorkspaceGuard(prisma as never, reflector, audit as never);
+    const guard = new WorkspaceGuard(
+      prisma as never,
+      reflector,
+      audit as never,
+    );
     const context = {
       switchToHttp: () => ({
         getRequest: () => ({
@@ -150,7 +191,9 @@ describe('RBAC and JWT validation', () => {
       getClass: jest.fn(),
     };
 
-    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(prisma.workspaceMember.findUnique).not.toHaveBeenCalled();
   });
 
@@ -167,7 +210,11 @@ describe('RBAC and JWT validation', () => {
       getAllAndOverride: jest.fn(),
     } as unknown as Reflector;
     const audit = { record: jest.fn().mockResolvedValue(null) };
-    const guard = new WorkspaceGuard(prisma as never, reflector, audit as never);
+    const guard = new WorkspaceGuard(
+      prisma as never,
+      reflector,
+      audit as never,
+    );
     const req = {
       headers: { 'x-workspace-id': 'workspace-1' },
       query: {},
@@ -188,7 +235,10 @@ describe('RBAC and JWT validation', () => {
     };
 
     await expect(guard.canActivate(context as never)).resolves.toBe(true);
-    expect(req).toHaveProperty('workspace', { id: 'workspace-1', role: 'MEMBER' });
+    expect(req).toHaveProperty('workspace', {
+      id: 'workspace-1',
+      role: 'MEMBER',
+    });
   });
 
   it('rejects mismatched route and header workspace ids before membership lookup', async () => {
@@ -199,7 +249,11 @@ describe('RBAC and JWT validation', () => {
       getAllAndOverride: jest.fn(),
     } as unknown as Reflector;
     const audit = { record: jest.fn().mockResolvedValue(null) };
-    const guard = new WorkspaceGuard(prisma as never, reflector, audit as never);
+    const guard = new WorkspaceGuard(
+      prisma as never,
+      reflector,
+      audit as never,
+    );
     const context = {
       switchToHttp: () => ({
         getRequest: () => ({
@@ -220,7 +274,9 @@ describe('RBAC and JWT validation', () => {
       getClass: jest.fn(),
     };
 
-    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(prisma.workspaceMember.findUnique).not.toHaveBeenCalled();
   });
 });

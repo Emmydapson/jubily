@@ -9,7 +9,10 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { OFFER_NETWORKS, OFFER_NICHES } from '../offer.constants';
-import { normalizeAffiliateNiche, normalizeAffiliatePlatform } from '../../affiliates/affiliate.constants';
+import {
+  normalizeAffiliateNiche,
+  normalizeAffiliatePlatform,
+} from '../../affiliates/affiliate.constants';
 
 export class UpdateOfferDto {
   @ApiPropertyOptional({ enum: OFFER_NETWORKS, example: 'CLICKBANK' })
@@ -29,7 +32,11 @@ export class UpdateOfferDto {
   @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
   hoplink?: string;
 
-  @ApiPropertyOptional({ enum: OFFER_NICHES, example: 'FINANCE', nullable: true })
+  @ApiPropertyOptional({
+    enum: OFFER_NICHES,
+    example: 'FINANCE',
+    nullable: true,
+  })
   @IsOptional()
   @Transform(({ value }) => normalizeAffiliateNiche(value) ?? value)
   @IsIn(OFFER_NICHES)

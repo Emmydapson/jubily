@@ -28,9 +28,17 @@ export class ScriptService {
     });
   }
 
-  async createReviewed(topicId: string, promptVer: string, quality: ScriptQualityResult, workspaceId?: string | null) {
+  async createReviewed(
+    topicId: string,
+    promptVer: string,
+    quality: ScriptQualityResult,
+    workspaceId?: string | null,
+  ) {
     const exists = await this.prisma.script.findFirst({
-      where: { outputHash: quality.outputHash, workspaceId: workspaceId ?? null },
+      where: {
+        outputHash: quality.outputHash,
+        workspaceId: workspaceId ?? null,
+      },
     });
 
     if (exists) return exists;

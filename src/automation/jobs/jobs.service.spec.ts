@@ -66,7 +66,9 @@ describe('JobsService admin recovery controls', () => {
       attempts: 1,
     });
 
-    await expect(service.cancelJob('job-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.cancelJob('job-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(prisma.videoJob.update).not.toHaveBeenCalled();
   });
 
@@ -106,14 +108,18 @@ describe('JobsService admin recovery controls', () => {
       status: VideoJobStatus.Completed,
     });
 
-    await expect(service.resetRender('job-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.resetRender('job-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(prisma.videoJob.update).not.toHaveBeenCalled();
   });
 
   it('passes scheduledFor and force through manual run-slot', async () => {
     const scheduledFor = '2026-06-02T09:00:00.000Z';
 
-    await expect(service.runSlot('MORNING', scheduledFor, true)).resolves.toEqual(
+    await expect(
+      service.runSlot('MORNING', scheduledFor, true),
+    ).resolves.toEqual(
       expect.objectContaining({ ok: true, queued: true, force: true }),
     );
 

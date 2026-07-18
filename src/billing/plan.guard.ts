@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Plan } from '@prisma/client';
 import { WorkspaceRequest } from '../workspaces/workspace.types';
@@ -15,17 +20,18 @@ export class PlanGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<Plan[]>(REQUIRED_PLAN_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const required = this.reflector.getAllAndOverride<Plan[]>(
+      REQUIRED_PLAN_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     if (!required?.length) return true;
 
     const req = context.switchToHttp().getRequest<WorkspaceRequest>();
     const workspaceId = req.workspace?.id;
     if (!workspaceId) throw new ForbiddenException('Workspace is required');
 
-    const subscription = await this.billing.getOrCreateSubscription(workspaceId);
+    const subscription =
+      await this.billing.getOrCreateSubscription(workspaceId);
     const effectivePlan = this.billing.effectivePlan(subscription);
     const minimum = Math.min(...required.map((plan) => PLAN_ORDER[plan]));
     if (PLAN_ORDER[effectivePlan] < minimum) {

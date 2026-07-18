@@ -1,5 +1,14 @@
 import { Transform } from 'class-transformer';
-import { ArrayUnique, IsArray, IsIn, IsOptional, IsString, IsUrl, Length, MinLength } from 'class-validator';
+import {
+  ArrayUnique,
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Length,
+  MinLength,
+} from 'class-validator';
 import {
   AFFILIATE_NICHES,
   AFFILIATE_PLATFORMS,
@@ -9,7 +18,11 @@ import {
 
 export class UpdateWorkspaceProfileDto {
   @IsOptional()
-  @Transform(({ value }) => String(value || '').trim().toUpperCase())
+  @Transform(({ value }) =>
+    String(value || '')
+      .trim()
+      .toUpperCase(),
+  )
   @IsString()
   @Length(2, 2)
   countryCode?: string;
@@ -23,14 +36,22 @@ export class UpdateWorkspaceProfileDto {
   @IsOptional()
   @IsArray()
   @ArrayUnique()
-  @Transform(({ value }) => (Array.isArray(value) ? value.map((item) => normalizeAffiliateNiche(item) ?? item) : value))
+  @Transform(({ value }) =>
+    Array.isArray(value)
+      ? value.map((item) => normalizeAffiliateNiche(item) ?? item)
+      : value,
+  )
   @IsIn(AFFILIATE_NICHES, { each: true })
   affiliateNiches?: string[];
 
   @IsOptional()
   @IsArray()
   @ArrayUnique()
-  @Transform(({ value }) => (Array.isArray(value) ? value.map((item) => normalizeAffiliatePlatform(item) ?? item) : value))
+  @Transform(({ value }) =>
+    Array.isArray(value)
+      ? value.map((item) => normalizeAffiliatePlatform(item) ?? item)
+      : value,
+  )
   @IsIn(AFFILIATE_PLATFORMS, { each: true })
   affiliatePlatforms?: string[];
 

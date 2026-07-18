@@ -315,7 +315,7 @@ export class BillingService {
     const value = String(plan || '').trim();
     if (!value) throw new BadRequestException('plan is required');
     if (value === Plan.FREE) throw new BadRequestException('FREE plan does not require checkout');
-    if (value === Plan.PRO || value === Plan.PREMIUM) return value as Exclude<Plan, 'FREE'>;
+    if (value === Plan.PRO || value === Plan.PREMIUM) return value;
     throw new BadRequestException('plan must be PRO or PREMIUM');
   }
 
@@ -370,7 +370,7 @@ export class BillingService {
           userId: actor.userId,
           workspaceId,
           provider,
-          plan: plan as Exclude<Plan, 'FREE'>,
+          plan: plan,
           interval,
           countryCode: country,
         })
@@ -379,7 +379,7 @@ export class BillingService {
       workspaceId,
       userId: actor.userId,
       email: await this.actorEmail(actor),
-      plan: plan as Exclude<Plan, 'FREE'>,
+      plan: plan,
       interval,
       successUrl: provider === BillingProvider.PAYSTACK ? this.checkoutUrl('paystack-callback') : this.checkoutUrl('success'),
       cancelUrl: this.checkoutUrl('cancelled'),

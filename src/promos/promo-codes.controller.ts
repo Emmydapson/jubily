@@ -14,8 +14,16 @@ export class PromoCodesController {
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('validate')
-  @ApiOperation({ summary: 'Validate a promo code without exposing attribution data' })
+  @ApiOperation({
+    summary: 'Validate a promo code without exposing attribution data',
+  })
   validate(@Body() dto: ValidatePromoCodeDto) {
-    return this.promos.validatePublic(dto.code, dto.plan, dto.provider, dto.interval, dto.countryCode);
+    return this.promos.validatePublic(
+      dto.code,
+      dto.plan,
+      dto.provider,
+      dto.interval,
+      dto.countryCode,
+    );
   }
 }

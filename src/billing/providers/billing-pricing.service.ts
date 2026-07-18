@@ -35,7 +35,11 @@ const DISPLAY_PRICES = {
 
 @Injectable()
 export class BillingPricingService {
-  private envName(provider: BillingProvider, plan: Plan, interval: BillingInterval) {
+  private envName(
+    provider: BillingProvider,
+    plan: Plan,
+    interval: BillingInterval,
+  ) {
     const suffix = `${plan}_${interval === BillingInterval.YEARLY ? 'YEARLY' : 'MONTHLY'}`;
     return provider === BillingProvider.STRIPE
       ? `STRIPE_${suffix}_PRICE_ID`
@@ -43,20 +47,28 @@ export class BillingPricingService {
   }
 
   getPriceId(provider: BillingProvider, plan: Plan, interval: BillingInterval) {
-    if (plan === Plan.FREE) throw new BadRequestException('FREE plan does not require checkout');
+    if (plan === Plan.FREE)
+      throw new BadRequestException('FREE plan does not require checkout');
     const envName = this.envName(provider, plan, interval);
     const value = String(process.env[envName] || '').trim();
     if (!value) throw new BadRequestException(`${envName} is not configured`);
     return value;
   }
 
-  getDisplayPrice(provider: BillingProvider, plan: Exclude<Plan, 'FREE'>, interval: BillingInterval) {
+  getDisplayPrice(
+    provider: BillingProvider,
+    plan: Exclude<Plan, 'FREE'>,
+    interval: BillingInterval,
+  ) {
     const providerPricing = DISPLAY_PRICES[provider];
     const amountMinor = providerPricing.amounts[plan][interval];
-    const monthlyAmountMinor = providerPricing.amounts[plan][BillingInterval.MONTHLY];
+    const monthlyAmountMinor =
+      providerPricing.amounts[plan][BillingInterval.MONTHLY];
     const annualMonthlyEquivalentMinor = monthlyAmountMinor * 12;
     const savingsMinor =
-      interval === BillingInterval.YEARLY ? Math.max(0, annualMonthlyEquivalentMinor - amountMinor) : 0;
+      interval === BillingInterval.YEARLY
+        ? Math.max(0, annualMonthlyEquivalentMinor - amountMinor)
+        : 0;
 
     return {
       provider,
@@ -86,34 +98,43 @@ export class BillingPricingService {
   }
 
   listDisplayPrices() {
-    return [BillingProvider.STRIPE, BillingProvider.PAYSTACK].map((provider) => ({
-      provider,
-      enabled: this.providerEnabled(provider),
-      prices: [Plan.PRO, Plan.PREMIUM].flatMap((plan) =>
-        [BillingInterval.MONTHLY, BillingInterval.YEARLY].map((interval) =>
-          this.getDisplayPrice(provider, plan, interval),
+    return [BillingProvider.STRIPE, BillingProvider.PAYSTACK].map(
+      (provider) => ({
+        provider,
+        enabled: this.providerEnabled(provider),
+        prices: [Plan.PRO, Plan.PREMIUM].flatMap((plan) =>
+          [BillingInterval.MONTHLY, BillingInterval.YEARLY].map((interval) =>
+            this.getDisplayPrice(provider, plan, interval),
+          ),
         ),
-      ),
-    }));
+      }),
+    );
   }
 
   listConfiguredPrices() {
-    return [BillingProvider.STRIPE, BillingProvider.PAYSTACK].map((provider) => ({
-      provider,
-      enabled: this.providerEnabled(provider),
-      prices: [Plan.PRO, Plan.PREMIUM].flatMap((plan) =>
-        [BillingInterval.MONTHLY, BillingInterval.YEARLY].map((interval) => ({
-          ...this.getDisplayPrice(provider, plan, interval),
-          plan,
-          interval,
-          configured: Boolean(process.env[this.envName(provider, plan, interval)]),
-        })),
-      ),
-    }));
+    return [BillingProvider.STRIPE, BillingProvider.PAYSTACK].map(
+      (provider) => ({
+        provider,
+        enabled: this.providerEnabled(provider),
+        prices: [Plan.PRO, Plan.PREMIUM].flatMap((plan) =>
+          [BillingInterval.MONTHLY, BillingInterval.YEARLY].map((interval) => ({
+            ...this.getDisplayPrice(provider, plan, interval),
+            plan,
+            interval,
+            configured: Boolean(
+              process.env[this.envName(provider, plan, interval)],
+            ),
+          })),
+        ),
+      }),
+    );
   }
 
   providerEnabled(provider: BillingProvider) {
-    const key = provider === BillingProvider.STRIPE ? 'STRIPE_ENABLED' : 'PAYSTACK_ENABLED';
+    const key =
+      provider === BillingProvider.STRIPE
+        ? 'STRIPE_ENABLED'
+        : 'PAYSTACK_ENABLED';
     return String(process.env[key] || 'false').toLowerCase() === 'true';
   }
 }

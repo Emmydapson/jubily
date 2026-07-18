@@ -122,7 +122,10 @@ describe('PublishWorker', () => {
       expect.arrayContaining(['affiliatemarketing', 'productreview']),
     );
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         published: true,
         youtubeVideoId: 'youtube-1',
@@ -146,16 +149,27 @@ describe('PublishWorker', () => {
     expect(youtube.updateMetadata).toHaveBeenCalledWith(
       'youtube-1',
       'Better Morning Energy',
-      expect.stringContaining('https://api.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1'),
+      expect.stringContaining(
+        'https://api.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1',
+      ),
       expect.any(Array),
     );
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: { hasTrackingLink: true },
     });
-    expect(youtube.uploadCaptions).toHaveBeenCalledWith('youtube-1', expect.any(String));
+    expect(youtube.uploadCaptions).toHaveBeenCalledWith(
+      'youtube-1',
+      expect.any(String),
+    );
     expect(prisma.videoJob.updateMany).toHaveBeenLastCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         status: 'COMPLETED',
         published: true,
@@ -165,7 +179,11 @@ describe('PublishWorker', () => {
       },
     });
     expect(monitoring.info).toHaveBeenCalledWith(
-      expect.objectContaining({ stage: 'PUBLISH', status: 'COMPLETED', jobId: 'job-1' }),
+      expect.objectContaining({
+        stage: 'PUBLISH',
+        status: 'COMPLETED',
+        jobId: 'job-1',
+      }),
     );
   });
 
@@ -179,7 +197,10 @@ describe('PublishWorker', () => {
 
     expect(youtube.upload).not.toHaveBeenCalled();
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: { published: true, youtubeVideoId: 'existing-id' },
     });
     expect(youtube.updateMetadata).toHaveBeenCalledWith(
@@ -225,14 +246,19 @@ describe('PublishWorker', () => {
       ...fullJob,
       workspaceId: 'workspace-1',
     });
-    billing.assertWorkspaceActive.mockRejectedValue(new Error('Workspace is suspended'));
+    billing.assertWorkspaceActive.mockRejectedValue(
+      new Error('Workspace is suspended'),
+    );
 
     await worker.publish(job);
 
     expect(youtube.upload).not.toHaveBeenCalled();
     expect(billing.consumePublish).not.toHaveBeenCalled();
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         attempts: { increment: 1 },
         error: 'Workspace is suspended',
@@ -254,15 +280,20 @@ describe('PublishWorker', () => {
 
     await worker.publish(job);
 
-    expect(cloudinary.uploader.upload).toHaveBeenCalledWith('https://temporary.example.com/render.mp4', {
-      resource_type: 'video',
-      folder: 'jubily/videos',
-      public_id: 'job-1',
-      overwrite: true,
-    });
+    expect(cloudinary.uploader.upload).toHaveBeenCalledWith(
+      'https://temporary.example.com/render.mp4',
+      {
+        resource_type: 'video',
+        folder: 'jubily/videos',
+        public_id: 'job-1',
+        overwrite: true,
+      },
+    );
     expect(prisma.videoJob.update).toHaveBeenCalledWith({
       where: { id: 'job-1' },
-      data: { videoUrl: 'https://res.cloudinary.com/demo/video/upload/stable.mp4' },
+      data: {
+        videoUrl: 'https://res.cloudinary.com/demo/video/upload/stable.mp4',
+      },
     });
     expect(youtube.upload).toHaveBeenCalledWith(
       expect.any(String),
@@ -307,7 +338,10 @@ describe('PublishWorker', () => {
 
     expect(youtube.upload).not.toHaveBeenCalled();
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         workerLockedAt: null,
         workerLockedBy: null,
@@ -334,12 +368,21 @@ describe('PublishWorker', () => {
     await worker.publish(job);
 
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: { error: 'Metadata failed: metadata denied' },
     });
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
-      data: { publishStage: 'CAPTIONS_FAILED', error: 'Captions failed: captions denied' },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
+      data: {
+        publishStage: 'CAPTIONS_FAILED',
+        error: 'Captions failed: captions denied',
+      },
     });
     expect(monitoring.warn).toHaveBeenCalledWith(
       expect.objectContaining({ stage: 'PUBLISH', status: 'METADATA_FAILED' }),
@@ -357,13 +400,16 @@ describe('PublishWorker', () => {
 
     const finalDescription = youtube.updateMetadata.mock.calls[0][2] as string;
     const lines = finalDescription.split('\n');
-    const trackingUrl = 'https://api.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1';
+    const trackingUrl =
+      'https://api.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1';
 
     expect(lines).toContain('Recommended product:');
     expect(lines).toContain(trackingUrl);
     expect(lines).toContain('Affiliate platform: PARTNERSTACK');
     expect(lines[lines.indexOf('Recommended product:') + 2]).toBe(trackingUrl);
-    expect(finalDescription).toContain('Disclosure: This video may contain affiliate links.');
+    expect(finalDescription).toContain(
+      'Disclosure: This video may contain affiliate links.',
+    );
     expect(finalDescription).not.toContain(`[${trackingUrl}]`);
   });
 
@@ -380,14 +426,19 @@ describe('PublishWorker', () => {
     await worker.publish(job);
 
     const finalDescription = youtube.updateMetadata.mock.calls[0][2] as string;
-    const trackingUrl = 'https://api.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1';
+    const trackingUrl =
+      'https://api.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1';
     const lines = finalDescription.split('\n');
 
     expect(finalDescription.length).toBeLessThanOrEqual(4500);
     expect(lines).toContain(trackingUrl);
     expect(lines[lines.indexOf('Recommended product:') + 2]).toBe(trackingUrl);
     expect(finalDescription).not.toContain(`${trackingUrl.slice(0, -4)}\n`);
-    expect(finalDescription.endsWith('Disclosure: This video may contain affiliate links. We may earn a commission if you purchase through our link, at no extra cost to you.')).toBe(true);
+    expect(
+      finalDescription.endsWith(
+        'Disclosure: This video may contain affiliate links. We may earn a commission if you purchase through our link, at no extra cost to you.',
+      ),
+    ).toBe(true);
   });
 
   it('publishes reviewed YouTube title, description, and hashtags when present', async () => {
@@ -396,7 +447,8 @@ describe('PublishWorker', () => {
       script: {
         ...fullJob.script,
         selectedTitle: 'Reviewed Shorts Title',
-        youtubeDescription: 'Reviewed description line one\nReviewed description line two',
+        youtubeDescription:
+          'Reviewed description line one\nReviewed description line two',
         hashtags: ['#Energy', 'wellness tips', '#shorts'],
       },
     });
@@ -420,7 +472,10 @@ describe('PublishWorker', () => {
     await worker.publish(job);
 
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: { publishStage: 'CAPTIONS_DONE' },
     });
     expect(monitoring.info).toHaveBeenCalledWith(
@@ -462,7 +517,10 @@ describe('PublishWorker', () => {
     expect(youtube.updateMetadata).not.toHaveBeenCalled();
     expect(youtube.uploadCaptions).not.toHaveBeenCalled();
     expect(prisma.videoJob.updateMany).toHaveBeenLastCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         status: 'COMPLETED',
         published: true,
@@ -493,7 +551,10 @@ describe('PublishWorker', () => {
       }),
     );
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: { hasTrackingLink: false },
     });
   });
@@ -528,11 +589,16 @@ describe('PublishWorker', () => {
     expect(youtube.updateMetadata).toHaveBeenCalledWith(
       'youtube-1',
       expect.any(String),
-      expect.stringContaining('https://fallback.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1'),
+      expect.stringContaining(
+        'https://fallback.joinjubily.com/r/offer-1?jobId=job-1&yt=youtube-1',
+      ),
       expect.any(Array),
     );
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: { hasTrackingLink: true },
     });
   });
@@ -571,7 +637,10 @@ describe('PublishWorker', () => {
 
     expect(youtube.upload).toHaveBeenCalled();
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         published: true,
         youtubeVideoId: 'youtube-1',
@@ -589,7 +658,10 @@ describe('PublishWorker', () => {
     await worker.publish(job);
 
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         attempts: { increment: 1 },
         error: 'network down',
@@ -634,7 +706,10 @@ describe('PublishWorker', () => {
     await worker.publish(job);
 
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         status: 'FAILED_QUOTA',
         attempts: { increment: 1 },
@@ -667,7 +742,10 @@ describe('PublishWorker', () => {
 
     expect(youtube.upload).not.toHaveBeenCalled();
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         error: 'Publish blocked: script requires manual approval',
         workerLockedAt: null,
@@ -690,7 +768,10 @@ describe('PublishWorker', () => {
     await worker.publish({ ...job, attempts: 2 });
 
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
-      where: { id: 'job-1', workerLockedBy: expect.stringMatching(/^publish-/) },
+      where: {
+        id: 'job-1',
+        workerLockedBy: expect.stringMatching(/^publish-/),
+      },
       data: {
         attempts: { increment: 1 },
         error: 'Script not found',

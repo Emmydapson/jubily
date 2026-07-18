@@ -1,4 +1,7 @@
-import { OrchestratorService, topicToNicheCandidates } from './orchestrator.service';
+import {
+  OrchestratorService,
+  topicToNicheCandidates,
+} from './orchestrator.service';
 import { VideoJobStatus } from './video-job-status';
 
 describe('topicToNicheCandidates', () => {
@@ -14,11 +17,15 @@ describe('topicToNicheCandidates', () => {
     ['business course training for new managers', ['BUSINESS', 'EDUCATION']],
     ['pet dog training product checklist', ['PETS', 'EDUCATION', 'ECOMMERCE']],
   ])('maps "%s" to expected niches', (title, expected) => {
-    expect(topicToNicheCandidates(title)).toEqual(expect.arrayContaining(expected));
+    expect(topicToNicheCandidates(title)).toEqual(
+      expect.arrayContaining(expected),
+    );
   });
 
   it('returns unique niche matches', () => {
-    expect(topicToNicheCandidates('focus focus productivity')).toEqual(['PERSONAL_DEVELOPMENT']);
+    expect(topicToNicheCandidates('focus focus productivity')).toEqual([
+      'PERSONAL_DEVELOPMENT',
+    ]);
   });
 });
 
@@ -31,7 +38,10 @@ describe('OrchestratorService force slot rerun', () => {
       },
     };
     const videos = {
-      startRenderForJob: jest.fn().mockResolvedValue({ jobId: existing?.id ?? 'job-1', renderId: 'render-1' }),
+      startRenderForJob: jest.fn().mockResolvedValue({
+        jobId: existing?.id ?? 'job-1',
+        renderId: 'render-1',
+      }),
     };
     const settings = {
       getSettings: jest.fn().mockResolvedValue({ automationEnabled: true }),
@@ -54,7 +64,9 @@ describe('OrchestratorService force slot rerun', () => {
     });
 
     await expect(
-      service.runSlot('MORNING', new Date('2026-06-02T09:37:00.000Z'), { force: true }),
+      service.runSlot('MORNING', new Date('2026-06-02T09:37:00.000Z'), {
+        force: true,
+      }),
     ).resolves.toEqual(
       expect.objectContaining({
         ok: true,
@@ -95,7 +107,9 @@ describe('OrchestratorService force slot rerun', () => {
     });
 
     await expect(
-      service.runSlot('MORNING', new Date('2026-06-02T09:00:00.000Z'), { force: true }),
+      service.runSlot('MORNING', new Date('2026-06-02T09:00:00.000Z'), {
+        force: true,
+      }),
     ).resolves.toEqual(
       expect.objectContaining({
         skipped: true,
@@ -115,17 +129,31 @@ describe('OrchestratorService force slot rerun', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       topic: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'topic-1', title: 'Sleep support' }),
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'topic-1', title: 'Sleep support' }),
       },
       offer: {
-        findMany: jest.fn().mockResolvedValue([{ id: 'offer-1', name: 'Offer', hoplink: 'https://example.com', nicheTag: 'HEALTH_WELLNESS', network: 'DIGISTORE24' }]),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'offer-1',
+            name: 'Offer',
+            hoplink: 'https://example.com',
+            nicheTag: 'HEALTH_WELLNESS',
+            network: 'DIGISTORE24',
+          },
+        ]),
       },
     };
     const automation = {
-      generateScriptWithAiOffer: jest.fn().mockResolvedValue({ id: 'script-1' }),
+      generateScriptWithAiOffer: jest
+        .fn()
+        .mockResolvedValue({ id: 'script-1' }),
     };
     const videos = {
-      createVideoJob: jest.fn().mockResolvedValue({ jobId: 'job-1', renderId: 'render-1' }),
+      createVideoJob: jest
+        .fn()
+        .mockResolvedValue({ jobId: 'job-1', renderId: 'render-1' }),
     };
     const settings = {
       getSettings: jest.fn().mockResolvedValue({ automationEnabled: true }),
@@ -138,7 +166,9 @@ describe('OrchestratorService force slot rerun', () => {
       settings as never,
     );
 
-    await service.runSlot('MORNING', new Date('2026-06-02T09:00:00.000Z'), { workspaceId: 'workspace-1' });
+    await service.runSlot('MORNING', new Date('2026-06-02T09:00:00.000Z'), {
+      workspaceId: 'workspace-1',
+    });
 
     expect(prisma.videoJob.findFirst).toHaveBeenCalledWith({
       where: {
@@ -155,7 +185,10 @@ describe('OrchestratorService force slot rerun', () => {
     );
     expect(prisma.offer.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ workspaceId: 'workspace-1', active: true }),
+        where: expect.objectContaining({
+          workspaceId: 'workspace-1',
+          active: true,
+        }),
       }),
     );
     expect(videos.createVideoJob).toHaveBeenCalledWith(

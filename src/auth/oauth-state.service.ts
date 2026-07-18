@@ -50,7 +50,12 @@ export class OAuthStateService {
     const record = await this.prisma.oAuthState.findUnique({
       where: { stateHash },
     });
-    if (!record || record.purpose !== purpose || record.usedAt || record.expiresAt <= now) {
+    if (
+      !record ||
+      record.purpose !== purpose ||
+      record.usedAt ||
+      record.expiresAt <= now
+    ) {
       return null;
     }
 

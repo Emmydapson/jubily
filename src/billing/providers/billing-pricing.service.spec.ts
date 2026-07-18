@@ -27,57 +27,110 @@ describe('BillingPricingService', () => {
   it('maps provider, plan, and interval to Stripe price IDs and Paystack plan codes', () => {
     const service = new BillingPricingService();
 
-    expect(service.getPriceId(BillingProvider.STRIPE, Plan.PRO, BillingInterval.MONTHLY)).toBe(
-      'price_stripe_pro_monthly',
-    );
-    expect(service.getPriceId(BillingProvider.STRIPE, Plan.PREMIUM, BillingInterval.YEARLY)).toBe(
-      'price_stripe_premium_yearly',
-    );
-    expect(service.getPriceId(BillingProvider.PAYSTACK, Plan.PRO, BillingInterval.YEARLY)).toBe(
-      'PLN_paystack_pro_yearly',
-    );
-    expect(service.getPriceId(BillingProvider.PAYSTACK, Plan.PREMIUM, BillingInterval.MONTHLY)).toBe(
-      'PLN_paystack_premium_monthly',
-    );
+    expect(
+      service.getPriceId(
+        BillingProvider.STRIPE,
+        Plan.PRO,
+        BillingInterval.MONTHLY,
+      ),
+    ).toBe('price_stripe_pro_monthly');
+    expect(
+      service.getPriceId(
+        BillingProvider.STRIPE,
+        Plan.PREMIUM,
+        BillingInterval.YEARLY,
+      ),
+    ).toBe('price_stripe_premium_yearly');
+    expect(
+      service.getPriceId(
+        BillingProvider.PAYSTACK,
+        Plan.PRO,
+        BillingInterval.YEARLY,
+      ),
+    ).toBe('PLN_paystack_pro_yearly');
+    expect(
+      service.getPriceId(
+        BillingProvider.PAYSTACK,
+        Plan.PREMIUM,
+        BillingInterval.MONTHLY,
+      ),
+    ).toBe('PLN_paystack_premium_monthly');
   });
 
   it('does not allow checkout pricing for the free plan', () => {
-    expect(() => new BillingPricingService().getPriceId(BillingProvider.STRIPE, Plan.FREE, BillingInterval.MONTHLY))
-      .toThrow(BadRequestException);
+    expect(() =>
+      new BillingPricingService().getPriceId(
+        BillingProvider.STRIPE,
+        Plan.FREE,
+        BillingInterval.MONTHLY,
+      ),
+    ).toThrow(BadRequestException);
   });
 
   it('returns display-only pricing metadata for all paid providers and intervals', () => {
     const pricing = new BillingPricingService().listDisplayPrices();
 
-    expect(pricing).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        provider: BillingProvider.STRIPE,
-        prices: expect.arrayContaining([
-          expect.objectContaining({ plan: Plan.PRO, interval: BillingInterval.MONTHLY, amountMinor: 999 }),
-          expect.objectContaining({ plan: Plan.PRO, interval: BillingInterval.YEARLY, amountMinor: 10999 }),
-          expect.objectContaining({ plan: Plan.PREMIUM, interval: BillingInterval.MONTHLY, amountMinor: 2499 }),
-          expect.objectContaining({
-            plan: Plan.PREMIUM,
-            interval: BillingInterval.YEARLY,
-            amountMinor: 27399,
-            savings: expect.objectContaining({ label: '1 month free', monthsFree: 1 }),
-          }),
-        ]),
-      }),
-      expect.objectContaining({
-        provider: BillingProvider.PAYSTACK,
-        prices: expect.arrayContaining([
-          expect.objectContaining({ plan: Plan.PRO, interval: BillingInterval.MONTHLY, amountMinor: 750000 }),
-          expect.objectContaining({ plan: Plan.PRO, interval: BillingInterval.YEARLY, amountMinor: 8250000 }),
-          expect.objectContaining({ plan: Plan.PREMIUM, interval: BillingInterval.MONTHLY, amountMinor: 2000000 }),
-          expect.objectContaining({
-            plan: Plan.PREMIUM,
-            interval: BillingInterval.YEARLY,
-            amountMinor: 22000000,
-            savings: expect.objectContaining({ label: '1 month free', monthsFree: 1 }),
-          }),
-        ]),
-      }),
-    ]));
+    expect(pricing).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: BillingProvider.STRIPE,
+          prices: expect.arrayContaining([
+            expect.objectContaining({
+              plan: Plan.PRO,
+              interval: BillingInterval.MONTHLY,
+              amountMinor: 999,
+            }),
+            expect.objectContaining({
+              plan: Plan.PRO,
+              interval: BillingInterval.YEARLY,
+              amountMinor: 10999,
+            }),
+            expect.objectContaining({
+              plan: Plan.PREMIUM,
+              interval: BillingInterval.MONTHLY,
+              amountMinor: 2499,
+            }),
+            expect.objectContaining({
+              plan: Plan.PREMIUM,
+              interval: BillingInterval.YEARLY,
+              amountMinor: 27399,
+              savings: expect.objectContaining({
+                label: '1 month free',
+                monthsFree: 1,
+              }),
+            }),
+          ]),
+        }),
+        expect.objectContaining({
+          provider: BillingProvider.PAYSTACK,
+          prices: expect.arrayContaining([
+            expect.objectContaining({
+              plan: Plan.PRO,
+              interval: BillingInterval.MONTHLY,
+              amountMinor: 750000,
+            }),
+            expect.objectContaining({
+              plan: Plan.PRO,
+              interval: BillingInterval.YEARLY,
+              amountMinor: 8250000,
+            }),
+            expect.objectContaining({
+              plan: Plan.PREMIUM,
+              interval: BillingInterval.MONTHLY,
+              amountMinor: 2000000,
+            }),
+            expect.objectContaining({
+              plan: Plan.PREMIUM,
+              interval: BillingInterval.YEARLY,
+              amountMinor: 22000000,
+              savings: expect.objectContaining({
+                label: '1 month free',
+                monthsFree: 1,
+              }),
+            }),
+          ]),
+        }),
+      ]),
+    );
   });
 });

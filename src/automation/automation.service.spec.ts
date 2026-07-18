@@ -4,7 +4,12 @@ import { AutomationService } from './automation.service';
 describe('AutomationService customer wizard helpers', () => {
   let prisma: {
     offer: { findUnique: jest.Mock };
-    topic: { findFirst: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock; create: jest.Mock };
+    topic: {
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      findMany: jest.Mock;
+      create: jest.Mock;
+    };
     script: { findUnique: jest.Mock; findMany: jest.Mock; update: jest.Mock };
   };
   let scriptService: { createReviewed: jest.Mock };
@@ -17,7 +22,12 @@ describe('AutomationService customer wizard helpers', () => {
   beforeEach(() => {
     prisma = {
       offer: { findUnique: jest.fn() },
-      topic: { findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn() },
+      topic: {
+        findFirst: jest.fn(),
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
+      },
       script: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn() },
     };
     scriptService = { createReviewed: jest.fn() };
@@ -83,24 +93,30 @@ describe('AutomationService customer wizard helpers', () => {
     scriptService.createReviewed.mockResolvedValue({ id: 'script-1' });
 
     await expect(
-      service.generateScriptWithAiFromOffer({ offerId: 'offer-1', topic: 'Compare AI writing tools' }, 'workspace-1'),
+      service.generateScriptWithAiFromOffer(
+        { offerId: 'offer-1', topic: 'Compare AI writing tools' },
+        'workspace-1',
+      ),
     ).resolves.toEqual({ id: 'script-1' });
 
-    expect(ai.generateScriptWithOffer).toHaveBeenCalledWith('Compare AI writing tools', {
-      name: 'AI Writer Pro',
-      url: 'https://example.com',
-      niche: 'AI_SOFTWARE',
-      platform: 'Selar',
-      targetAudience: 'busy founders',
-      contentTone: 'direct',
-      language: 'en',
-      contentGoal: 'compare product options',
-      bullets: [
-        'Affiliate niche: AI_SOFTWARE',
-        'Affiliate platform: Selar',
-        'Target audience: busy founders',
-      ],
-    });
+    expect(ai.generateScriptWithOffer).toHaveBeenCalledWith(
+      'Compare AI writing tools',
+      {
+        name: 'AI Writer Pro',
+        url: 'https://example.com',
+        niche: 'AI_SOFTWARE',
+        platform: 'Selar',
+        targetAudience: 'busy founders',
+        contentTone: 'direct',
+        language: 'en',
+        contentGoal: 'compare product options',
+        bullets: [
+          'Affiliate niche: AI_SOFTWARE',
+          'Affiliate platform: Selar',
+          'Target audience: busy founders',
+        ],
+      },
+    );
     expect(scriptService.createReviewed).toHaveBeenCalledWith(
       'topic-1',
       'v2-ai-offer-SELAR-reviewed',
@@ -128,7 +144,12 @@ describe('AutomationService customer wizard helpers', () => {
     await expect(
       service.updateScript(
         'script-1',
-        { title: 'New title', content: 'new content', description: 'New description', hashtags: ['#Sleep'] },
+        {
+          title: 'New title',
+          content: 'new content',
+          description: 'New description',
+          hashtags: ['#Sleep'],
+        },
         'workspace-1',
       ),
     ).resolves.toEqual(expect.objectContaining({ id: 'script-1' }));
@@ -143,11 +164,13 @@ describe('AutomationService customer wizard helpers', () => {
         }),
       }),
     );
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'SCRIPT_UPDATED',
-      workspaceId: 'workspace-1',
-      targetId: 'script-1',
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'SCRIPT_UPDATED',
+        workspaceId: 'workspace-1',
+        targetId: 'script-1',
+      }),
+    );
   });
 
   it('returns empty create-video page lists safely for a fresh free workspace', async () => {
@@ -158,19 +181,26 @@ describe('AutomationService customer wizard helpers', () => {
     await expect(service.getPendingTopics('workspace-1')).resolves.toEqual([]);
     await expect(service.getAllScripts('workspace-1')).resolves.toEqual([]);
 
-    expect(prisma.topic.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { workspaceId: 'workspace-1' },
-    }));
-    expect(prisma.script.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { workspaceId: 'workspace-1' },
-    }));
+    expect(prisma.topic.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId: 'workspace-1' },
+      }),
+    );
+    expect(prisma.script.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId: 'workspace-1' },
+      }),
+    );
   });
 
   it('returns a clear not-found error when create-video offer generation references a missing offer', async () => {
     prisma.offer.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.generateScriptWithAiFromOffer({ offerId: 'missing-offer', topic: 'Topic' }, 'workspace-1'),
+      service.generateScriptWithAiFromOffer(
+        { offerId: 'missing-offer', topic: 'Topic' },
+        'workspace-1',
+      ),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

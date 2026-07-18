@@ -64,7 +64,10 @@ export class OffersService {
         },
       },
     });
-    if (!offer || (workspaceId !== undefined && offer.workspaceId !== workspaceId)) {
+    if (
+      !offer ||
+      (workspaceId !== undefined && offer.workspaceId !== workspaceId)
+    ) {
       throw new NotFoundException('Offer not found');
     }
     return offer;
@@ -101,15 +104,18 @@ export class OffersService {
       throw new BadRequestException('At least one field is required');
     }
 
-    await this.ensureNoDuplicate({
-      id,
-      network: data.network ?? current.network,
-      hoplink: data.hoplink ?? current.hoplink,
-      externalProductId:
-        data.externalProductId !== undefined
-          ? data.externalProductId
-          : current.externalProductId,
-    }, workspaceId);
+    await this.ensureNoDuplicate(
+      {
+        id,
+        network: data.network ?? current.network,
+        hoplink: data.hoplink ?? current.hoplink,
+        externalProductId:
+          data.externalProductId !== undefined
+            ? data.externalProductId
+            : current.externalProductId,
+      },
+      workspaceId,
+    );
 
     return this.prisma.offer.update({
       where: { id },

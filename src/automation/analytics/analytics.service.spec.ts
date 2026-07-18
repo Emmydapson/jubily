@@ -8,7 +8,11 @@ describe('AnalyticsService', () => {
     };
     const service = new AnalyticsService(prisma as never);
 
-    await service.weekly({ days: 7, timeZone: 'UTC', workspaceId: 'workspace-1' });
+    await service.weekly({
+      days: 7,
+      timeZone: 'UTC',
+      workspaceId: 'workspace-1',
+    });
 
     expect(prisma.click.findMany).toHaveBeenCalledWith(
       expect.objectContaining({

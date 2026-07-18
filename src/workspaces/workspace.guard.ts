@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { WORKSPACE_ROLES_KEY } from './workspace-roles.decorator';
@@ -18,17 +23,23 @@ export class WorkspaceGuard implements CanActivate {
   private requestedWorkspaceId(req: WorkspaceRequest) {
     const header = req.headers['x-workspace-id'];
     const fromHeader = Array.isArray(header) ? header[0] : header;
-    const fromQuery = typeof req.query?.workspaceId === 'string' ? req.query.workspaceId : '';
-    const fromParam = typeof req.params?.workspaceId === 'string' ? req.params.workspaceId : '';
+    const fromQuery =
+      typeof req.query?.workspaceId === 'string' ? req.query.workspaceId : '';
+    const fromParam =
+      typeof req.params?.workspaceId === 'string' ? req.params.workspaceId : '';
     const fromBody =
-      req.body && typeof req.body === 'object' && typeof req.body.workspaceId === 'string'
+      req.body &&
+      typeof req.body === 'object' &&
+      typeof req.body.workspaceId === 'string'
         ? req.body.workspaceId
         : '';
     const routeWorkspaceId = String(fromParam || '').trim();
     const headerWorkspaceId = String(fromHeader || '').trim();
     if (routeWorkspaceId) {
       if (headerWorkspaceId && headerWorkspaceId !== routeWorkspaceId) {
-        throw new ForbiddenException('Workspace header does not match route workspace');
+        throw new ForbiddenException(
+          'Workspace header does not match route workspace',
+        );
       }
       return routeWorkspaceId;
     }
@@ -76,13 +87,14 @@ export class WorkspaceGuard implements CanActivate {
         userId: req.user.userId,
         metadata: { reason: 'workspace_suspended' },
       });
-      throw new ForbiddenException(member.workspace.suspensionReason || 'Workspace is suspended');
+      throw new ForbiddenException(
+        member.workspace.suspensionReason || 'Workspace is suspended',
+      );
     }
 
-    const allowed = this.reflector.getAllAndOverride<Array<'OWNER' | 'ADMIN' | 'MEMBER'>>(
-      WORKSPACE_ROLES_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const allowed = this.reflector.getAllAndOverride<
+      Array<'OWNER' | 'ADMIN' | 'MEMBER'>
+    >(WORKSPACE_ROLES_KEY, [context.getHandler(), context.getClass()]);
     if (allowed?.length) {
       const required = Math.min(...allowed.map((role) => ROLE_ORDER[role]));
       if (ROLE_ORDER[member.role] < required) {
@@ -90,7 +102,11 @@ export class WorkspaceGuard implements CanActivate {
           action: 'PERMISSION_DENIED',
           workspaceId,
           userId: req.user.userId,
-          metadata: { reason: 'insufficient_workspace_role', role: member.role, required: allowed },
+          metadata: {
+            reason: 'insufficient_workspace_role',
+            role: member.role,
+            required: allowed,
+          },
         });
         throw new ForbiddenException('Insufficient workspace role');
       }

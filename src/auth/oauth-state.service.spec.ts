@@ -55,12 +55,18 @@ describe('OAuthStateService', () => {
       usedAt: null,
       createdAt: new Date(),
     });
-    prisma.oAuthState.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    prisma.oAuthState.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
 
-    await expect(service.consume('workspace_youtube', state)).resolves.toMatchObject({
+    await expect(
+      service.consume('workspace_youtube', state),
+    ).resolves.toMatchObject({
       workspaceId: 'workspace-1',
       userId: 'user-1',
     });
-    await expect(service.consume('workspace_youtube', state)).resolves.toBeNull();
+    await expect(
+      service.consume('workspace_youtube', state),
+    ).resolves.toBeNull();
   });
 });

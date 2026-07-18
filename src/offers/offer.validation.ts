@@ -1,6 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { OFFER_NETWORKS, OFFER_NICHES, OfferNetwork } from './offer.constants';
-import { normalizeAffiliateNiche, normalizeAffiliatePlatform } from '../affiliates/affiliate.constants';
+import {
+  normalizeAffiliateNiche,
+  normalizeAffiliatePlatform,
+} from '../affiliates/affiliate.constants';
 
 export type OfferSeedInput = {
   network?: unknown;
@@ -21,7 +24,7 @@ export type NormalizedOfferInput = {
 };
 
 function normalizeOptionalString(value: unknown): string | null | undefined {
-  if (value == null) return value as null | undefined;
+  if (value == null) return value;
   const normalized = String(value).trim();
   return normalized.length ? normalized : null;
 }
@@ -40,7 +43,7 @@ export function normalizeAndValidateOfferInput(
         `network must be one of: ${OFFER_NETWORKS.join(', ')}`,
       );
     }
-    output.network = network as OfferNetwork;
+    output.network = network;
   }
 
   if (!partial || input.name != null) {
@@ -64,7 +67,8 @@ export function normalizeAndValidateOfferInput(
 
   if (input.nicheTag !== undefined) {
     const rawNicheTag = normalizeOptionalString(input.nicheTag);
-    const nicheTag = rawNicheTag == null ? rawNicheTag : normalizeAffiliateNiche(rawNicheTag);
+    const nicheTag =
+      rawNicheTag == null ? rawNicheTag : normalizeAffiliateNiche(rawNicheTag);
     if (rawNicheTag != null && !nicheTag) {
       throw new BadRequestException(
         `nicheTag must be one of: ${OFFER_NICHES.join(', ')}`,

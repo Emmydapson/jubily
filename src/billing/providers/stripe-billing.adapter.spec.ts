@@ -17,9 +17,12 @@ describe('StripeBillingAdapter', () => {
       STRIPE_WEBHOOK_SECRET: 'whsec_secret',
       STRIPE_PRO_MONTHLY_PRICE_ID: 'price_pro_monthly',
     };
-    jest.mocked(axios.post).mockReset().mockResolvedValue({
-      data: { id: 'cs_123', url: 'https://checkout.stripe.com/cs_123' },
-    });
+    jest
+      .mocked(axios.post)
+      .mockReset()
+      .mockResolvedValue({
+        data: { id: 'cs_123', url: 'https://checkout.stripe.com/cs_123' },
+      });
   });
 
   afterEach(() => {
@@ -29,15 +32,17 @@ describe('StripeBillingAdapter', () => {
   it('creates a subscription checkout session with workspace metadata', async () => {
     const adapter = new StripeBillingAdapter(new BillingPricingService());
 
-    await expect(adapter.createCheckout({
-      workspaceId: 'workspace-1',
-      userId: 'user-1',
-      email: 'user@example.com',
-      plan: Plan.PRO,
-      interval: BillingInterval.MONTHLY,
-      successUrl: 'https://api.example.com/billing/success',
-      cancelUrl: 'https://api.example.com/billing/cancel',
-    })).resolves.toEqual({
+    await expect(
+      adapter.createCheckout({
+        workspaceId: 'workspace-1',
+        userId: 'user-1',
+        email: 'user@example.com',
+        plan: Plan.PRO,
+        interval: BillingInterval.MONTHLY,
+        successUrl: 'https://api.example.com/billing/success',
+        cancelUrl: 'https://api.example.com/billing/cancel',
+      }),
+    ).resolves.toEqual({
       provider: BillingProvider.STRIPE,
       checkoutUrl: 'https://checkout.stripe.com/cs_123',
       reference: 'cs_123',
@@ -58,12 +63,19 @@ describe('StripeBillingAdapter', () => {
     const adapter = new StripeBillingAdapter(new BillingPricingService());
     const raw = JSON.stringify({ id: 'evt-1' });
     const t = '1780580000';
-    const sig = createHmac('sha256', 'whsec_secret').update(`${t}.${raw}`).digest('hex');
+    const sig = createHmac('sha256', 'whsec_secret')
+      .update(`${t}.${raw}`)
+      .digest('hex');
 
-    expect(adapter.verifyWebhook(raw, { 'stripe-signature': `t=${t},v1=${sig}` })).toEqual({
+    expect(
+      adapter.verifyWebhook(raw, { 'stripe-signature': `t=${t},v1=${sig}` }),
+    ).toEqual({
       valid: true,
       reason: 'stripe_hmac_sha256',
     });
-    expect(adapter.verifyWebhook(raw, {})).toEqual({ valid: false, reason: 'missing_signature' });
+    expect(adapter.verifyWebhook(raw, {})).toEqual({
+      valid: false,
+      reason: 'missing_signature',
+    });
   });
 });

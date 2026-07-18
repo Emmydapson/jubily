@@ -51,15 +51,32 @@ describe('WorkspaceYoutubeOAuthController', () => {
 
     await controller.callback(res as never, 'code-1', 'state-1');
 
-    expect(oauthStates.consume).toHaveBeenCalledWith('workspace_youtube', 'state-1');
-    expect(workspaces.requireMembership).toHaveBeenCalledWith('workspace-1', 'user-1', ['OWNER', 'ADMIN']);
-    expect(youtube.handleWorkspaceAuthCallback).toHaveBeenCalledWith('workspace-1', 'code-1', 'user-1');
-    expect(workspaces.recordYoutubeConnected).toHaveBeenCalledWith('workspace-1', 'user-1', {
-      connected: true,
-      channelId: 'UC_WORKSPACE',
-      title: 'Workspace Channel',
-    });
-    expect(res.redirect).toHaveBeenCalledWith('https://joinjubily.com/youtube?connected=true');
+    expect(oauthStates.consume).toHaveBeenCalledWith(
+      'workspace_youtube',
+      'state-1',
+    );
+    expect(workspaces.requireMembership).toHaveBeenCalledWith(
+      'workspace-1',
+      'user-1',
+      ['OWNER', 'ADMIN'],
+    );
+    expect(youtube.handleWorkspaceAuthCallback).toHaveBeenCalledWith(
+      'workspace-1',
+      'code-1',
+      'user-1',
+    );
+    expect(workspaces.recordYoutubeConnected).toHaveBeenCalledWith(
+      'workspace-1',
+      'user-1',
+      {
+        connected: true,
+        channelId: 'UC_WORKSPACE',
+        title: 'Workspace Channel',
+      },
+    );
+    expect(res.redirect).toHaveBeenCalledWith(
+      'https://joinjubily.com/youtube?connected=true',
+    );
   });
 
   it('redirects invalid callback state with a frontend-safe error code', async () => {
@@ -69,6 +86,8 @@ describe('WorkspaceYoutubeOAuthController', () => {
     await controller.callback(res as never, 'code-1', 'bad-state');
 
     expect(youtube.handleWorkspaceAuthCallback).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith('https://joinjubily.com/youtube?error=INVALID_CALLBACK_STATE');
+    expect(res.redirect).toHaveBeenCalledWith(
+      'https://joinjubily.com/youtube?error=INVALID_CALLBACK_STATE',
+    );
   });
 });

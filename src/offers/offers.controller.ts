@@ -55,14 +55,20 @@ export class OffersController {
       },
     },
   })
-  list(@Query() query: ListOffersQueryDto, @ActiveWorkspace() workspace?: { id: string } | null) {
+  list(
+    @Query() query: ListOffersQueryDto,
+    @ActiveWorkspace() workspace?: { id: string } | null,
+  ) {
     return this.offers.list(query, workspace?.id);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get an affiliate offer' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  get(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+  get(
+    @Param('id', ParseUUIDPipe) id: string,
+    @ActiveWorkspace() workspace?: { id: string } | null,
+  ) {
     return this.offers.getOne(id, workspace?.id);
   }
 
@@ -70,7 +76,10 @@ export class OffersController {
   @WorkspaceRoles('OWNER', 'ADMIN')
   @ApiOperation({ summary: 'Create an affiliate offer' })
   @ApiBody({ type: CreateOfferDto })
-  create(@Body() dto: CreateOfferDto, @ActiveWorkspace() workspace?: { id: string } | null) {
+  create(
+    @Body() dto: CreateOfferDto,
+    @ActiveWorkspace() workspace?: { id: string } | null,
+  ) {
     return this.offers.create(dto, workspace?.id);
   }
 
@@ -91,7 +100,10 @@ export class OffersController {
   @WorkspaceRoles('OWNER', 'ADMIN')
   @ApiOperation({ summary: 'Deactivate an offer without deleting history' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  deactivate(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+  deactivate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @ActiveWorkspace() workspace?: { id: string } | null,
+  ) {
     return this.offers.deactivate(id, workspace?.id);
   }
 
@@ -99,7 +111,10 @@ export class OffersController {
   @WorkspaceRoles('OWNER', 'ADMIN')
   @ApiOperation({ summary: 'Reactivate an offer' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  reactivate(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+  reactivate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @ActiveWorkspace() workspace?: { id: string } | null,
+  ) {
     return this.offers.reactivate(id, workspace?.id);
   }
 
@@ -127,7 +142,10 @@ export class OffersController {
       },
     },
   })
-  performance(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+  performance(
+    @Param('id', ParseUUIDPipe) id: string,
+    @ActiveWorkspace() workspace?: { id: string } | null,
+  ) {
     return this.offers.performance(id, workspace?.id);
   }
 
@@ -136,7 +154,10 @@ export class OffersController {
     summary: 'Preview the affiliate redirect URL without recording a click',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
-  testRedirect(@Param('id', ParseUUIDPipe) id: string, @ActiveWorkspace() workspace?: { id: string } | null) {
+  testRedirect(
+    @Param('id', ParseUUIDPipe) id: string,
+    @ActiveWorkspace() workspace?: { id: string } | null,
+  ) {
     return this.offers.testRedirect(id, workspace?.id);
   }
 }

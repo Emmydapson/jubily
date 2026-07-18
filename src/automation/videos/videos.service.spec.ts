@@ -6,11 +6,20 @@ describe('VideosService quality gate', () => {
   let prisma: {
     script: { findUnique: jest.Mock };
     offer: { findUnique: jest.Mock };
-    videoJob: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
+    videoJob: {
+      create: jest.Mock;
+      findUnique: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
     topic: { updateMany: jest.Mock };
   };
   let shotstack: { renderVideo: jest.Mock };
-  let billing: { consumeVideoGeneration: jest.Mock; consumePublish: jest.Mock; incrementUsage: jest.Mock };
+  let billing: {
+    consumeVideoGeneration: jest.Mock;
+    consumePublish: jest.Mock;
+    incrementUsage: jest.Mock;
+  };
   let audit: { record: jest.Mock };
   let youtube: { getWorkspaceChannelDiagnostics: jest.Mock };
   let socialAccounts: { listAccounts: jest.Mock; publish: jest.Mock };
@@ -35,19 +44,46 @@ describe('VideosService quality gate', () => {
       incrementUsage: jest.fn().mockResolvedValue(undefined),
     };
     audit = { record: jest.fn().mockResolvedValue(null) };
-    youtube = { getWorkspaceChannelDiagnostics: jest.fn().mockResolvedValue({ connected: true }) };
-    socialAccounts = {
-      listAccounts: jest.fn().mockResolvedValue([{ provider: 'TIKTOK', status: 'CONNECTED' }]),
-      publish: jest.fn().mockRejectedValue(new Error('TikTok publishing is not enabled yet. App review approval is required.')),
+    youtube = {
+      getWorkspaceChannelDiagnostics: jest
+        .fn()
+        .mockResolvedValue({ connected: true }),
     };
-    service = new VideosService(prisma as never, shotstack as never, billing as never, audit as never, youtube as never, socialAccounts as never);
+    socialAccounts = {
+      listAccounts: jest
+        .fn()
+        .mockResolvedValue([{ provider: 'TIKTOK', status: 'CONNECTED' }]),
+      publish: jest
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'TikTok publishing is not enabled yet. App review approval is required.',
+          ),
+        ),
+    };
+    service = new VideosService(
+      prisma as never,
+      shotstack as never,
+      billing as never,
+      audit as never,
+      youtube as never,
+      socialAccounts as never,
+    );
   });
 
   it('blocks rejected scripts before creating an inline render job', async () => {
-    prisma.script.findUnique.mockResolvedValue({ id: 'script-1', reviewStatus: 'REJECTED' });
+    prisma.script.findUnique.mockResolvedValue({
+      id: 'script-1',
+      reviewStatus: 'REJECTED',
+    });
 
     await expect(
-      service.createVideoJob('script-1', undefined, 'MORNING', new Date('2026-05-31T09:00:00.000Z')),
+      service.createVideoJob(
+        'script-1',
+        undefined,
+        'MORNING',
+        new Date('2026-05-31T09:00:00.000Z'),
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
 
     expect(prisma.videoJob.create).not.toHaveBeenCalled();
@@ -62,14 +98,22 @@ describe('VideosService quality gate', () => {
       script: {
         id: 'script-1',
         content: JSON.stringify({
-          scenes: [{ narration: 'Do this habit today', caption: 'Do this habit', seconds: 5 }],
+          scenes: [
+            {
+              narration: 'Do this habit today',
+              caption: 'Do this habit',
+              seconds: 5,
+            },
+          ],
         }),
         topicId: 'topic-1',
         reviewStatus: 'NEEDS_REVIEW',
       },
     });
 
-    await expect(service.startRenderForJob('job-1', 'worker-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.startRenderForJob('job-1', 'worker-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
 
     expect(shotstack.renderVideo).not.toHaveBeenCalled();
     expect(prisma.videoJob.updateMany).not.toHaveBeenCalled();
@@ -83,7 +127,13 @@ describe('VideosService quality gate', () => {
       script: {
         id: 'script-1',
         content: JSON.stringify({
-          scenes: [{ narration: 'Do this habit today', caption: 'Do this habit', seconds: 5 }],
+          scenes: [
+            {
+              narration: 'Do this habit today',
+              caption: 'Do this habit',
+              seconds: 5,
+            },
+          ],
         }),
         topicId: 'topic-1',
         reviewStatus: 'APPROVED',
@@ -99,7 +149,9 @@ describe('VideosService quality gate', () => {
     prisma.videoJob.updateMany.mockResolvedValue({ count: 1 });
     prisma.topic.updateMany.mockResolvedValue({ count: 1 });
 
-    await expect(service.startRenderForJob('job-1', 'worker-1')).resolves.toEqual({
+    await expect(
+      service.startRenderForJob('job-1', 'worker-1'),
+    ).resolves.toEqual({
       jobId: 'job-1',
       renderId: 'render-1',
       qa: {
@@ -110,7 +162,10 @@ describe('VideosService quality gate', () => {
       },
     });
 
-    expect(shotstack.renderVideo).toHaveBeenCalledWith(expect.any(Array), 'job-1');
+    expect(shotstack.renderVideo).toHaveBeenCalledWith(
+      expect.any(Array),
+      'job-1',
+    );
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
       where: {
         id: 'job-1',
@@ -137,7 +192,13 @@ describe('VideosService quality gate', () => {
       script: {
         id: 'script-1',
         content: JSON.stringify({
-          scenes: [{ narration: 'Do this habit today', caption: 'Do this habit', seconds: 5 }],
+          scenes: [
+            {
+              narration: 'Do this habit today',
+              caption: 'Do this habit',
+              seconds: 5,
+            },
+          ],
         }),
         topicId: 'topic-1',
         reviewStatus: 'APPROVED',
@@ -168,13 +229,17 @@ describe('VideosService quality gate', () => {
       renderId: 'render-existing',
       script: {
         id: 'script-1',
-        content: JSON.stringify({ scenes: [{ narration: 'Done', caption: 'Done', seconds: 5 }] }),
+        content: JSON.stringify({
+          scenes: [{ narration: 'Done', caption: 'Done', seconds: 5 }],
+        }),
         topicId: 'topic-1',
         reviewStatus: 'APPROVED',
       },
     });
 
-    await expect(service.startRenderForJob('job-1', 'worker-1')).resolves.toEqual({
+    await expect(
+      service.startRenderForJob('job-1', 'worker-1'),
+    ).resolves.toEqual({
       jobId: 'job-1',
       renderId: 'render-existing',
       resumed: true,
@@ -202,28 +267,34 @@ describe('VideosService quality gate', () => {
       renderId: null,
       script: {
         id: 'script-1',
-        content: JSON.stringify({ scenes: [{ narration: 'Done', caption: 'Done', seconds: 5 }] }),
+        content: JSON.stringify({
+          scenes: [{ narration: 'Done', caption: 'Done', seconds: 5 }],
+        }),
         topicId: 'topic-1',
         reviewStatus: 'APPROVED',
       },
     });
     prisma.videoJob.update.mockResolvedValue({ id: 'job-1' });
-    shotstack.renderVideo.mockRejectedValue(new ShotstackProviderError(
-      'Video render failed because the render payload was invalid.',
-      {
-        statusCode: 400,
-        requestId: 'req-1',
-        validationMessages: ['Validation failed for timeline.'],
-      },
-    ));
+    shotstack.renderVideo.mockRejectedValue(
+      new ShotstackProviderError(
+        'Video render failed because the render payload was invalid.',
+        {
+          statusCode: 400,
+          requestId: 'req-1',
+          validationMessages: ['Validation failed for timeline.'],
+        },
+      ),
+    );
 
-    await expect(service.createVideoJob(
-      'script-1',
-      undefined,
-      'MORNING',
-      new Date('2026-05-31T09:00:00.000Z'),
-      'workspace-1',
-    )).rejects.toMatchObject({
+    await expect(
+      service.createVideoJob(
+        'script-1',
+        undefined,
+        'MORNING',
+        new Date('2026-05-31T09:00:00.000Z'),
+        'workspace-1',
+      ),
+    ).rejects.toMatchObject({
       response: expect.objectContaining({
         message: 'Video render failed because the render payload was invalid.',
         provider: 'shotstack',
@@ -234,13 +305,15 @@ describe('VideosService quality gate', () => {
         },
       }),
     });
-    expect(prisma.videoJob.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'job-1' },
-      data: expect.objectContaining({
-        status: 'FAILED',
-        error: 'Video render failed because the render payload was invalid.',
+    expect(prisma.videoJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'job-1' },
+        data: expect.objectContaining({
+          status: 'FAILED',
+          error: 'Video render failed because the render payload was invalid.',
+        }),
       }),
-    }));
+    );
   });
 
   it('creates video jobs only for scripts and offers in the active workspace', async () => {
@@ -326,12 +399,15 @@ describe('VideosService quality gate', () => {
       script: { id: 'script-1', topic: { id: 'topic-1', title: 'Topic' } },
     });
 
-    await expect(service.getVideoStatus('job-1', 'workspace-1')).resolves.toEqual(
+    await expect(
+      service.getVideoStatus('job-1', 'workspace-1'),
+    ).resolves.toEqual(
       expect.objectContaining({
         id: 'job-1',
         renderStatus: 'READY',
         progress: 100,
-        trackingUrl: 'https://api.jubily.test/r/offer-1?jobId=job-1&yt=youtube-1',
+        trackingUrl:
+          'https://api.jubily.test/r/offer-1?jobId=job-1&yt=youtube-1',
       }),
     );
   });
@@ -387,7 +463,11 @@ describe('VideosService quality gate', () => {
     await expect(
       service.createCustomerVideo(
         'script-1',
-        { offerId: 'offer-1', slot: 'MORNING', scheduledFor: '2026-05-31T09:00:00.000Z' },
+        {
+          offerId: 'offer-1',
+          slot: 'MORNING',
+          scheduledFor: '2026-05-31T09:00:00.000Z',
+        },
         'workspace-1',
       ),
     ).resolves.toEqual({
@@ -452,7 +532,11 @@ describe('VideosService quality gate', () => {
       script: { id: 'script-1', topic: { id: 'topic-1', title: 'Topic' } },
     });
 
-    const response = await service.createCustomerVideo('script-1', {}, 'workspace-1');
+    const response = await service.createCustomerVideo(
+      'script-1',
+      {},
+      'workspace-1',
+    );
 
     expect(response).toEqual({
       videoId: 'job-1',
@@ -475,7 +559,9 @@ describe('VideosService quality gate', () => {
       reviewStatus: 'APPROVED',
     });
 
-    await expect(service.createCustomerVideo('script-1', {}, 'workspace-1')).rejects.toThrow('Script not found');
+    await expect(
+      service.createCustomerVideo('script-1', {}, 'workspace-1'),
+    ).rejects.toThrow('Script not found');
 
     expect(prisma.videoJob.create).not.toHaveBeenCalled();
     expect(shotstack.renderVideo).not.toHaveBeenCalled();
@@ -488,7 +574,9 @@ describe('VideosService quality gate', () => {
       reviewStatus: 'NEEDS_REVIEW',
     });
 
-    await expect(service.createCustomerVideo('script-1', {}, 'workspace-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.createCustomerVideo('script-1', {}, 'workspace-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
 
     expect(prisma.videoJob.create).not.toHaveBeenCalled();
     expect(shotstack.renderVideo).not.toHaveBeenCalled();
@@ -512,15 +600,25 @@ describe('VideosService quality gate', () => {
       script: {
         id: 'script-1',
         content: JSON.stringify({
-          scenes: [{ narration: 'Do this habit today', caption: 'Do this habit', seconds: 5 }],
+          scenes: [
+            {
+              narration: 'Do this habit today',
+              caption: 'Do this habit',
+              seconds: 5,
+            },
+          ],
         }),
         topicId: 'topic-1',
         reviewStatus: 'APPROVED',
       },
     });
-    billing.consumeVideoGeneration.mockRejectedValue(new ConflictException('Video generation limit reached for FREE plan'));
+    billing.consumeVideoGeneration.mockRejectedValue(
+      new ConflictException('Video generation limit reached for FREE plan'),
+    );
 
-    await expect(service.createCustomerVideo('script-1', {}, 'workspace-1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.createCustomerVideo('script-1', {}, 'workspace-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
 
     expect(billing.consumeVideoGeneration).toHaveBeenCalledWith('workspace-1');
     expect(shotstack.renderVideo).not.toHaveBeenCalled();
@@ -552,7 +650,11 @@ describe('VideosService quality gate', () => {
       attempts: 0,
       createdAt: new Date('2026-05-31T09:00:00.000Z'),
       offer: { id: 'offer-1', name: 'Offer' },
-      script: { id: 'script-1', reviewStatus: 'APPROVED', topic: { id: 'topic-1', title: 'Topic' } },
+      script: {
+        id: 'script-1',
+        reviewStatus: 'APPROVED',
+        topic: { id: 'topic-1', title: 'Topic' },
+      },
     });
     prisma.videoJob.updateMany.mockResolvedValue({ count: 1 });
     prisma.videoJob.findUnique.mockResolvedValueOnce({
@@ -573,13 +675,19 @@ describe('VideosService quality gate', () => {
       attempts: 0,
       createdAt: new Date('2026-05-31T09:00:00.000Z'),
       offer: { id: 'offer-1', name: 'Offer' },
-      script: { id: 'script-1', reviewStatus: 'APPROVED', topic: { id: 'topic-1', title: 'Topic' } },
+      script: {
+        id: 'script-1',
+        reviewStatus: 'APPROVED',
+        topic: { id: 'topic-1', title: 'Topic' },
+      },
     });
 
     await expect(service.publishVideo('job-1', 'workspace-1')).resolves.toEqual(
       expect.objectContaining({ queued: true, status: 'QUEUED_FOR_PUBLISH' }),
     );
-    expect(youtube.getWorkspaceChannelDiagnostics).toHaveBeenCalledWith('workspace-1');
+    expect(youtube.getWorkspaceChannelDiagnostics).toHaveBeenCalledWith(
+      'workspace-1',
+    );
     expect(billing.consumePublish).toHaveBeenCalledWith('workspace-1');
     expect(prisma.videoJob.updateMany).toHaveBeenCalledWith({
       where: {
@@ -590,7 +698,13 @@ describe('VideosService quality gate', () => {
         renderId: { not: null },
         workerStage: null,
       },
-      data: { error: null, publishTarget: 'YOUTUBE', workerLockedAt: null, workerLockedBy: null, workerStage: 'PUBLISH_QUEUED' },
+      data: {
+        error: null,
+        publishTarget: 'YOUTUBE',
+        workerLockedAt: null,
+        workerLockedBy: null,
+        workerStage: 'PUBLISH_QUEUED',
+      },
     });
   });
 
@@ -613,7 +727,11 @@ describe('VideosService quality gate', () => {
       attempts: 0,
       createdAt: new Date('2026-05-31T09:00:00.000Z'),
       offer: null,
-      script: { id: 'script-1', reviewStatus: 'APPROVED', topic: { id: 'topic-1', title: 'Topic' } },
+      script: {
+        id: 'script-1',
+        reviewStatus: 'APPROVED',
+        topic: { id: 'topic-1', title: 'Topic' },
+      },
     });
     prisma.videoJob.updateMany.mockResolvedValue({ count: 1 });
     prisma.videoJob.findUnique.mockResolvedValueOnce({
@@ -634,17 +752,28 @@ describe('VideosService quality gate', () => {
       attempts: 0,
       createdAt: new Date('2026-05-31T09:00:00.000Z'),
       offer: null,
-      script: { id: 'script-1', reviewStatus: 'APPROVED', topic: { id: 'topic-1', title: 'Topic' } },
+      script: {
+        id: 'script-1',
+        reviewStatus: 'APPROVED',
+        topic: { id: 'topic-1', title: 'Topic' },
+      },
     });
 
-    await expect(service.publishVideo('job-1', 'workspace-1', { target: 'TIKTOK' })).resolves.toEqual(
+    await expect(
+      service.publishVideo('job-1', 'workspace-1', { target: 'TIKTOK' }),
+    ).resolves.toEqual(
       expect.objectContaining({ queued: true, status: 'QUEUED_FOR_PUBLISH' }),
     );
     expect(socialAccounts.listAccounts).toHaveBeenCalledWith('workspace-1');
     expect(socialAccounts.publish).not.toHaveBeenCalled();
     expect(youtube.getWorkspaceChannelDiagnostics).not.toHaveBeenCalled();
-    expect(prisma.videoJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ publishTarget: 'TIKTOK', workerStage: 'PUBLISH_QUEUED' }),
-    }));
+    expect(prisma.videoJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          publishTarget: 'TIKTOK',
+          workerStage: 'PUBLISH_QUEUED',
+        }),
+      }),
+    );
   });
 });

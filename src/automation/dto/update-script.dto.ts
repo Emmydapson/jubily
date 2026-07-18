@@ -13,13 +13,17 @@ export class UpdateScriptDto {
   @IsString()
   content?: string;
 
-  @ApiPropertyOptional({ example: 'A practical product comparison note for busy buyers.' })
+  @ApiPropertyOptional({
+    example: 'A practical product comparison note for busy buyers.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(4500)
   description?: string;
 
-  @ApiPropertyOptional({ example: ['affiliate', 'productreview', 'buyersguide'] })
+  @ApiPropertyOptional({
+    example: ['affiliate', 'productreview', 'buyersguide'],
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

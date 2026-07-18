@@ -21,7 +21,9 @@ describe('EmailOutboxWorker', () => {
         findMany: jest.fn().mockResolvedValue(rows),
       },
     };
-    const emails = { retryOutboxEmail: jest.fn().mockResolvedValue({ sent: true }) };
+    const emails = {
+      retryOutboxEmail: jest.fn().mockResolvedValue({ sent: true }),
+    };
     const worker = new EmailOutboxWorker(prisma as never, emails as never);
 
     await worker.processDueEmails();

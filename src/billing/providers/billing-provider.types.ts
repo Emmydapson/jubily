@@ -70,7 +70,13 @@ export type ProviderWebhookResult = {
 export interface LiveBillingProviderAdapter {
   provider: BillingProvider;
   createCheckout(input: CheckoutRequest): Promise<CheckoutResponse>;
-  cancelSubscription(subscriptionId: string, customerId?: string | null): Promise<{ cancelAtPeriodEnd: boolean }>;
-  verifyWebhook(rawBody: string | Buffer | undefined, headers: Record<string, unknown>): { valid: boolean; reason?: string };
+  cancelSubscription(
+    subscriptionId: string,
+    customerId?: string | null,
+  ): Promise<{ cancelAtPeriodEnd: boolean }>;
+  verifyWebhook(
+    rawBody: string | Buffer | undefined,
+    headers: Record<string, unknown>,
+  ): { valid: boolean; reason?: string };
   parseWebhook(payload: unknown): ProviderWebhookResult;
 }

@@ -30,19 +30,21 @@ describe('ThumbnailService', () => {
       workspaceId: 'workspace-1',
       thumbnailPrompt: 'clear subject',
     });
-    images.generateThumbnailImageUrl.mockResolvedValue('https://cdn.example.com/thumb.jpg');
-    prisma.script.update
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({
-        id: 'script-1',
-        thumbnailPrompt: 'clear subject',
-        thumbnailImageUrl: 'https://cdn.example.com/thumb.jpg',
-        thumbnailStatus: 'READY',
-        thumbnailError: null,
-        thumbnailGeneratedAt: new Date('2026-05-31T12:00:00.000Z'),
-      });
+    images.generateThumbnailImageUrl.mockResolvedValue(
+      'https://cdn.example.com/thumb.jpg',
+    );
+    prisma.script.update.mockResolvedValueOnce({}).mockResolvedValueOnce({
+      id: 'script-1',
+      thumbnailPrompt: 'clear subject',
+      thumbnailImageUrl: 'https://cdn.example.com/thumb.jpg',
+      thumbnailStatus: 'READY',
+      thumbnailError: null,
+      thumbnailGeneratedAt: new Date('2026-05-31T12:00:00.000Z'),
+    });
 
-    await expect(service.generateForScript('script-1', undefined, 'workspace-1')).resolves.toEqual(
+    await expect(
+      service.generateForScript('script-1', undefined, 'workspace-1'),
+    ).resolves.toEqual(
       expect.objectContaining({
         target: 'script',
         id: 'script-1',
@@ -55,7 +57,10 @@ describe('ThumbnailService', () => {
     expect(prisma.script.update).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        data: expect.objectContaining({ thumbnailStatus: 'GENERATING', thumbnailError: null }),
+        data: expect.objectContaining({
+          thumbnailStatus: 'GENERATING',
+          thumbnailError: null,
+        }),
       }),
     );
     expect(images.generateThumbnailImageUrl).toHaveBeenCalledWith(
@@ -70,19 +75,21 @@ describe('ThumbnailService', () => {
       workspaceId: 'workspace-1',
       thumbnailPrompt: 'clear subject',
     });
-    images.generateThumbnailImageUrl.mockRejectedValue(new Error('provider down'));
-    prisma.script.update
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({
-        id: 'script-1',
-        thumbnailPrompt: 'clear subject',
-        thumbnailImageUrl: null,
-        thumbnailStatus: 'FAILED',
-        thumbnailError: 'provider down',
-        thumbnailGeneratedAt: null,
-      });
+    images.generateThumbnailImageUrl.mockRejectedValue(
+      new Error('provider down'),
+    );
+    prisma.script.update.mockResolvedValueOnce({}).mockResolvedValueOnce({
+      id: 'script-1',
+      thumbnailPrompt: 'clear subject',
+      thumbnailImageUrl: null,
+      thumbnailStatus: 'FAILED',
+      thumbnailError: 'provider down',
+      thumbnailGeneratedAt: null,
+    });
 
-    await expect(service.generateForScript('script-1', undefined, 'workspace-1')).resolves.toEqual(
+    await expect(
+      service.generateForScript('script-1', undefined, 'workspace-1'),
+    ).resolves.toEqual(
       expect.objectContaining({
         thumbnailStatus: 'FAILED',
         thumbnailError: 'provider down',
@@ -98,20 +105,22 @@ describe('ThumbnailService', () => {
       thumbnailPrompt: null,
       script: { thumbnailPrompt: 'script prompt' },
     });
-    images.generateThumbnailImageUrl.mockResolvedValue('https://cdn.example.com/job-thumb.jpg');
-    prisma.videoJob.update
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({
-        id: 'job-1',
-        scriptId: 'script-1',
-        thumbnailPrompt: 'script prompt',
-        thumbnailImageUrl: 'https://cdn.example.com/job-thumb.jpg',
-        thumbnailStatus: 'READY',
-        thumbnailError: null,
-        thumbnailGeneratedAt: new Date('2026-05-31T12:00:00.000Z'),
-      });
+    images.generateThumbnailImageUrl.mockResolvedValue(
+      'https://cdn.example.com/job-thumb.jpg',
+    );
+    prisma.videoJob.update.mockResolvedValueOnce({}).mockResolvedValueOnce({
+      id: 'job-1',
+      scriptId: 'script-1',
+      thumbnailPrompt: 'script prompt',
+      thumbnailImageUrl: 'https://cdn.example.com/job-thumb.jpg',
+      thumbnailStatus: 'READY',
+      thumbnailError: null,
+      thumbnailGeneratedAt: new Date('2026-05-31T12:00:00.000Z'),
+    });
 
-    await expect(service.generateForJob('job-1', undefined, 'workspace-1')).resolves.toEqual(
+    await expect(
+      service.generateForJob('job-1', undefined, 'workspace-1'),
+    ).resolves.toEqual(
       expect.objectContaining({
         target: 'job',
         id: 'job-1',
@@ -131,7 +140,9 @@ describe('ThumbnailService', () => {
   it('throws not found for missing scripts', async () => {
     prisma.script.findUnique.mockResolvedValue(null);
 
-    await expect(service.getScriptThumbnail('script-1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.getScriptThumbnail('script-1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('throws not found when script or job belongs to another workspace', async () => {
@@ -140,7 +151,9 @@ describe('ThumbnailService', () => {
       workspaceId: 'workspace-2',
       thumbnailPrompt: 'clear subject',
     });
-    await expect(service.getScriptThumbnail('script-1', 'workspace-1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.getScriptThumbnail('script-1', 'workspace-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
 
     prisma.videoJob.findUnique.mockResolvedValueOnce({
       id: 'job-1',
@@ -149,6 +162,8 @@ describe('ThumbnailService', () => {
       thumbnailPrompt: null,
       script: { thumbnailPrompt: 'script prompt' },
     });
-    await expect(service.generateForJob('job-1', undefined, 'workspace-1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.generateForJob('job-1', undefined, 'workspace-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

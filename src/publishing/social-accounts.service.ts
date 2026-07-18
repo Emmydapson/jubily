@@ -1,12 +1,21 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import axios from 'axios';
 import { Prisma, PublishingProvider } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { encryptString } from '../settings/settings.crypto';
 import { safeErrorMessage } from '../common/safe-metadata';
 import { AuditService } from '../audit/audit.service';
-import { ProviderPublishingError, PublishPayload } from './social-publishing.types';
+import {
+  ProviderPublishingError,
+  PublishPayload,
+} from './social-publishing.types';
 
 type TokenBundle = {
   accessToken: string;
@@ -50,7 +59,10 @@ export class SocialAccountsService {
   }
 
   tiktokScopes() {
-    return this.scopes(process.env.TIKTOK_SCOPES, ['user.info.basic', 'video.publish']);
+    return this.scopes(process.env.TIKTOK_SCOPES, [
+      'user.info.basic',
+      'video.publish',
+    ]);
   }
 
   facebookScopes() {
@@ -91,7 +103,9 @@ export class SocialAccountsService {
 
   private async upsertAccount(input: AccountInput) {
     const access = encryptString(input.accessToken);
-    const refresh = input.refreshToken ? encryptString(input.refreshToken) : null;
+    const refresh = input.refreshToken
+      ? encryptString(input.refreshToken)
+      : null;
     const row = await this.prisma.socialAccount.upsert({
       where: {
         workspaceId_provider_providerAccountId: {
@@ -112,7 +126,8 @@ export class SocialAccountsService {
         expiresAt: input.expiresAt ?? null,
         scopes: input.scopes,
         selectedPageId: input.selectedPageId ?? null,
-        selectedInstagramBusinessAccountId: input.selectedInstagramBusinessAccountId ?? null,
+        selectedInstagramBusinessAccountId:
+          input.selectedInstagramBusinessAccountId ?? null,
         metadata: input.metadata ?? Prisma.JsonNull,
         disconnectedAt: null,
         connectedAt: new Date(),
@@ -132,7 +147,8 @@ export class SocialAccountsService {
         expiresAt: input.expiresAt ?? null,
         scopes: input.scopes,
         selectedPageId: input.selectedPageId ?? null,
-        selectedInstagramBusinessAccountId: input.selectedInstagramBusinessAccountId ?? null,
+        selectedInstagramBusinessAccountId:
+          input.selectedInstagramBusinessAccountId ?? null,
         metadata: input.metadata ?? Prisma.JsonNull,
       },
     });
@@ -142,7 +158,11 @@ export class SocialAccountsService {
       userId: input.userId,
       targetType: 'SocialAccount',
       targetId: row.id,
-      metadata: { provider: input.provider, providerAccountId: input.providerAccountId, scopes: input.scopes },
+      metadata: {
+        provider: input.provider,
+        providerAccountId: input.providerAccountId,
+        scopes: input.scopes,
+      },
     });
     return this.sanitize(row);
   }
@@ -159,7 +179,8 @@ export class SocialAccountsService {
       expiresAt: account.expiresAt ?? null,
       scopes: account.scopes ?? [],
       selectedPageId: account.selectedPageId ?? null,
-      selectedInstagramBusinessAccountId: account.selectedInstagramBusinessAccountId ?? null,
+      selectedInstagramBusinessAccountId:
+        account.selectedInstagramBusinessAccountId ?? null,
       metadata: account.metadata ?? null,
       connectedAt: account.connectedAt,
       updatedAt: account.updatedAt,
@@ -171,22 +192,40 @@ export class SocialAccountsService {
   async listAccounts(workspaceId: string) {
     const accounts = await this.prisma.socialAccount.findMany({
       where: { workspaceId },
-      orderBy: [{ disconnectedAt: 'asc' }, { provider: 'asc' }, { connectedAt: 'desc' }],
+      orderBy: [
+        { disconnectedAt: 'asc' },
+        { provider: 'asc' },
+        { connectedAt: 'desc' },
+      ],
     });
     return accounts.map((account) => this.sanitize(account));
   }
 
-  async selectAccount(workspaceId: string, accountId: string, input: { selectedPageId?: string | null; selectedInstagramBusinessAccountId?: string | null }, userId?: string | null) {
-    const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, workspaceId, disconnectedAt: null } });
+  async selectAccount(
+    workspaceId: string,
+    accountId: string,
+    input: {
+      selectedPageId?: string | null;
+      selectedInstagramBusinessAccountId?: string | null;
+    },
+    userId?: string | null,
+  ) {
+    const account = await this.prisma.socialAccount.findFirst({
+      where: { id: accountId, workspaceId, disconnectedAt: null },
+    });
     if (!account) throw new NotFoundException('Publishing account not found');
     if (!input.selectedPageId && !input.selectedInstagramBusinessAccountId) {
-      throw new BadRequestException('selectedPageId or selectedInstagramBusinessAccountId is required');
+      throw new BadRequestException(
+        'selectedPageId or selectedInstagramBusinessAccountId is required',
+      );
     }
     const updated = await this.prisma.socialAccount.update({
       where: { id: account.id },
       data: {
         selectedPageId: input.selectedPageId ?? account.selectedPageId,
-        selectedInstagramBusinessAccountId: input.selectedInstagramBusinessAccountId ?? account.selectedInstagramBusinessAccountId,
+        selectedInstagramBusinessAccountId:
+          input.selectedInstagramBusinessAccountId ??
+          account.selectedInstagramBusinessAccountId,
       },
     });
     await this.audit.record({
@@ -195,16 +234,30 @@ export class SocialAccountsService {
       userId: userId ?? null,
       targetType: 'SocialAccount',
       targetId: account.id,
-      metadata: { provider: account.provider, selectedPageId: updated.selectedPageId, selectedInstagramBusinessAccountId: updated.selectedInstagramBusinessAccountId },
+      metadata: {
+        provider: account.provider,
+        selectedPageId: updated.selectedPageId,
+        selectedInstagramBusinessAccountId:
+          updated.selectedInstagramBusinessAccountId,
+      },
     });
     return this.sanitize(updated);
   }
 
-  async disconnectAccount(workspaceId: string, accountId: string, userId?: string | null) {
-    const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, workspaceId, disconnectedAt: null } });
+  async disconnectAccount(
+    workspaceId: string,
+    accountId: string,
+    userId?: string | null,
+  ) {
+    const account = await this.prisma.socialAccount.findFirst({
+      where: { id: accountId, workspaceId, disconnectedAt: null },
+    });
     if (!account) throw new NotFoundException('Publishing account not found');
     await this.revokeBestEffort(account.provider);
-    const updated = await this.prisma.socialAccount.update({ where: { id: account.id }, data: { disconnectedAt: new Date() } });
+    const updated = await this.prisma.socialAccount.update({
+      where: { id: account.id },
+      data: { disconnectedAt: new Date() },
+    });
     await this.audit.record({
       action: 'SOCIAL_ACCOUNT_DISCONNECTED',
       workspaceId,
@@ -217,11 +270,21 @@ export class SocialAccountsService {
   }
 
   private async revokeBestEffort(provider: PublishingProvider) {
-    this.logger.log(`[${provider}] disconnect requested; provider token revocation is best-effort and no token value is logged`);
+    this.logger.log(
+      `[${provider}] disconnect requested; provider token revocation is best-effort and no token value is logged`,
+    );
   }
 
-  async handleTikTokCallback(workspaceId: string, userId: string, code: string) {
-    if (!process.env.TIKTOK_CLIENT_KEY || !process.env.TIKTOK_CLIENT_SECRET || !process.env.TIKTOK_REDIRECT_URI) {
+  async handleTikTokCallback(
+    workspaceId: string,
+    userId: string,
+    code: string,
+  ) {
+    if (
+      !process.env.TIKTOK_CLIENT_KEY ||
+      !process.env.TIKTOK_CLIENT_SECRET ||
+      !process.env.TIKTOK_REDIRECT_URI
+    ) {
       throw new BadRequestException('TikTok OAuth is not configured');
     }
     try {
@@ -232,15 +295,23 @@ export class SocialAccountsService {
         grant_type: 'authorization_code',
         redirect_uri: process.env.TIKTOK_REDIRECT_URI,
       });
-      const token = await axios.post('https://open.tiktokapis.com/v2/oauth/token/', params, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
+      const token = await axios.post(
+        'https://open.tiktokapis.com/v2/oauth/token/',
+        params,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        },
+      );
       const accessToken = String(token.data?.access_token || '');
-      if (!accessToken) throw new Error('TikTok token response missing access token');
-      const profile = await axios.get('https://open.tiktokapis.com/v2/user/info/', {
-        params: { fields: 'open_id,union_id,avatar_url,display_name' },
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      if (!accessToken)
+        throw new Error('TikTok token response missing access token');
+      const profile = await axios.get(
+        'https://open.tiktokapis.com/v2/user/info/',
+        {
+          params: { fields: 'open_id,union_id,avatar_url,display_name' },
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+      );
       const user = profile.data?.data?.user || {};
       const expiresIn = Number(token.data?.expires_in || 0);
       return this.upsertAccount({
@@ -255,38 +326,73 @@ export class SocialAccountsService {
         refreshToken: token.data?.refresh_token ?? null,
         expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000) : null,
         scopes: this.scopes(token.data?.scope, this.tiktokScopes()),
-        metadata: { profile: user, appReview: { publishingEnabled: process.env.TIKTOK_PUBLISHING_ENABLED === 'true' } },
+        metadata: {
+          profile: user,
+          appReview: {
+            publishingEnabled: process.env.TIKTOK_PUBLISHING_ENABLED === 'true',
+          },
+        },
       });
     } catch (error) {
-      this.logger.warn(`[TikTok] OAuth callback failed msg=${safeErrorMessage(error)}`);
-      throw new BadRequestException('TikTok connection failed. Please try again.');
+      this.logger.warn(
+        `[TikTok] OAuth callback failed msg=${safeErrorMessage(error)}`,
+      );
+      throw new BadRequestException(
+        'TikTok connection failed. Please try again.',
+      );
     }
   }
 
-  async handleFacebookCallback(workspaceId: string, userId: string, code: string) {
-    if (!process.env.FACEBOOK_APP_ID || !process.env.FACEBOOK_APP_SECRET || !process.env.FACEBOOK_REDIRECT_URI) {
+  async handleFacebookCallback(
+    workspaceId: string,
+    userId: string,
+    code: string,
+  ) {
+    if (
+      !process.env.FACEBOOK_APP_ID ||
+      !process.env.FACEBOOK_APP_SECRET ||
+      !process.env.FACEBOOK_REDIRECT_URI
+    ) {
       throw new BadRequestException('Facebook OAuth is not configured');
     }
     try {
-      const token = await axios.get('https://graph.facebook.com/v20.0/oauth/access_token', {
-        params: {
-          client_id: process.env.FACEBOOK_APP_ID,
-          client_secret: process.env.FACEBOOK_APP_SECRET,
-          redirect_uri: process.env.FACEBOOK_REDIRECT_URI,
-          code,
+      const token = await axios.get(
+        'https://graph.facebook.com/v20.0/oauth/access_token',
+        {
+          params: {
+            client_id: process.env.FACEBOOK_APP_ID,
+            client_secret: process.env.FACEBOOK_APP_SECRET,
+            redirect_uri: process.env.FACEBOOK_REDIRECT_URI,
+            code,
+          },
         },
-      });
+      );
       const accessToken = String(token.data?.access_token || '');
-      if (!accessToken) throw new Error('Facebook token response missing access token');
+      if (!accessToken)
+        throw new Error('Facebook token response missing access token');
       const [me, pages] = await Promise.all([
-        axios.get('https://graph.facebook.com/v20.0/me', { params: { fields: 'id,name,picture', access_token: accessToken } }),
+        axios.get('https://graph.facebook.com/v20.0/me', {
+          params: { fields: 'id,name,picture', access_token: accessToken },
+        }),
         axios.get('https://graph.facebook.com/v20.0/me/accounts', {
-          params: { fields: 'id,name,username,access_token,instagram_business_account{id,username,name,profile_picture_url}', access_token: accessToken },
+          params: {
+            fields:
+              'id,name,username,access_token,instagram_business_account{id,username,name,profile_picture_url}',
+            access_token: accessToken,
+          },
         }),
       ]);
       const pageItems = Array.isArray(pages.data?.data) ? pages.data.data : [];
       const instagramAccounts = pageItems
-        .map((page: any) => page.instagram_business_account ? { ...page.instagram_business_account, pageId: page.id, pageName: page.name } : null)
+        .map((page: any) =>
+          page.instagram_business_account
+            ? {
+                ...page.instagram_business_account,
+                pageId: page.id,
+                pageName: page.name,
+              }
+            : null,
+        )
         .filter(Boolean);
       const expiresIn = Number(token.data?.expires_in || 0);
       return this.upsertAccount({
@@ -310,22 +416,37 @@ export class SocialAccountsService {
             instagramBusinessAccount: page.instagram_business_account ?? null,
           })),
           instagramBusinessAccounts: instagramAccounts,
-          appReview: { publishingEnabled: process.env.META_PUBLISHING_ENABLED === 'true' },
+          appReview: {
+            publishingEnabled: process.env.META_PUBLISHING_ENABLED === 'true',
+          },
         },
       });
     } catch (error) {
-      this.logger.warn(`[Meta] OAuth callback failed msg=${safeErrorMessage(error)}`);
-      throw new BadRequestException('Facebook connection failed. Please try again.');
+      this.logger.warn(
+        `[Meta] OAuth callback failed msg=${safeErrorMessage(error)}`,
+      );
+      throw new BadRequestException(
+        'Facebook connection failed. Please try again.',
+      );
     }
   }
 
   async publish(input: PublishPayload) {
-    if (input.provider === 'YOUTUBE') throw new ConflictException('Use the YouTube adapter for YouTube publishing');
+    if (input.provider === 'YOUTUBE')
+      throw new ConflictException(
+        'Use the YouTube adapter for YouTube publishing',
+      );
     if (input.provider === 'TIKTOK') {
-      throw new ProviderPublishingError('TikTok publishing is not enabled yet. App review approval is required.', 'TIKTOK');
+      throw new ProviderPublishingError(
+        'TikTok publishing is not enabled yet. App review approval is required.',
+        'TIKTOK',
+      );
     }
     if (input.provider === 'FACEBOOK' || input.provider === 'INSTAGRAM') {
-      throw new ProviderPublishingError('Meta publishing is not enabled yet. App review approval is required.', input.provider);
+      throw new ProviderPublishingError(
+        'Meta publishing is not enabled yet. App review approval is required.',
+        input.provider,
+      );
     }
     throw new BadRequestException('Unsupported publishing provider');
   }

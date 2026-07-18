@@ -28,7 +28,7 @@ export function extractScenes(script: string): Scene[] {
     const scenes = Array.isArray(obj?.scenes) ? obj.scenes : [];
     if (!scenes.length) throw new Error('No scenes');
 
-    let mapped = scenes
+    const mapped = scenes
       .map((s: any, i: number) => {
         const narration = String(s.narration ?? '').trim();
         const caption = String(s.caption ?? '').trim();

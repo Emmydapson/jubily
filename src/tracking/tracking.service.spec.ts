@@ -27,8 +27,15 @@ describe('TrackingService', () => {
   });
 
   it('records attributed clicks only for active offers and matching video jobs', async () => {
-    prisma.offer.findFirst.mockResolvedValue({ id: 'offer-1', workspaceId: 'workspace-1' });
-    prisma.videoJob.findUnique.mockResolvedValue({ id: 'job-1', offerId: 'offer-1', workspaceId: 'workspace-1' });
+    prisma.offer.findFirst.mockResolvedValue({
+      id: 'offer-1',
+      workspaceId: 'workspace-1',
+    });
+    prisma.videoJob.findUnique.mockResolvedValue({
+      id: 'job-1',
+      offerId: 'offer-1',
+      workspaceId: 'workspace-1',
+    });
     prisma.click.create.mockResolvedValue({ id: 'click-1' });
 
     await expect(
@@ -70,8 +77,15 @@ describe('TrackingService', () => {
       'Offer not found/disabled',
     );
 
-    prisma.offer.findFirst.mockResolvedValueOnce({ id: 'offer-1', workspaceId: 'workspace-1' });
-    prisma.videoJob.findUnique.mockResolvedValueOnce({ id: 'job-1', offerId: 'other-offer', workspaceId: 'workspace-1' });
+    prisma.offer.findFirst.mockResolvedValueOnce({
+      id: 'offer-1',
+      workspaceId: 'workspace-1',
+    });
+    prisma.videoJob.findUnique.mockResolvedValueOnce({
+      id: 'job-1',
+      offerId: 'other-offer',
+      workspaceId: 'workspace-1',
+    });
 
     await expect(
       service.createClick({ offerId: 'offer-1', videoJobId: 'job-1' }),
@@ -80,8 +94,15 @@ describe('TrackingService', () => {
   });
 
   it('rejects video jobs from another workspace before creating clicks', async () => {
-    prisma.offer.findFirst.mockResolvedValueOnce({ id: 'offer-1', workspaceId: 'workspace-1' });
-    prisma.videoJob.findUnique.mockResolvedValueOnce({ id: 'job-1', offerId: 'offer-1', workspaceId: 'workspace-2' });
+    prisma.offer.findFirst.mockResolvedValueOnce({
+      id: 'offer-1',
+      workspaceId: 'workspace-1',
+    });
+    prisma.videoJob.findUnique.mockResolvedValueOnce({
+      id: 'job-1',
+      offerId: 'offer-1',
+      workspaceId: 'workspace-2',
+    });
 
     await expect(
       service.createClick({ offerId: 'offer-1', videoJobId: 'job-1' }),

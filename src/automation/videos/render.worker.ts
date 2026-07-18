@@ -9,6 +9,7 @@ import { ShotstackServeService } from './shotstack-serve.service';
 import { VideosService } from './videos.service';
 import { MonitoringService } from 'src/monitoring/monitoring.service';
 import { SettingsService } from '../../settings/settings.service';
+import { shotstackHeaders, shotstackRenderStatusUrl } from './shotstack.config';
 
 type RenderWorkerScript = {
   topicId: string | null;
@@ -401,6 +402,33 @@ private async recoverStaleClaims() {
     }
   }
 
+  private shotstackPollingDiagnostics(error: unknown, renderId: string) {
+    if (!axios.isAxiosError(error)) {
+      return {
+        message: 'Shotstack render polling failed',
+        renderId,
+        status: null,
+        response: null,
+        url: null,
+        method: null,
+        hasApiKey: false,
+        axiosCode: null,
+      };
+    }
+
+    const headers = error.config?.headers as Record<string, unknown> | undefined;
+    return {
+      message: 'Shotstack render polling failed',
+      renderId,
+      status: error.response?.status ?? null,
+      response: error.response?.data ?? null,
+      url: error.config?.url ?? null,
+      method: error.config?.method ?? 'get',
+      hasApiKey: Boolean(headers?.['x-api-key'] || headers?.['X-API-Key']),
+      axiosCode: error.code ?? null,
+    };
+  }
+
   async handle(job: RenderWorkerJob) {
    if (job.provider === 'replicate') {
   const completed = await this.releaseClaim(job.id, {
@@ -447,9 +475,9 @@ private async recoverStaleClaims() {
     }
 
     try {
-      // 1) Poll render status (stage render API)
-      const res = await axios.get(`https://api.shotstack.io/stage/render/${renderId}`, {
-        headers: { 'x-api-key': process.env.SHOTSTACK_API_KEY },
+      // 1) Poll render status from the same Shotstack Edit API environment used for creation.
+      const res = await axios.get(shotstackRenderStatusUrl(renderId), {
+        headers: shotstackHeaders(),
         timeout: 20000,
       });
 
@@ -571,6 +599,10 @@ private async recoverStaleClaims() {
       });
 
       // ✅ No Sheets logging for retries
+      this.logger.error({
+        ...this.shotstackPollingDiagnostics(error, renderId),
+        jobId: job.id,
+      });
       this.logger.error(`🔁 Retry job=${job.id} renderId=${renderId}: ${message}`);
       await this.monitoring.warn({
         stage: 'RENDER',

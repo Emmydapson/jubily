@@ -6,7 +6,8 @@ describe('extractScenes duration targeting', () => {
       scenes: Array.from({ length: 8 }, (_, index) => ({
         narration: `Scene ${index + 1} explains one practical step in the routine.`,
         caption: `Step ${index + 1}`,
-        visualPrompt: 'person doing a simple wellness habit, bright natural light, realistic, no text',
+        visualPrompt:
+          'person doing a simple wellness habit, bright natural light, realistic, no text',
         seconds: 5,
       })),
     });
@@ -24,7 +25,8 @@ describe('extractScenes duration targeting', () => {
       scenes: Array.from({ length: 12 }, (_, index) => ({
         narration: `Scene ${index + 1} explains one practical step in the routine.`,
         caption: `Step ${index + 1}`,
-        visualPrompt: 'person doing a simple wellness habit, bright natural light, realistic, no text',
+        visualPrompt:
+          'person doing a simple wellness habit, bright natural light, realistic, no text',
         seconds: 4,
       })),
     });
@@ -38,7 +40,10 @@ describe('extractScenes duration targeting', () => {
   });
 
   it('scales plain text fallback scripts toward the 60-90 second target range', () => {
-    const script = Array.from({ length: 8 }, (_, index) => `Plain text scene ${index + 1} for a wellness video.`).join('\n');
+    const script = Array.from(
+      { length: 8 },
+      (_, index) => `Plain text scene ${index + 1} for a wellness video.`,
+    ).join('\n');
     const scenes = extractScenes(script);
     const total = scenes.reduce((sum, scene) => sum + scene.duration, 0);
 

@@ -1,8 +1,19 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { YoutubeService } from '../common/youtube.service';
 import { AuditService } from '../audit/audit.service';
-import { normalizeAffiliateNiches, normalizeAffiliatePlatforms } from '../affiliates/affiliate.constants';
+import {
+  normalizeAffiliateNiches,
+  normalizeAffiliatePlatforms,
+} from '../affiliates/affiliate.constants';
 
 type WorkspaceProfileInput = {
   countryCode?: string | null;
@@ -37,12 +48,17 @@ export class WorkspacesService {
   }
 
   private defaultWorkspaceName(name?: string | null) {
-    const firstName = String(name || '').trim().split(/\s+/).filter(Boolean)[0];
+    const firstName = String(name || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)[0];
     return firstName ? `${firstName}'s Workspace` : 'My Workspace';
   }
 
   private normalizeCountryCode(value?: string | null) {
-    return String(value || '').trim().toUpperCase();
+    return String(value || '')
+      .trim()
+      .toUpperCase();
   }
 
   private normalizeOptionalText(value?: string | null) {
@@ -70,16 +86,28 @@ export class WorkspacesService {
     } as const;
   }
 
-  private onboardingComplete(workspace: { countryCode?: string | null; countryName?: string | null; affiliateNiches?: string[] | null; affiliatePlatforms?: string[] | null }) {
+  private onboardingComplete(workspace: {
+    countryCode?: string | null;
+    countryName?: string | null;
+    affiliateNiches?: string[] | null;
+    affiliatePlatforms?: string[] | null;
+  }) {
     return Boolean(
       workspace.countryCode &&
-        workspace.countryName &&
-        workspace.affiliateNiches?.length &&
-        workspace.affiliatePlatforms?.length,
+      workspace.countryName &&
+      workspace.affiliateNiches?.length &&
+      workspace.affiliatePlatforms?.length,
     );
   }
 
-  private serializeProfile<T extends { countryCode?: string | null; countryName?: string | null; affiliateNiches?: string[] | null; affiliatePlatforms?: string[] | null }>(workspace: T) {
+  private serializeProfile<
+    T extends {
+      countryCode?: string | null;
+      countryName?: string | null;
+      affiliateNiches?: string[] | null;
+      affiliatePlatforms?: string[] | null;
+    },
+  >(workspace: T) {
     return {
       ...workspace,
       countryCode: workspace.countryCode ?? null,
@@ -102,10 +130,16 @@ export class WorkspacesService {
       countryName: this.normalizeOptionalText(input.countryName),
       affiliateNiches: normalizeAffiliateNiches(input.affiliateNiches),
       affiliatePlatforms: normalizeAffiliatePlatforms(input.affiliatePlatforms),
-      primaryAffiliateLink: this.normalizeOptionalText(input.primaryAffiliateLink) ?? '',
-      affiliateLinks: input.affiliateLinks === undefined ? {} : (input.affiliateLinks as never),
-      preferredContentTone: this.normalizeOptionalText(input.preferredContentTone) ?? '',
-      preferredLanguage: this.normalizeOptionalText(input.preferredLanguage) ?? '',
+      primaryAffiliateLink:
+        this.normalizeOptionalText(input.primaryAffiliateLink) ?? '',
+      affiliateLinks:
+        input.affiliateLinks === undefined
+          ? {}
+          : (input.affiliateLinks as never),
+      preferredContentTone:
+        this.normalizeOptionalText(input.preferredContentTone) ?? '',
+      preferredLanguage:
+        this.normalizeOptionalText(input.preferredLanguage) ?? '',
       targetAudience: this.normalizeOptionalText(input.targetAudience) ?? '',
       contentGoal: this.normalizeOptionalText(input.contentGoal) ?? '',
     };
@@ -113,20 +147,41 @@ export class WorkspacesService {
 
   private profileUpdateData(input: WorkspaceProfileInput) {
     const data: Record<string, unknown> = {};
-    if (input.countryCode !== undefined) data.countryCode = this.normalizeCountryCode(input.countryCode) || null;
-    if (input.countryName !== undefined) data.countryName = this.normalizeOptionalText(input.countryName);
-    if (input.affiliateNiches !== undefined) data.affiliateNiches = normalizeAffiliateNiches(input.affiliateNiches);
-    if (input.affiliatePlatforms !== undefined) data.affiliatePlatforms = normalizeAffiliatePlatforms(input.affiliatePlatforms);
-    if (input.primaryAffiliateLink !== undefined) data.primaryAffiliateLink = this.normalizeOptionalText(input.primaryAffiliateLink);
-    if (input.affiliateLinks !== undefined) data.affiliateLinks = input.affiliateLinks as never;
-    if (input.preferredContentTone !== undefined) data.preferredContentTone = this.normalizeOptionalText(input.preferredContentTone);
-    if (input.preferredLanguage !== undefined) data.preferredLanguage = this.normalizeOptionalText(input.preferredLanguage);
-    if (input.targetAudience !== undefined) data.targetAudience = this.normalizeOptionalText(input.targetAudience);
-    if (input.contentGoal !== undefined) data.contentGoal = this.normalizeOptionalText(input.contentGoal);
+    if (input.countryCode !== undefined)
+      data.countryCode = this.normalizeCountryCode(input.countryCode) || null;
+    if (input.countryName !== undefined)
+      data.countryName = this.normalizeOptionalText(input.countryName);
+    if (input.affiliateNiches !== undefined)
+      data.affiliateNiches = normalizeAffiliateNiches(input.affiliateNiches);
+    if (input.affiliatePlatforms !== undefined)
+      data.affiliatePlatforms = normalizeAffiliatePlatforms(
+        input.affiliatePlatforms,
+      );
+    if (input.primaryAffiliateLink !== undefined)
+      data.primaryAffiliateLink = this.normalizeOptionalText(
+        input.primaryAffiliateLink,
+      );
+    if (input.affiliateLinks !== undefined)
+      data.affiliateLinks = input.affiliateLinks as never;
+    if (input.preferredContentTone !== undefined)
+      data.preferredContentTone = this.normalizeOptionalText(
+        input.preferredContentTone,
+      );
+    if (input.preferredLanguage !== undefined)
+      data.preferredLanguage = this.normalizeOptionalText(
+        input.preferredLanguage,
+      );
+    if (input.targetAudience !== undefined)
+      data.targetAudience = this.normalizeOptionalText(input.targetAudience);
+    if (input.contentGoal !== undefined)
+      data.contentGoal = this.normalizeOptionalText(input.contentGoal);
     return data;
   }
 
-  private async createDefaultWorkspaceForUser(user: { id: string; name?: string | null }) {
+  private async createDefaultWorkspaceForUser(user: {
+    id: string;
+    name?: string | null;
+  }) {
     const name = this.defaultWorkspaceName(user.name);
     const slugBase = this.normalizeSlug(name);
     const slugSuffix = this.normalizeSlug(user.id).slice(0, 8);
@@ -144,7 +199,9 @@ export class WorkspacesService {
           },
         },
       },
-      include: { members: { where: { userId: user.id }, select: { role: true } } },
+      include: {
+        members: { where: { userId: user.id }, select: { role: true } },
+      },
     });
 
     await this.audit.record({
@@ -155,11 +212,18 @@ export class WorkspacesService {
       targetId: workspace.id,
       metadata: { slug: workspace.slug, default: true, recovery: true },
     });
-    this.logger.log({ message: 'Default workspace recovered', userId: user.id, workspaceId: workspace.id });
+    this.logger.log({
+      message: 'Default workspace recovered',
+      userId: user.id,
+      workspaceId: workspace.id,
+    });
     return workspace;
   }
 
-  async createWorkspace(userId: string, dto: { name: string; slug?: string } & WorkspaceProfileInput) {
+  async createWorkspace(
+    userId: string,
+    dto: { name: string; slug?: string } & WorkspaceProfileInput,
+  ) {
     const name = String(dto.name || '').trim();
     const slug = this.normalizeSlug(dto.slug || name);
     if (!name) throw new ConflictException('Workspace name is required');
@@ -186,7 +250,8 @@ export class WorkspacesService {
         include: { members: { where: { userId }, select: { role: true } } },
       });
     } catch (error: any) {
-      if (error?.code === 'P2002') throw new ConflictException('Workspace slug is already in use');
+      if (error?.code === 'P2002')
+        throw new ConflictException('Workspace slug is already in use');
       throw error;
     }
     await this.audit.record({
@@ -197,7 +262,11 @@ export class WorkspacesService {
       targetId: workspace.id,
       metadata: { slug: workspace.slug },
     });
-    this.logger.log({ message: 'Workspace created', userId, workspaceId: workspace.id });
+    this.logger.log({
+      message: 'Workspace created',
+      userId,
+      workspaceId: workspace.id,
+    });
     return workspace;
   }
 
@@ -225,7 +294,9 @@ export class WorkspacesService {
               userId,
               error: error?.message || String(error),
             });
-            throw new InternalServerErrorException('Workspace provisioning failed. Please try again.');
+            throw new InternalServerErrorException(
+              'Workspace provisioning failed. Please try again.',
+            );
           }
         }
 
@@ -235,13 +306,22 @@ export class WorkspacesService {
           role: membership.role,
         }));
         if (workspaces.length === 0) {
-          this.logger.error({ message: 'Workspace recovery returned no workspace', userId });
-          throw new InternalServerErrorException('Workspace provisioning failed. Please try again.');
+          this.logger.error({
+            message: 'Workspace recovery returned no workspace',
+            userId,
+          });
+          throw new InternalServerErrorException(
+            'Workspace provisioning failed. Please try again.',
+          );
         }
       }
     }
 
-    this.logger.debug({ message: 'Workspace list fetched', userId, workspaceCount: workspaces.length });
+    this.logger.debug({
+      message: 'Workspace list fetched',
+      userId,
+      workspaceCount: workspaces.length,
+    });
     return workspaces;
   }
 
@@ -274,18 +354,39 @@ export class WorkspacesService {
     });
   }
 
-  async requireMembership(workspaceId: string, userId: string, roles?: Array<'OWNER' | 'ADMIN' | 'MEMBER'>) {
+  async requireMembership(
+    workspaceId: string,
+    userId: string,
+    roles?: Array<'OWNER' | 'ADMIN' | 'MEMBER'>,
+  ) {
     const member = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
-      select: { role: true, workspace: { select: { id: true, name: true, slug: true } } },
+      select: {
+        role: true,
+        workspace: { select: { id: true, name: true, slug: true } },
+      },
     });
     if (!member) {
-      await this.audit.record({ action: 'PERMISSION_DENIED', workspaceId, userId, metadata: { reason: 'not_member' } });
+      await this.audit.record({
+        action: 'PERMISSION_DENIED',
+        workspaceId,
+        userId,
+        metadata: { reason: 'not_member' },
+      });
       throw new ForbiddenException('Workspace access denied');
     }
 
     if (roles?.length && !roles.includes(member.role)) {
-      await this.audit.record({ action: 'PERMISSION_DENIED', workspaceId, userId, metadata: { reason: 'insufficient_workspace_role', role: member.role, required: roles } });
+      await this.audit.record({
+        action: 'PERMISSION_DENIED',
+        workspaceId,
+        userId,
+        metadata: {
+          reason: 'insufficient_workspace_role',
+          role: member.role,
+          required: roles,
+        },
+      });
       throw new ForbiddenException('Insufficient workspace role');
     }
 
@@ -299,14 +400,15 @@ export class WorkspacesService {
     });
     if (!workspace) throw new NotFoundException('Workspace not found');
 
-    const [offers, topics, scripts, videoJobs, published, youtube] = await Promise.all([
-      this.prisma.offer.count({ where: { workspaceId } }),
-      this.prisma.topic.count({ where: { workspaceId } }),
-      this.prisma.script.count({ where: { workspaceId } }),
-      this.prisma.videoJob.count({ where: { workspaceId } }),
-      this.prisma.videoJob.count({ where: { workspaceId, published: true } }),
-      this.youtube.getWorkspaceChannelDiagnostics(workspaceId),
-    ]);
+    const [offers, topics, scripts, videoJobs, published, youtube] =
+      await Promise.all([
+        this.prisma.offer.count({ where: { workspaceId } }),
+        this.prisma.topic.count({ where: { workspaceId } }),
+        this.prisma.script.count({ where: { workspaceId } }),
+        this.prisma.videoJob.count({ where: { workspaceId } }),
+        this.prisma.videoJob.count({ where: { workspaceId, published: true } }),
+        this.youtube.getWorkspaceChannelDiagnostics(workspaceId),
+      ]);
 
     return {
       workspace,
@@ -327,7 +429,8 @@ export class WorkspacesService {
   async updateProfile(workspaceId: string, dto: WorkspaceProfileInput) {
     await this.requireWorkspaceExists(workspaceId);
     const data = this.profileUpdateData(dto);
-    if (Object.keys(data).length === 0) throw new BadRequestException('At least one profile field is required');
+    if (Object.keys(data).length === 0)
+      throw new BadRequestException('At least one profile field is required');
     const workspace = await this.prisma.workspace.update({
       where: { id: workspaceId },
       data,
@@ -349,18 +452,28 @@ export class WorkspacesService {
     return this.youtube.getWorkspaceChannelDiagnostics(workspaceId);
   }
 
-  async recordYoutubeConnected(workspaceId: string, userId: string, channel?: { channelId?: string | null; title?: string | null }) {
+  async recordYoutubeConnected(
+    workspaceId: string,
+    userId: string,
+    channel?: { channelId?: string | null; title?: string | null },
+  ) {
     await this.audit.record({
       action: 'YOUTUBE_CONNECTED',
       workspaceId,
       userId,
       targetType: 'WorkspaceYoutubeConnection',
       targetId: workspaceId,
-      metadata: { channelId: channel?.channelId ?? null, title: channel?.title ?? null },
+      metadata: {
+        channelId: channel?.channelId ?? null,
+        title: channel?.title ?? null,
+      },
     });
   }
 
-  async disconnectYoutube(workspaceId: string, actor?: { userId?: string | null }) {
+  async disconnectYoutube(
+    workspaceId: string,
+    actor?: { userId?: string | null },
+  ) {
     const result = await this.youtube.disconnectWorkspace(workspaceId);
     await this.audit.record({
       action: 'YOUTUBE_DISCONNECTED',

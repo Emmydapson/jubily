@@ -7,6 +7,7 @@ import { GoogleTtsService } from '../tts/google-tts.service';
 import { AiImageService } from '../ai/ai-image.service';
 import * as fs from 'fs';
 import * as path from 'path';
+import { shotstackHeaders, shotstackRenderUrl } from './shotstack.config';
 
 type ShotstackValidationIssue = {
   path: string;
@@ -139,12 +140,6 @@ export function serializeShotstackProviderError(error: unknown): SafeShotstackPr
       String(headers['x-request-id'] || headers['x-shotstack-request-id'] || data?.request_id || data?.requestId || '').trim() || null,
     validationMessages: collectValidationMessages(data),
   };
-}
-
-export function shotstackRenderUrl(baseUrl = process.env.SHOTSTACK_BASE_URL || 'https://api.shotstack.io/edit/v1') {
-  const normalized = String(baseUrl || '').trim().replace(/\/+$/, '');
-  if (!normalized) return 'https://api.shotstack.io/edit/v1/render';
-  return normalized.endsWith('/render') ? normalized : `${normalized}/render`;
 }
 
 function clonePayload<T>(payload: T): T {
@@ -341,12 +336,6 @@ export class ShotstackService {
     private readonly tts: GoogleTtsService,
     private readonly aiImages: AiImageService,
   ) {}
-
-  private apiKey(): string {
-    const k = process.env.SHOTSTACK_API_KEY;
-    if (!k) throw new Error('Missing SHOTSTACK_API_KEY');
-    return k;
-  }
 
   // ------------------------
   // ⏱️ duration estimation fallback
@@ -794,11 +783,7 @@ export class ShotstackService {
     let res;
     try {
       res = await axios.post(shotstackRenderUrl(), validation.payload, {
-        headers: {
-          'x-api-key': this.apiKey(),
-          'x-shotstack-stage': 'true',
-          'Content-Type': 'application/json',
-        },
+        headers: shotstackHeaders(),
         timeout: 60000,
       });
     } catch (error) {

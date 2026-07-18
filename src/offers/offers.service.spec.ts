@@ -136,7 +136,11 @@ describe('OffersService', () => {
   });
 
   it('aggregates performance from clicks, conversions, and video jobs', async () => {
-    const offer = { id: 'offer-1', network: 'PARTNERSTACK', name: 'AI Writer Pro' };
+    const offer = {
+      id: 'offer-1',
+      network: 'PARTNERSTACK',
+      name: 'AI Writer Pro',
+    };
     prisma.offer.findUnique.mockResolvedValue(offer);
     prisma.click.count.mockResolvedValue(10);
     prisma.conversion.count.mockResolvedValue(2);
@@ -203,6 +207,8 @@ describe('OffersService', () => {
       workspaceId: 'workspace-2',
     });
 
-    await expect(service.getOne('offer-2', 'workspace-1')).rejects.toThrow('Offer not found');
+    await expect(service.getOne('offer-2', 'workspace-1')).rejects.toThrow(
+      'Offer not found',
+    );
   });
 });

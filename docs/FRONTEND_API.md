@@ -100,6 +100,7 @@ Notes:
 
 - Production YouTube workspace OAuth uses global `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REDIRECT_URI`. Add `https://api.joinjubily.com/api/auth/youtube/callback` as the Google Console authorized redirect URI. Legacy split customer redirect vars only apply when `YOUTUBE_REDIRECT_URI` is absent.
 - `SHOTSTACK_BASE_URL` should normally be the Shotstack edit API base (`https://api.shotstack.io/edit/v1`). If an environment includes `/render`, the backend normalizes it and still posts to exactly `/edit/v1/render`, never `/render/render`.
+- Production Shotstack must use `SHOTSTACK_API_KEY=<production-key>` with `SHOTSTACK_BASE_URL=https://api.shotstack.io/edit/v1`; do not deploy production with `/edit/stage`.
 - `TERMS_VERSION` and `PRIVACY_POLICY_VERSION` are optional. When set, signup stores the current versions with the consent timestamps.
 - Resend sends mail from verified sender addresses; receiving mail for `info@joinjubily.com` still requires an actual mailbox provider.
 - Enable only configured billing providers. If `STRIPE_ENABLED=true`, all Stripe keys and price IDs above are required. If `PAYSTACK_ENABLED=true`, Paystack secret/public keys and all plan codes above are required.

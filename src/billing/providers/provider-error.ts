@@ -10,7 +10,8 @@ type ProviderErrorContext = {
 };
 
 function providerMessage(data: unknown, fallback: unknown) {
-  const payload = data && typeof data === 'object' ? (data as Record<string, any>) : {};
+  const payload =
+    data && typeof data === 'object' ? (data as Record<string, any>) : {};
   return safeErrorMessage(
     payload.message ||
       payload.error ||
@@ -22,15 +23,32 @@ function providerMessage(data: unknown, fallback: unknown) {
 }
 
 function providerReference(data: unknown) {
-  const payload = data && typeof data === 'object' ? (data as Record<string, any>) : {};
-  const reference = payload.reference || payload.data?.reference || payload.id || payload.request_id || null;
+  const payload =
+    data && typeof data === 'object' ? (data as Record<string, any>) : {};
+  const reference =
+    payload.reference ||
+    payload.data?.reference ||
+    payload.id ||
+    payload.request_id ||
+    null;
   return reference == null ? null : safeErrorMessage(reference);
 }
 
-export function logAndThrowProviderError(logger: Logger, error: unknown, context: ProviderErrorContext): never {
-  const statusCode = axios.isAxiosError(error) ? error.response?.status : undefined;
-  const responseData = axios.isAxiosError(error) ? error.response?.data : undefined;
-  const message = providerMessage(responseData, error instanceof Error ? error.message : error);
+export function logAndThrowProviderError(
+  logger: Logger,
+  error: unknown,
+  context: ProviderErrorContext,
+): never {
+  const statusCode = axios.isAxiosError(error)
+    ? error.response?.status
+    : undefined;
+  const responseData = axios.isAxiosError(error)
+    ? error.response?.data
+    : undefined;
+  const message = providerMessage(
+    responseData,
+    error instanceof Error ? error.message : error,
+  );
   const reference = providerReference(responseData);
 
   logger.warn({

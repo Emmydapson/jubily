@@ -16,7 +16,8 @@ describe('ContentQualityService duration gate', () => {
       scenes: Array.from({ length: sceneCount }, (_, index) => ({
         narration: `Scene ${index + 1} gives one practical product comparison step you can repeat before buying.`,
         caption: `Step ${index + 1}`,
-        visualPrompt: 'person comparing affiliate products, slow push in camera movement, bright natural lighting, realistic lifestyle mood, no text',
+        visualPrompt:
+          'person comparing affiliate products, slow push in camera movement, bright natural lighting, realistic lifestyle mood, no text',
         seconds,
       })),
     });
@@ -25,10 +26,14 @@ describe('ContentQualityService duration gate', () => {
   beforeEach(() => {
     ai = {
       rewriteScriptForQuality: jest.fn(),
-      generateTitleCandidates: jest.fn().mockResolvedValue([
-        'The morning energy mistake most people miss',
-      ]),
-      generateYoutubeDescription: jest.fn().mockResolvedValue('Most people miss this simple morning signal.\nSave this for tomorrow.\n#shorts'),
+      generateTitleCandidates: jest
+        .fn()
+        .mockResolvedValue(['The morning energy mistake most people miss']),
+      generateYoutubeDescription: jest
+        .fn()
+        .mockResolvedValue(
+          'Most people miss this simple morning signal.\nSave this for tomorrow.\n#shorts',
+        ),
     };
     service = new ContentQualityService(ai as never);
   });
@@ -68,7 +73,9 @@ describe('ContentQualityService duration gate', () => {
 
     expect(ai.rewriteScriptForQuality).toHaveBeenCalledTimes(2);
     expect(result.reviewStatus).toBe('REJECTED');
-    expect(result.qualityReview.issues).toContain('script should use 8-12 scenes');
+    expect(result.qualityReview.issues).toContain(
+      'script should use 8-12 scenes',
+    );
   });
 
   it('uses affiliate-oriented fallback metadata', async () => {

@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { BillingWebhookAdapter, BillingWebhookVerificationInput } from './billing-webhook-adapter';
+import {
+  BillingWebhookAdapter,
+  BillingWebhookVerificationInput,
+} from './billing-webhook-adapter';
 
 @Injectable()
 export class GenericBillingWebhookAdapter implements BillingWebhookAdapter {
@@ -24,17 +27,36 @@ export class GenericBillingWebhookAdapter implements BillingWebhookAdapter {
     const expected = createHmac('sha256', secret).update(raw).digest('hex');
     const a = Buffer.from(signature);
     const b = Buffer.from(expected);
-    return { valid: a.length === b.length && timingSafeEqual(a, b), reason: 'hmac_sha256' };
+    return {
+      valid: a.length === b.length && timingSafeEqual(a, b),
+      reason: 'hmac_sha256',
+    };
   }
 
   extractEventId(payload: unknown) {
-    const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
-    const data = record.data && typeof record.data === 'object' ? (record.data as Record<string, unknown>) : {};
-    return String(record.id || record.eventId || record.reference || data.id || '').trim() || null;
+    const record =
+      payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>)
+        : {};
+    const data =
+      record.data && typeof record.data === 'object'
+        ? (record.data as Record<string, unknown>)
+        : {};
+    return (
+      String(
+        record.id || record.eventId || record.reference || data.id || '',
+      ).trim() || null
+    );
   }
 
   extractEventType(payload: unknown) {
-    const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
-    return String(record.type || record.event || record.eventType || '').trim() || null;
+    const record =
+      payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>)
+        : {};
+    return (
+      String(record.type || record.event || record.eventType || '').trim() ||
+      null
+    );
   }
 }

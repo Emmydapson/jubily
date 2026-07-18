@@ -62,17 +62,19 @@ describe('SettingsService', () => {
       .mockResolvedValueOnce(created)
       .mockRejectedValueOnce({ code: 'P2002' });
 
-    await expect(Promise.all([service.getSettings(), service.getSettings()])).resolves.toEqual([
-      created,
-      created,
-    ]);
+    await expect(
+      Promise.all([service.getSettings(), service.getSettings()]),
+    ).resolves.toEqual([created, created]);
 
     expect(prisma.appSettings.create).toHaveBeenCalledTimes(2);
     expect(prisma.appSettings.findUnique).toHaveBeenCalledTimes(3);
   });
 
   it('normalizes scheduling settings before persistence', async () => {
-    prisma.appSettings.upsert.mockImplementation(async ({ update }) => ({ id: 'app', ...update }));
+    prisma.appSettings.upsert.mockImplementation(async ({ update }) => ({
+      id: 'app',
+      ...update,
+    }));
 
     await expect(
       service.updateSettings({
@@ -103,27 +105,32 @@ describe('SettingsService', () => {
   });
 
   it('rejects invalid timezone, run hours, and videos-per-day values', async () => {
-    await expect(service.updateSettings({ timezone: 'Mars/Base' })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    await expect(service.updateSettings({ runHours: [9, 24] })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    await expect(service.updateSettings({ videosPerDay: 4 })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.updateSettings({ timezone: 'Mars/Base' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.updateSettings({ runHours: [9, 24] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.updateSettings({ videosPerDay: 4 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.appSettings.upsert).not.toHaveBeenCalled();
   });
 
   it('encrypts integration keys, stores last4 only, and returns masked metadata', async () => {
-    prisma.integrationKey.upsert.mockImplementation(async ({ update, create, select }) => ({
-      provider: create.provider,
-      last4: update.last4,
-      updatedAt: new Date('2026-05-30T12:00:00.000Z'),
-      select,
-    }));
+    prisma.integrationKey.upsert.mockImplementation(
+      async ({ update, create, select }) => ({
+        provider: create.provider,
+        last4: update.last4,
+        updatedAt: new Date('2026-05-30T12:00:00.000Z'),
+        select,
+      }),
+    );
 
-    const result = await service.upsertApiKey('OPENAI' as never, 'sk-prod-abcdef');
+    const result = await service.upsertApiKey(
+      'OPENAI' as never,
+      'sk-prod-abcdef',
+    );
 
     const call = prisma.integrationKey.upsert.mock.calls[0][0];
     expect(call.update.encrypted).not.toContain('sk-prod-abcdef');
@@ -155,6 +162,8 @@ describe('SettingsService', () => {
         createdAt: new Date('2026-05-01T12:00:00.000Z'),
       },
     ]);
-    await expect(service.deleteApiKey('OPENAI' as never)).resolves.toEqual({ ok: true });
+    await expect(service.deleteApiKey('OPENAI' as never)).resolves.toEqual({
+      ok: true,
+    });
   });
 });

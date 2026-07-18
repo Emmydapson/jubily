@@ -13,8 +13,17 @@ import { PublishingAccountsController } from './publishing-accounts.controller';
 
 @Module({
   imports: [PrismaModule, MonitoringModule, AuditModule, WorkspacesModule],
-  providers: [PublishingService, SocialAccountsService, OAuthStateService, AdminGuard],
-  controllers: [PublishingController, SocialOAuthController, PublishingAccountsController],
+  providers: [
+    PublishingService,
+    SocialAccountsService,
+    OAuthStateService,
+    AdminGuard,
+  ],
+  controllers: [
+    PublishingController,
+    SocialOAuthController,
+    PublishingAccountsController,
+  ],
   exports: [SocialAccountsService],
 })
 export class PublishingModule {}

@@ -11,7 +11,9 @@ export type BillingWebhookVerificationResult = {
 
 export interface BillingWebhookAdapter {
   provider: string;
-  verify(input: BillingWebhookVerificationInput): BillingWebhookVerificationResult;
+  verify(
+    input: BillingWebhookVerificationInput,
+  ): BillingWebhookVerificationResult;
   extractEventId(payload: unknown): string | null;
   extractEventType(payload: unknown): string | null;
 }

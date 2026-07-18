@@ -56,7 +56,12 @@ describe('Digistore24Service', () => {
       },
       'passphrase',
     );
-    prisma.click.findUnique.mockResolvedValue({ id: 'click-1', workspaceId: 'workspace-1', offerId: 'offer-1', videoJobId: 'job-1' });
+    prisma.click.findUnique.mockResolvedValue({
+      id: 'click-1',
+      workspaceId: 'workspace-1',
+      offerId: 'offer-1',
+      videoJobId: 'job-1',
+    });
     prisma.videoJob.findUnique.mockResolvedValue({ id: 'job-1' });
     prisma.conversion.create.mockResolvedValue({ id: 'conversion-1' });
 
@@ -86,7 +91,9 @@ describe('Digistore24Service', () => {
   });
 
   it('rejects missing or invalid signatures unless unsigned IPNs are explicitly allowed', async () => {
-    await expect(service.processIpn({ event: 'payment' })).rejects.toThrow('Missing sha_sign');
+    await expect(service.processIpn({ event: 'payment' })).rejects.toThrow(
+      'Missing sha_sign',
+    );
 
     await expect(
       service.processIpn({ event: 'payment', sha_sign: 'invalid' }),
@@ -105,17 +112,25 @@ describe('Digistore24Service', () => {
     ).resolves.toBeUndefined();
     expect(prisma.conversion.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ workspaceId: 'workspace-1', offerId: 'offer-from-product' }),
+        data: expect.objectContaining({
+          workspaceId: 'workspace-1',
+          offerId: 'offer-from-product',
+        }),
       }),
     );
   });
 
   it('rejects unattributed conversions instead of writing broken foreign keys', async () => {
-    const payload = signedPayload({ event: 'payment', product_id: 'unknown' }, 'passphrase');
+    const payload = signedPayload(
+      { event: 'payment', product_id: 'unknown' },
+      'passphrase',
+    );
     prisma.click.findUnique.mockResolvedValue(null);
     prisma.offer.findFirst.mockResolvedValue(null);
 
-    await expect(service.processIpn(payload)).rejects.toThrow('Unable to attribute conversion');
+    await expect(service.processIpn(payload)).rejects.toThrow(
+      'Unable to attribute conversion',
+    );
     expect(prisma.conversion.create).not.toHaveBeenCalled();
   });
 });

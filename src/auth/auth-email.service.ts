@@ -52,7 +52,9 @@ export class AuthEmailService {
   constructor(private readonly prisma?: PrismaService) {}
 
   private isHostedEnvironment() {
-    const env = String(process.env.NODE_ENV || '').trim().toLowerCase();
+    const env = String(process.env.NODE_ENV || '')
+      .trim()
+      .toLowerCase();
     return env === 'production' || env === 'staging';
   }
 
@@ -63,9 +65,17 @@ export class AuthEmailService {
         process.env.PUBLIC_APP_URL ||
         (this.isHostedEnvironment() ? '' : 'http://localhost:3000'),
     ).replace(/\/+$/, '');
-    if (!value) throw new BadRequestException('FRONTEND_URL is required for account email links');
-    if (this.isHostedEnvironment() && /\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(?::|\/|$)/i.test(value)) {
-      throw new BadRequestException('FRONTEND_URL must not use a local host in production or staging');
+    if (!value)
+      throw new BadRequestException(
+        'FRONTEND_URL is required for account email links',
+      );
+    if (
+      this.isHostedEnvironment() &&
+      /\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(?::|\/|$)/i.test(value)
+    ) {
+      throw new BadRequestException(
+        'FRONTEND_URL must not use a local host in production or staging',
+      );
     }
     return value;
   }
@@ -100,7 +110,10 @@ export class AuthEmailService {
     const emailFrom = String(process.env.EMAIL_FROM || '').trim();
     const parsed = /^(.+?)\s*<([^<>]+)>$/.exec(emailFrom);
     if (parsed) {
-      return { name: parsed[1].trim().replace(/^"|"$/g, '') || 'Jubily', address: parsed[2].trim() };
+      return {
+        name: parsed[1].trim().replace(/^"|"$/g, '') || 'Jubily',
+        address: parsed[2].trim(),
+      };
     }
     if (emailFrom) return { name: 'Jubily', address: emailFrom };
 
@@ -111,22 +124,31 @@ export class AuthEmailService {
 
   private resendFromAddress() {
     const from = this.fromAddress();
-    if (!from?.address) throw new BadRequestException('EMAIL_FROM is required for email delivery');
+    if (!from?.address)
+      throw new BadRequestException(
+        'EMAIL_FROM is required for email delivery',
+      );
     return from.name ? `${from.name} <${from.address}>` : from.address;
   }
 
   getProvider(): EmailProvider {
-    const configured = String(process.env.EMAIL_PROVIDER || '').trim().toLowerCase();
+    const configured = String(process.env.EMAIL_PROVIDER || '')
+      .trim()
+      .toLowerCase();
     const provider = configured || (process.env.SMTP_HOST ? 'smtp' : 'log');
-    if (provider === 'log' || provider === 'smtp' || provider === 'resend') return provider;
-    throw new BadRequestException('EMAIL_PROVIDER must be log, smtp, or resend');
+    if (provider === 'log' || provider === 'smtp' || provider === 'resend')
+      return provider;
+    throw new BadRequestException(
+      'EMAIL_PROVIDER must be log, smtp, or resend',
+    );
   }
 
   private createTransporter() {
     return nodemailer.createTransport({
       host: String(process.env.SMTP_HOST || '').trim(),
       port: Number(process.env.SMTP_PORT || 587),
-      secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+      secure:
+        String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
       auth: {
         user: String(process.env.SMTP_USER || ''),
         pass: String(process.env.SMTP_PASSWORD || ''),
@@ -139,7 +161,11 @@ export class AuthEmailService {
     return this.transporter;
   }
 
-  private safeLog(input: Pick<AccountEmailPayload, 'to' | 'userId' | 'type' | 'subject'>, message: string, extra: Record<string, unknown> = {}) {
+  private safeLog(
+    input: Pick<AccountEmailPayload, 'to' | 'userId' | 'type' | 'subject'>,
+    message: string,
+    extra: Record<string, unknown> = {},
+  ) {
     this.logger.log({
       message,
       provider: this.getProvider(),
@@ -151,7 +177,9 @@ export class AuthEmailService {
     });
   }
 
-  private async deliver(input: AccountEmailPayload): Promise<EmailDeliveryResult> {
+  private async deliver(
+    input: AccountEmailPayload,
+  ): Promise<EmailDeliveryResult> {
     const provider = this.getProvider();
     if (provider === 'log') {
       this.safeLog(input, 'Account email logged instead of sent');
@@ -170,7 +198,10 @@ export class AuthEmailService {
     }
 
     const apiKey = String(process.env.RESEND_API_KEY || '').trim();
-    if (!apiKey) throw new BadRequestException('RESEND_API_KEY is required when EMAIL_PROVIDER=resend');
+    if (!apiKey)
+      throw new BadRequestException(
+        'RESEND_API_KEY is required when EMAIL_PROVIDER=resend',
+      );
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -187,10 +218,16 @@ export class AuthEmailService {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const message = typeof body?.message === 'string' ? body.message : `Resend delivery failed (${response.status})`;
+      const message =
+        typeof body?.message === 'string'
+          ? body.message
+          : `Resend delivery failed (${response.status})`;
       throw new Error(message);
     }
-    return { sent: true, messageId: typeof body?.id === 'string' ? body.id : null };
+    return {
+      sent: true,
+      messageId: typeof body?.id === 'string' ? body.id : null,
+    };
   }
 
   private nextAttemptAt(attempts: number) {
@@ -217,7 +254,9 @@ export class AuthEmailService {
     try {
       const result = await this.deliver(input);
 
-      this.safeLog(input, 'Account email sent', { messageId: result.messageId ?? null });
+      this.safeLog(input, 'Account email sent', {
+        messageId: result.messageId ?? null,
+      });
       if (outbox && this.prisma) {
         await this.prisma.emailOutbox.update({
           where: { id: outbox.id },
@@ -281,7 +320,10 @@ export class AuthEmailService {
           },
         });
       }
-      this.safeLog(input, 'Outbox email retry sent', { emailId: email.id, messageId: result.messageId ?? null });
+      this.safeLog(input, 'Outbox email retry sent', {
+        emailId: email.id,
+        messageId: result.messageId ?? null,
+      });
       return { sent: true, messageId: result.messageId ?? null };
     } catch (error: unknown) {
       const message = safeErrorMessage(error);
@@ -299,7 +341,9 @@ export class AuthEmailService {
         });
       }
       this.logger.warn({
-        message: permanent ? 'Outbox email retry permanently failed' : 'Outbox email retry failed',
+        message: permanent
+          ? 'Outbox email retry permanently failed'
+          : 'Outbox email retry failed',
         provider: this.getProvider(),
         emailId: email.id,
         userId: input.userId,

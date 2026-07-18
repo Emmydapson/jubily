@@ -11,7 +11,12 @@ import { OAuthStateService } from '../auth/oauth-state.service';
 @Module({
   imports: [PrismaModule, AuditModule],
   controllers: [WorkspacesController, WorkspaceYoutubeOAuthController],
-  providers: [WorkspacesService, WorkspaceGuard, YoutubeService, OAuthStateService],
+  providers: [
+    WorkspacesService,
+    WorkspaceGuard,
+    YoutubeService,
+    OAuthStateService,
+  ],
   exports: [WorkspacesService, WorkspaceGuard],
 })
 export class WorkspacesModule {}

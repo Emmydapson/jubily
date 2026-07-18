@@ -17,24 +17,28 @@ jest.mock('googleapis', () => {
   return {
     google: {
       auth: {
-        OAuth2: jest.fn((_clientId: string, _clientSecret: string, redirectUri: string) => ({
-          on: jest.fn(),
-          setCredentials: jest.fn(),
-          generateAuthUrl: jest.fn((params: Record<string, string>) => {
-            const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-            url.searchParams.set('redirect_uri', redirectUri);
-            if (params.state) url.searchParams.set('state', params.state);
-            return url.toString();
+        OAuth2: jest.fn(
+          (_clientId: string, _clientSecret: string, redirectUri: string) => ({
+            on: jest.fn(),
+            setCredentials: jest.fn(),
+            generateAuthUrl: jest.fn((params: Record<string, string>) => {
+              const url = new URL(
+                'https://accounts.google.com/o/oauth2/v2/auth',
+              );
+              url.searchParams.set('redirect_uri', redirectUri);
+              if (params.state) url.searchParams.set('state', params.state);
+              return url.toString();
+            }),
+            getToken: jest.fn().mockResolvedValue({
+              tokens: {
+                access_token: 'workspace-access-token',
+                refresh_token: 'workspace-refresh-token',
+                scope: 'workspace-scope',
+                expiry_date: 123,
+              },
+            }),
           }),
-          getToken: jest.fn().mockResolvedValue({
-            tokens: {
-              access_token: 'workspace-access-token',
-              refresh_token: 'workspace-refresh-token',
-              scope: 'workspace-scope',
-              expiry_date: 123,
-            },
-          }),
-        })),
+        ),
       },
       youtube: jest.fn(() => ({
         channels: { list: channelsList },
@@ -67,9 +71,12 @@ describe('YoutubeService diagnostics', () => {
     process.env = { ...oldEnv };
     process.env.YOUTUBE_CLIENT_ID = 'client';
     process.env.YOUTUBE_CLIENT_SECRET = 'secret';
-    process.env.YOUTUBE_REDIRECT_URI = 'https://api.joinjubily.com/api/auth/youtube/callback';
-    process.env.YOUTUBE_ADMIN_REDIRECT_URI = 'https://api.example.com/admin/auth/youtube/callback';
-    process.env.YOUTUBE_CUSTOMER_REDIRECT_URI = 'https://api.example.com/workspaces/youtube/callback';
+    process.env.YOUTUBE_REDIRECT_URI =
+      'https://api.joinjubily.com/api/auth/youtube/callback';
+    process.env.YOUTUBE_ADMIN_REDIRECT_URI =
+      'https://api.example.com/admin/auth/youtube/callback';
+    process.env.YOUTUBE_CUSTOMER_REDIRECT_URI =
+      'https://api.example.com/workspaces/youtube/callback';
     prisma = {
       integrationKey: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -98,7 +105,9 @@ describe('YoutubeService diagnostics', () => {
 
     const adminUrl = service.getAdminAuthUrl('admin-state');
     const customerUrl = service.getCustomerAuthUrl('customer-state');
-    await service.handleWorkspaceAuthCallback('workspace-1', 'oauth-code').catch(() => undefined);
+    await service
+      .handleWorkspaceAuthCallback('workspace-1', 'oauth-code')
+      .catch(() => undefined);
 
     expect(new URL(adminUrl).searchParams.get('redirect_uri')).toBe(
       'https://api.example.com/admin/auth/youtube/callback',
@@ -107,7 +116,9 @@ describe('YoutubeService diagnostics', () => {
     expect(new URL(customerUrl).searchParams.get('redirect_uri')).toBe(
       'https://api.joinjubily.com/api/auth/youtube/callback',
     );
-    expect(new URL(customerUrl).searchParams.get('state')).toBe('customer-state');
+    expect(new URL(customerUrl).searchParams.get('state')).toBe(
+      'customer-state',
+    );
 
     const oauth2 = google.auth.OAuth2 as unknown as jest.Mock;
     expect(oauth2).toHaveBeenCalledWith(
@@ -126,7 +137,8 @@ describe('YoutubeService diagnostics', () => {
     delete process.env.YOUTUBE_ADMIN_REDIRECT_URI;
     delete process.env.YOUTUBE_CUSTOMER_REDIRECT_URI;
     delete process.env.YOUTUBE_REDIRECT_URI;
-    process.env.YOUTUBE_REDIRECT = 'http://localhost:5000/auth/youtube/callback';
+    process.env.YOUTUBE_REDIRECT =
+      'http://localhost:5000/auth/youtube/callback';
     process.env.NODE_ENV = 'development';
     const service = new YoutubeService(prisma as never);
 
@@ -138,7 +150,9 @@ describe('YoutubeService diagnostics', () => {
     );
 
     process.env.NODE_ENV = 'production';
-    expect(() => service.getAdminAuthUrl('state-2')).toThrow('YouTube OAuth is not configured');
+    expect(() => service.getAdminAuthUrl('state-2')).toThrow(
+      'YouTube OAuth is not configured',
+    );
   });
 
   it('uses global YOUTUBE_REDIRECT_URI for workspace/customer OAuth when workspace redirect is missing', () => {
@@ -182,10 +196,13 @@ describe('YoutubeService diagnostics', () => {
   });
 
   it('stores YouTube OAuth tokens per workspace with channel metadata', async () => {
-    process.env.SETTINGS_MASTER_KEY_BASE64 = Buffer.alloc(32, 7).toString('base64');
+    process.env.SETTINGS_MASTER_KEY_BASE64 = Buffer.alloc(32, 7).toString(
+      'base64',
+    );
     const service = new YoutubeService(prisma as never);
     service.getAdminAuthUrl('state-1');
-    const oauthResults = (google.auth.OAuth2 as unknown as jest.Mock).mock.results;
+    const oauthResults = (google.auth.OAuth2 as unknown as jest.Mock).mock
+      .results;
     const oauth = oauthResults[oauthResults.length - 1].value;
     oauth.getToken.mockResolvedValue({
       tokens: {
@@ -202,7 +219,10 @@ describe('YoutubeService diagnostics', () => {
             items: [
               {
                 id: 'UC_WORKSPACE',
-                snippet: { title: 'Workspace Channel', customUrl: '@workspace' },
+                snippet: {
+                  title: 'Workspace Channel',
+                  customUrl: '@workspace',
+                },
               },
             ],
           },
@@ -210,7 +230,9 @@ describe('YoutubeService diagnostics', () => {
       },
     });
 
-    await expect(service.handleWorkspaceAuthCallback('workspace-1', 'oauth-code')).resolves.toEqual(
+    await expect(
+      service.handleWorkspaceAuthCallback('workspace-1', 'oauth-code'),
+    ).resolves.toEqual(
       expect.objectContaining({
         connected: true,
         channelId: 'UC_WORKSPACE',
@@ -358,7 +380,9 @@ describe('YoutubeService diagnostics', () => {
                 snippet: {
                   title: 'First Channel',
                   customUrl: '@first',
-                  thumbnails: { default: { url: 'https://img.example.com/one.jpg' } },
+                  thumbnails: {
+                    default: { url: 'https://img.example.com/one.jpg' },
+                  },
                 },
               },
               {
@@ -366,7 +390,9 @@ describe('YoutubeService diagnostics', () => {
                 snippet: {
                   title: 'Second Channel',
                   customUrl: '@second',
-                  thumbnails: { medium: { url: 'https://img.example.com/two.jpg' } },
+                  thumbnails: {
+                    medium: { url: 'https://img.example.com/two.jpg' },
+                  },
                 },
               },
             ],
@@ -418,7 +444,13 @@ describe('YoutubeService diagnostics', () => {
     });
     mockedGoogle.youtube.mockReturnValueOnce({
       channels: {
-        list: jest.fn().mockRejectedValue(new Error('failed Bearer secret-access-token access_token=secret-access-token')),
+        list: jest
+          .fn()
+          .mockRejectedValue(
+            new Error(
+              'failed Bearer secret-access-token access_token=secret-access-token',
+            ),
+          ),
       },
     });
 
@@ -435,17 +467,23 @@ describe('YoutubeService diagnostics', () => {
   });
 
   it('loads the stored encrypted OAuth token for channel diagnostics', async () => {
-    process.env.SETTINGS_MASTER_KEY_BASE64 = Buffer.alloc(32, 7).toString('base64');
+    process.env.SETTINGS_MASTER_KEY_BASE64 = Buffer.alloc(32, 7).toString(
+      'base64',
+    );
     const updatedAt = new Date('2026-06-03T10:00:00.000Z');
-    const { encrypted } = encryptString(JSON.stringify({
-      access_token: 'stored-access-token',
-      refresh_token: 'stored-refresh-token',
-      scope: 'stored-scope',
-    }));
-    prisma.integrationKey.findUnique.mockImplementation(({ select }: { select: Record<string, boolean> }) => {
-      if (select.encrypted) return Promise.resolve({ encrypted });
-      return Promise.resolve({ updatedAt });
-    });
+    const { encrypted } = encryptString(
+      JSON.stringify({
+        access_token: 'stored-access-token',
+        refresh_token: 'stored-refresh-token',
+        scope: 'stored-scope',
+      }),
+    );
+    prisma.integrationKey.findUnique.mockImplementation(
+      ({ select }: { select: Record<string, boolean> }) => {
+        if (select.encrypted) return Promise.resolve({ encrypted });
+        return Promise.resolve({ updatedAt });
+      },
+    );
     const service = new YoutubeService(prisma as never);
     mockedGoogle.youtube.mockReturnValueOnce({
       channels: {
@@ -454,7 +492,10 @@ describe('YoutubeService diagnostics', () => {
             items: [
               {
                 id: 'UC_STORED',
-                snippet: { title: 'Stored Token Channel', customUrl: '@stored' },
+                snippet: {
+                  title: 'Stored Token Channel',
+                  customUrl: '@stored',
+                },
               },
             ],
           },
@@ -470,15 +511,18 @@ describe('YoutubeService diagnostics', () => {
         subscriberCount: null,
         videoCount: null,
         statistics: null,
-      scope: 'stored-scope',
-    }),
+        scope: 'stored-scope',
+      }),
     );
-    const oauthResults = (google.auth.OAuth2 as unknown as jest.Mock).mock.results;
+    const oauthResults = (google.auth.OAuth2 as unknown as jest.Mock).mock
+      .results;
     const oauth = oauthResults[oauthResults.length - 1].value;
-    expect(oauth.setCredentials).toHaveBeenCalledWith(expect.objectContaining({
-      access_token: 'stored-access-token',
-      refresh_token: 'stored-refresh-token',
-    }));
+    expect(oauth.setCredentials).toHaveBeenCalledWith(
+      expect.objectContaining({
+        access_token: 'stored-access-token',
+        refresh_token: 'stored-refresh-token',
+      }),
+    );
     expect(google.youtube).toHaveBeenCalledWith({ version: 'v3', auth: oauth });
   });
 
@@ -510,7 +554,8 @@ describe('YoutubeService diagnostics', () => {
         statistics: null,
         targetChannelId: 'UC_TARGET',
         channelMatchesTarget: false,
-        error: 'Connected YouTube channel does not match target channel UC_TARGET',
+        error:
+          'Connected YouTube channel does not match target channel UC_TARGET',
       }),
     );
   });
@@ -519,7 +564,8 @@ describe('YoutubeService diagnostics', () => {
     process.env.YOUTUBE_TARGET_CHANNEL_ID = 'UC_TARGET';
     const service = new YoutubeService(prisma as never);
     service.getAdminAuthUrl('state-1');
-    const oauthResults = (google.auth.OAuth2 as unknown as jest.Mock).mock.results;
+    const oauthResults = (google.auth.OAuth2 as unknown as jest.Mock).mock
+      .results;
     const oauth = oauthResults[oauthResults.length - 1].value;
     oauth.getToken.mockResolvedValue({
       tokens: {
@@ -568,7 +614,12 @@ describe('YoutubeService diagnostics', () => {
     });
 
     await expect(
-      service.upload('Title', 'Description', 'https://cdn.example.com/video.mp4', []),
+      service.upload(
+        'Title',
+        'Description',
+        'https://cdn.example.com/video.mp4',
+        [],
+      ),
     ).rejects.toThrow('does not match target channel UC_TARGET');
     expect(mockedAxios.get).not.toHaveBeenCalled();
   });

@@ -9,7 +9,10 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { OFFER_NETWORKS, OFFER_NICHES } from '../offer.constants';
-import { normalizeAffiliateNiche, normalizeAffiliatePlatform } from '../../affiliates/affiliate.constants';
+import {
+  normalizeAffiliateNiche,
+  normalizeAffiliatePlatform,
+} from '../../affiliates/affiliate.constants';
 
 export class CreateOfferDto {
   @ApiProperty({ enum: OFFER_NETWORKS, example: 'PARTNERSTACK' })

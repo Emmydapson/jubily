@@ -7,8 +7,14 @@ import { AuthEmailService } from './auth-email.service';
 export class EmailOutboxWorker {
   private readonly logger = new Logger(EmailOutboxWorker.name);
   private running = false;
-  private readonly maxAttempts = Math.max(1, Number(process.env.EMAIL_OUTBOX_MAX_ATTEMPTS || 5));
-  private readonly batchSize = Math.min(50, Math.max(1, Number(process.env.EMAIL_OUTBOX_BATCH_SIZE || 10)));
+  private readonly maxAttempts = Math.max(
+    1,
+    Number(process.env.EMAIL_OUTBOX_MAX_ATTEMPTS || 5),
+  );
+  private readonly batchSize = Math.min(
+    50,
+    Math.max(1, Number(process.env.EMAIL_OUTBOX_BATCH_SIZE || 10)),
+  );
 
   constructor(
     private readonly prisma: PrismaService,

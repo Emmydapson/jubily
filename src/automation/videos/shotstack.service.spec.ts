@@ -5,9 +5,9 @@ import {
   sanitizeShotstackEffect,
   serializeShotstackProviderError,
   ShotstackService,
-  shotstackRenderUrl,
   validateShotstackPayload,
 } from './shotstack.service';
+import { shotstackRenderUrl } from './shotstack.config';
 import { Scene } from './interfaces/scene.interface';
 
 jest.mock('axios');
@@ -46,7 +46,7 @@ describe('ShotstackService payload validation', () => {
     jest.resetAllMocks();
     process.env = {
       ...oldEnv,
-      SHOTSTACK_API_KEY: 'test-shotstack-key',
+      SHOTSTACK_API_KEY: ' test-shotstack-key ',
       MUSIC_DEFAULT: 'https://cdn.example.com/music.mp3',
       SFX_POP: 'https://cdn.example.com/pop.mp3',
       DEBUG_SHOTSTACK_PAYLOAD: 'false',
@@ -63,12 +63,16 @@ describe('ShotstackService payload validation', () => {
       }),
     };
     aiImages = {
-      generateMultipleScenes: jest.fn().mockResolvedValue([
-        'https://cdn.example.com/image-1.jpg',
-        'https://cdn.example.com/image-2.jpg',
-      ]),
+      generateMultipleScenes: jest
+        .fn()
+        .mockResolvedValue([
+          'https://cdn.example.com/image-1.jpg',
+          'https://cdn.example.com/image-2.jpg',
+        ]),
     };
-    mockedAxios.post.mockResolvedValue({ data: { response: { id: 'render-1' } } });
+    mockedAxios.post.mockResolvedValue({
+      data: { response: { id: 'render-1' } },
+    });
 
     service = new ShotstackService(tts as never, aiImages as never);
   });
@@ -86,11 +90,15 @@ describe('ShotstackService payload validation', () => {
   }
 
   function imageClips(payload: any) {
-    return allClips(payload).filter((clip: any) => clip.asset?.type === 'image');
+    return allClips(payload).filter(
+      (clip: any) => clip.asset?.type === 'image',
+    );
   }
 
   function audioClips(payload: any) {
-    return allClips(payload).filter((clip: any) => clip.asset?.type === 'audio');
+    return allClips(payload).filter(
+      (clip: any) => clip.asset?.type === 'audio',
+    );
   }
 
   function subtitleClips(payload: any) {
@@ -131,7 +139,11 @@ describe('ShotstackService payload validation', () => {
           {
             clips: [
               {
-                asset: { type: 'image', src: 'https://cdn.example.com/a.jpg', fit: 'cover' },
+                asset: {
+                  type: 'image',
+                  src: 'https://cdn.example.com/a.jpg',
+                  fit: 'cover',
+                },
                 start: 0,
                 length: 1,
               },
@@ -157,9 +169,30 @@ describe('ShotstackService payload validation', () => {
         tracks: [
           {
             clips: [
-              { asset: { type: 'image', src: 'https://cdn.example.com/a.jpg' }, start: 0, length: 1, position: 'center' },
-              { asset: { type: 'video', src: 'https://cdn.example.com/a.mp4', trim: 0 }, start: 1, length: 2 },
-              { asset: { type: 'audio', src: 'https://cdn.example.com/a.mp3', volume: 0.4 }, start: 0, length: 3 },
+              {
+                asset: { type: 'image', src: 'https://cdn.example.com/a.jpg' },
+                start: 0,
+                length: 1,
+                position: 'center',
+              },
+              {
+                asset: {
+                  type: 'video',
+                  src: 'https://cdn.example.com/a.mp4',
+                  trim: 0,
+                },
+                start: 1,
+                length: 2,
+              },
+              {
+                asset: {
+                  type: 'audio',
+                  src: 'https://cdn.example.com/a.mp3',
+                  volume: 0.4,
+                },
+                start: 0,
+                length: 3,
+              },
             ],
           },
         ],
@@ -168,7 +201,9 @@ describe('ShotstackService payload validation', () => {
     });
 
     expect(issues).toEqual([]);
-    expect(payload.timeline.tracks[0].clips.map((clip: any) => clip.asset.type)).toEqual(['image', 'video', 'audio']);
+    expect(
+      payload.timeline.tracks[0].clips.map((clip: any) => clip.asset.type),
+    ).toEqual(['image', 'video', 'audio']);
   });
 
   it('only allows Shotstack-supported effect names', () => {
@@ -182,8 +217,18 @@ describe('ShotstackService payload validation', () => {
         tracks: [
           {
             clips: [
-              { asset: { type: 'image', src: 'a.jpg' }, start: 0, length: 1, effect: 'fadeIn' },
-              { asset: { type: 'image', src: 'b.jpg' }, start: 1, length: 1, effect: 'zoomOutSlow' },
+              {
+                asset: { type: 'image', src: 'a.jpg' },
+                start: 0,
+                length: 1,
+                effect: 'fadeIn',
+              },
+              {
+                asset: { type: 'image', src: 'b.jpg' },
+                start: 1,
+                length: 1,
+                effect: 'zoomOutSlow',
+              },
             ],
           },
         ],
@@ -201,11 +246,22 @@ describe('ShotstackService payload validation', () => {
       output: { format: 'webm', aspectRatio: '2:1' },
     });
 
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: 'timeline.tracks[0].clips', code: 'INVALID_TIMELINE' }),
-      expect.objectContaining({ path: 'output.format', code: 'INVALID_OUTPUT' }),
-      expect.objectContaining({ path: 'output.aspectRatio', code: 'INVALID_OUTPUT' }),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'timeline.tracks[0].clips',
+          code: 'INVALID_TIMELINE',
+        }),
+        expect.objectContaining({
+          path: 'output.format',
+          code: 'INVALID_OUTPUT',
+        }),
+        expect.objectContaining({
+          path: 'output.aspectRatio',
+          code: 'INVALID_OUTPUT',
+        }),
+      ]),
+    );
   });
 
   it('removes unsupported clip-level fields before sending to Shotstack', () => {
@@ -231,10 +287,18 @@ describe('ShotstackService payload validation', () => {
     const clip = payload.timeline.tracks[0].clips[0];
     expect(clip.fit).toBeUndefined();
     expect(clip.position).toBeUndefined();
-    expect(issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: 'timeline.tracks[0].clips[0].fit', code: 'UNSUPPORTED_CLIP_PROPERTY_REMOVED' }),
-      expect.objectContaining({ path: 'timeline.tracks[0].clips[0].position', code: 'UNSUPPORTED_CLIP_PROPERTY_REMOVED' }),
-    ]));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'timeline.tracks[0].clips[0].fit',
+          code: 'UNSUPPORTED_CLIP_PROPERTY_REMOVED',
+        }),
+        expect.objectContaining({
+          path: 'timeline.tracks[0].clips[0].position',
+          code: 'UNSUPPORTED_CLIP_PROPERTY_REMOVED',
+        }),
+      ]),
+    );
   });
 
   it('clamps negative start values before posting to Shotstack', async () => {
@@ -244,12 +308,22 @@ describe('ShotstackService payload validation', () => {
     expect(starts.every((start: number) => start >= 0)).toBe(true);
   });
 
-
   it('constructs Shotstack render URLs without duplicating the render path', () => {
-    expect(shotstackRenderUrl()).toBe('https://api.shotstack.io/edit/v1/render');
-    expect(shotstackRenderUrl('https://api.shotstack.io/edit/v1')).toBe('https://api.shotstack.io/edit/v1/render');
-    expect(shotstackRenderUrl('https://api.shotstack.io/edit/v1/render')).toBe('https://api.shotstack.io/edit/v1/render');
-    expect(shotstackRenderUrl('https://api.shotstack.io/edit/v1/render/')).toBe('https://api.shotstack.io/edit/v1/render');
+    expect(shotstackRenderUrl()).toBe(
+      'https://api.shotstack.io/edit/v1/render',
+    );
+    expect(shotstackRenderUrl('https://api.shotstack.io/edit/v1')).toBe(
+      'https://api.shotstack.io/edit/v1/render',
+    );
+    expect(shotstackRenderUrl(' https://api.shotstack.io/edit/v1/ ')).toBe(
+      'https://api.shotstack.io/edit/v1/render',
+    );
+    expect(shotstackRenderUrl('https://api.shotstack.io/edit/v1/render')).toBe(
+      'https://api.shotstack.io/edit/v1/render',
+    );
+    expect(shotstackRenderUrl('https://api.shotstack.io/edit/v1/render/')).toBe(
+      'https://api.shotstack.io/edit/v1/render',
+    );
   });
   it('posts a valid timeline payload without invalid asset.fit, volume, or effect fields', async () => {
     await service.renderVideo(scenes, 'job-1');
@@ -268,8 +342,16 @@ describe('ShotstackService payload validation', () => {
         }),
       }),
     );
-    expect(clips.some((clip: any) => Object.prototype.hasOwnProperty.call(clip, 'volume'))).toBe(false);
-    expect(clips.some((clip: any) => Object.prototype.hasOwnProperty.call(clip.asset || {}, 'fit'))).toBe(false);
+    expect(
+      clips.some((clip: any) =>
+        Object.prototype.hasOwnProperty.call(clip, 'volume'),
+      ),
+    ).toBe(false);
+    expect(
+      clips.some((clip: any) =>
+        Object.prototype.hasOwnProperty.call(clip.asset || {}, 'fit'),
+      ),
+    ).toBe(false);
     expect(
       clips
         .map((clip: any) => clip.effect)
@@ -277,9 +359,40 @@ describe('ShotstackService payload validation', () => {
         .every((effect: string) => sanitizeShotstackEffect(effect) === effect),
     ).toBe(true);
     expect(payload.timeline.tracks).toHaveLength(5);
-    expect(images.every((clip: any) => clip.asset.src && clip.start >= 0 && clip.length > 0 && clip.position === 'center')).toBe(true);
-    expect(audios.every((clip: any) => clip.asset.src && clip.start >= 0 && clip.length > 0)).toBe(true);
-    expect(payload.output).toEqual(expect.objectContaining({ format: 'mp4', aspectRatio: '9:16' }));
+    expect(
+      images.every(
+        (clip: any) =>
+          clip.asset.src &&
+          clip.start >= 0 &&
+          clip.length > 0 &&
+          clip.position === 'center',
+      ),
+    ).toBe(true);
+    expect(
+      audios.every(
+        (clip: any) => clip.asset.src && clip.start >= 0 && clip.length > 0,
+      ),
+    ).toBe(true);
+    expect(payload.output).toEqual(
+      expect.objectContaining({ format: 'mp4', aspectRatio: '9:16' }),
+    );
+  });
+
+  it('does not use Shotstack staging for production render creation by default', async () => {
+    await service.renderVideo(scenes, 'job-1');
+
+    const url = mockedAxios.post.mock.calls[0][0];
+    expect(url).toBe('https://api.shotstack.io/edit/v1/render');
+    expect(url).not.toContain('/edit/stage');
+    expect(mockedAxios.post.mock.calls[0][2]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'x-api-key': 'test-shotstack-key',
+        }),
+      }),
+    );
   });
 
   it('saves the sanitized Shotstack payload JSON only when debug payloads are enabled', async () => {
@@ -289,10 +402,14 @@ describe('ShotstackService payload validation', () => {
     const result = await service.renderVideo(scenes, jobId);
 
     const dir = path.resolve(process.cwd(), 'tmp', 'shotstack-payloads');
-    const file = fs.readdirSync(dir).find((name) => name.startsWith(`${jobId}-`) && name.endsWith('.json'));
+    const file = fs
+      .readdirSync(dir)
+      .find((name) => name.startsWith(`${jobId}-`) && name.endsWith('.json'));
     expect(file).toBeDefined();
     expect(result.shotstackPayloadDebugPath).toBe(path.join(dir, file || ''));
-    const payload = JSON.parse(fs.readFileSync(path.join(dir, file || ''), 'utf8'));
+    const payload = JSON.parse(
+      fs.readFileSync(path.join(dir, file || ''), 'utf8'),
+    );
     expect(payload.timeline.tracks).toBeDefined();
     expect(payload.output).toEqual(expect.objectContaining({ format: 'mp4' }));
   });
@@ -332,25 +449,41 @@ describe('ShotstackService payload validation', () => {
     await service.renderVideo(scenes, 'job-1');
 
     const images = imageClips(postedPayload());
-    const timingKeys = images.map((clip: any) => `${clip.start}:${clip.length}`);
+    const timingKeys = images.map(
+      (clip: any) => `${clip.start}:${clip.length}`,
+    );
     expect(new Set(timingKeys).size).toBe(images.length);
   });
 
   it('rejects duplicate image clip start and duration pairs before posting', () => {
     expect(() =>
-      (service as never as { verifyImageClipTiming: (clips: any[], jobId?: string) => void }).verifyImageClipTiming([
-        { start: 0, length: 10 },
-        { start: 0, length: 10 },
-      ], 'job-1'),
+      (
+        service as never as {
+          verifyImageClipTiming: (clips: any[], jobId?: string) => void;
+        }
+      ).verifyImageClipTiming(
+        [
+          { start: 0, length: 10 },
+          { start: 0, length: 10 },
+        ],
+        'job-1',
+      ),
     ).toThrow('Image clips must have unique start/duration pairs');
   });
 
   it('rejects image clips with timeline gaps or overlaps before posting', () => {
     expect(() =>
-      (service as never as { verifyImageClipsSequential: (clips: any[], jobId?: string) => void }).verifyImageClipsSequential([
-        { start: 0, length: 10 },
-        { start: 12, length: 10 },
-      ], 'job-1'),
+      (
+        service as never as {
+          verifyImageClipsSequential: (clips: any[], jobId?: string) => void;
+        }
+      ).verifyImageClipsSequential(
+        [
+          { start: 0, length: 10 },
+          { start: 12, length: 10 },
+        ],
+        'job-1',
+      ),
     ).toThrow('Image clips must be sequential');
   });
 
@@ -358,16 +491,35 @@ describe('ShotstackService payload validation', () => {
     await service.renderVideo(scenes, 'job-1');
 
     const images = imageClips(postedPayload());
-    const renderEnd = images.reduce((max: number, clip: any) => Math.max(max, clip.start + clip.length), 0);
-    expect(images.every((clip: any) => !(clip.start === 0 && clip.length >= renderEnd))).toBe(true);
+    const renderEnd = images.reduce(
+      (max: number, clip: any) => Math.max(max, clip.start + clip.length),
+      0,
+    );
+    expect(
+      images.every(
+        (clip: any) => !(clip.start === 0 && clip.length >= renderEnd),
+      ),
+    ).toBe(true);
   });
 
   it('rejects full-timeline image clips before posting when multiple image clips exist', () => {
     expect(() =>
-      (service as never as { verifyNoFullTimelineImageClip: (clips: any[], renderEnd: number, jobId?: string) => void }).verifyNoFullTimelineImageClip([
-        { start: 0, length: 75 },
-        { start: 25, length: 25 },
-      ], 75, 'job-1'),
+      (
+        service as never as {
+          verifyNoFullTimelineImageClip: (
+            clips: any[],
+            renderEnd: number,
+            jobId?: string,
+          ) => void;
+        }
+      ).verifyNoFullTimelineImageClip(
+        [
+          { start: 0, length: 75 },
+          { start: 25, length: 25 },
+        ],
+        75,
+        'job-1',
+      ),
     ).toThrow('Image clips must not cover the full timeline');
   });
 
@@ -390,7 +542,10 @@ describe('ShotstackService payload validation', () => {
     await service.renderVideo(scenes, 'job-1');
 
     const images = imageClips(postedPayload());
-    const total = images.reduce((sum: number, clip: any) => sum + clip.length, 0);
+    const total = images.reduce(
+      (sum: number, clip: any) => sum + clip.length,
+      0,
+    );
     expect(total).toBe(75);
     expect(images.map((clip: any) => clip.length)).toEqual([37.5, 37.5]);
     expect(tts.synthesizeWithMarksToCloudinaryMp3).toHaveBeenCalledWith(
@@ -411,16 +566,19 @@ describe('ShotstackService payload validation', () => {
       'https://cdn.example.com/image-3.jpg',
     ]);
 
-    await service.renderVideo([
-      ...scenes,
-      {
-        index: 2,
-        narration: 'Finish with one repeatable action',
-        caption: 'Repeatable action',
-        duration: 2,
-        visualPrompt: 'habit tracker card',
-      },
-    ], 'job-1');
+    await service.renderVideo(
+      [
+        ...scenes,
+        {
+          index: 2,
+          narration: 'Finish with one repeatable action',
+          caption: 'Repeatable action',
+          duration: 2,
+          visualPrompt: 'habit tracker card',
+        },
+      ],
+      'job-1',
+    );
 
     const images = imageClips(postedPayload());
     expect(images).toHaveLength(3);
@@ -450,7 +608,10 @@ describe('ShotstackService payload validation', () => {
     const images = imageClips(payload);
     const renderLength = payload.timeline.tracks
       .flatMap((track: any) => track.clips)
-      .reduce((max: number, clip: any) => Math.max(max, clip.start + clip.length), 0);
+      .reduce(
+        (max: number, clip: any) => Math.max(max, clip.start + clip.length),
+        0,
+      );
 
     expect(images).toHaveLength(2);
     expect(images.every((clip: any) => clip.length < renderLength)).toBe(true);
@@ -470,8 +631,14 @@ describe('ShotstackService payload validation', () => {
 
     const images = imageClips(postedPayload());
     expect(images.map((clip: any) => clip.start)).toEqual([0, 37.5]);
-    expect(images.map((clip: any) => clip.asset.fit)).toEqual([undefined, undefined]);
-    expect(images.map((clip: any) => clip.position)).toEqual(['center', 'center']);
+    expect(images.map((clip: any) => clip.asset.fit)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(images.map((clip: any) => clip.position)).toEqual([
+      'center',
+      'center',
+    ]);
   });
 
   it('throws a sanitized provider error for Shotstack validation failures', async () => {
@@ -482,7 +649,9 @@ describe('ShotstackService payload validation', () => {
         data: {
           error: {
             message: 'Validation failed for timeline.',
-            details: ['Unknown property "fit" at timeline.tracks[1].clips[0].asset'],
+            details: [
+              'Unknown property "fit" at timeline.tracks[1].clips[0].asset',
+            ],
           },
         },
       },
@@ -492,7 +661,8 @@ describe('ShotstackService payload validation', () => {
     });
 
     await expect(service.renderVideo(scenes, 'job-1')).rejects.toMatchObject({
-      publicMessage: 'Video render failed because the render payload was invalid.',
+      publicMessage:
+        'Video render failed because the render payload was invalid.',
       safe: {
         statusCode: 400,
         requestId: 'req-1',
@@ -508,7 +678,10 @@ describe('ShotstackService payload validation', () => {
     const safe = serializeShotstackProviderError({
       response: {
         status: 400,
-        headers: { 'x-shotstack-request-id': 'req-2', 'x-api-key': 'secret-key' },
+        headers: {
+          'x-shotstack-request-id': 'req-2',
+          'x-api-key': 'secret-key',
+        },
         data: { error: { message: 'Validation failed for timeline.' } },
       },
       config: { headers: { 'x-api-key': 'secret-key' } },
@@ -529,9 +702,13 @@ describe('ShotstackService payload validation', () => {
     const topTrack = payload.timeline.tracks[0];
     const subtitles = subtitleClips(payload);
 
-    expect(topTrack.clips.every((clip: any) => clip.asset.type === 'html')).toBe(true);
+    expect(
+      topTrack.clips.every((clip: any) => clip.asset.type === 'html'),
+    ).toBe(true);
     expect(subtitles.length).toBeGreaterThan(0);
-    expect(subtitles.every((clip: any) => clip.start >= 0 && clip.length > 0)).toBe(true);
+    expect(
+      subtitles.every((clip: any) => clip.start >= 0 && clip.length > 0),
+    ).toBe(true);
     expect(subtitles[0]).toEqual(
       expect.objectContaining({
         position: 'bottom',
@@ -545,6 +722,8 @@ describe('ShotstackService payload validation', () => {
         offset: { x: 0, y: 0.1 },
       }),
     );
-    expect(subtitles.map((clip: any) => clip.asset.html).join(' ')).toContain('Focused');
+    expect(subtitles.map((clip: any) => clip.asset.html).join(' ')).toContain(
+      'Focused',
+    );
   });
 });

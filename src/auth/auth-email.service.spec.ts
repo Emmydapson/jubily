@@ -13,7 +13,10 @@ jest.mock('nodemailer', () => ({
 
 describe('account email templates', () => {
   it('generates verification, reset, and password changed templates', () => {
-    const verification = verificationEmailTemplate({ name: 'Jane', url: 'https://app.test/verify' });
+    const verification = verificationEmailTemplate({
+      name: 'Jane',
+      url: 'https://app.test/verify',
+    });
     expect(verification).toEqual(
       expect.objectContaining({
         subject: 'Verify your Jubily email',
@@ -29,17 +32,24 @@ describe('account email templates', () => {
     expect(verification.html).toContain('#E8D8C6');
     expect(verification.html).toContain('#1F766E');
     expect(verification.html).not.toContain('#B94A48');
-    expect(verification.html).not.toMatch(/#(?:ff6b6b|ff7f50|ff5a5f|e85d75|ef4444|dc2626)/i);
+    expect(verification.html).not.toMatch(
+      /#(?:ff6b6b|ff7f50|ff5a5f|e85d75|ef4444|dc2626)/i,
+    );
     expect(verification.html).toContain('Jubily');
     expect(verification.html).not.toContain('Oneverse');
     expect(verification.text).not.toContain('Oneverse');
-    expect(verification.html).toContain('Contact: <a href="mailto:info@joinjubily.com"');
+    expect(verification.html).toContain(
+      'Contact: <a href="mailto:info@joinjubily.com"',
+    );
     expect(verification.text).toContain('info@joinjubily.com');
     expect(verification.html).toContain('If the button does not work');
     expect(verification.html).toContain('https://app.test/verify');
     expect(verification.html).not.toMatch(/^<p>/);
 
-    const reset = passwordResetEmailTemplate({ name: 'Jane', url: 'https://app.test/reset' });
+    const reset = passwordResetEmailTemplate({
+      name: 'Jane',
+      url: 'https://app.test/reset',
+    });
     expect(reset.text).toContain('https://app.test/reset');
     expect(reset.html).toContain('#FFFDF7');
     expect(reset.html).toContain('Reset password');
@@ -76,7 +86,9 @@ describe('AuthEmailService SMTP delivery', () => {
     };
     sendMail = jest.fn().mockResolvedValue({ messageId: 'message-1' });
     jest.mocked(nodemailer.createTransport).mockReset();
-    jest.mocked(nodemailer.createTransport).mockReturnValue({ sendMail } as never);
+    jest
+      .mocked(nodemailer.createTransport)
+      .mockReturnValue({ sendMail } as never);
   });
 
   afterEach(() => {
@@ -87,7 +99,10 @@ describe('AuthEmailService SMTP delivery', () => {
     const service = new AuthEmailService();
 
     await expect(
-      service.sendVerificationEmail({ id: 'user-1', email: 'user@example.com', name: 'User' }, 'verify-token'),
+      service.sendVerificationEmail(
+        { id: 'user-1', email: 'user@example.com', name: 'User' },
+        'verify-token',
+      ),
     ).resolves.toEqual({ sent: true, messageId: 'message-1' });
 
     expect(nodemailer.createTransport).toHaveBeenCalledWith({
@@ -101,10 +116,14 @@ describe('AuthEmailService SMTP delivery', () => {
         from: { name: 'Jubily', address: 'noreply@joinjubily.com' },
         to: 'user@example.com',
         subject: 'Verify your Jubily email',
-        text: expect.stringContaining('https://joinjubily.com/verify-email?token=verify-token'),
+        text: expect.stringContaining(
+          'https://joinjubily.com/verify-email?token=verify-token',
+        ),
       }),
     );
-    expect(sendMail.mock.calls[0][0].text).not.toContain('https://api.joinjubily.com');
+    expect(sendMail.mock.calls[0][0].text).not.toContain(
+      'https://api.joinjubily.com',
+    );
   });
 
   it('does not fall back to localhost for hosted account email links', async () => {
@@ -115,20 +134,31 @@ describe('AuthEmailService SMTP delivery', () => {
     const service = new AuthEmailService();
 
     expect(() =>
-      service.sendVerificationEmail({ id: 'user-1', email: 'user@example.com' }, 'verify-token'),
+      service.sendVerificationEmail(
+        { id: 'user-1', email: 'user@example.com' },
+        'verify-token',
+      ),
     ).toThrow('FRONTEND_URL is required for account email links');
 
     process.env.FRONTEND_URL = 'http://localhost:3000';
     expect(() =>
-      service.sendPasswordResetEmail({ id: 'user-1', email: 'user@example.com' }, 'reset-token'),
+      service.sendPasswordResetEmail(
+        { id: 'user-1', email: 'user@example.com' },
+        'reset-token',
+      ),
     ).toThrow('FRONTEND_URL must not use a local host');
   });
 
   it('debug logs only the generated email link domain, never the token', async () => {
     const service = new AuthEmailService();
-    const debugSpy = jest.spyOn((service as any).logger, 'debug').mockImplementation(jest.fn());
+    const debugSpy = jest
+      .spyOn((service as any).logger, 'debug')
+      .mockImplementation(jest.fn());
 
-    await service.sendVerificationEmail({ id: 'user-1', email: 'user@example.com' }, 'secret-token');
+    await service.sendVerificationEmail(
+      { id: 'user-1', email: 'user@example.com' },
+      'secret-token',
+    );
 
     expect(JSON.stringify(debugSpy.mock.calls)).toContain('joinjubily.com');
     expect(JSON.stringify(debugSpy.mock.calls)).not.toContain('secret-token');
@@ -137,11 +167,21 @@ describe('AuthEmailService SMTP delivery', () => {
   it('sends password reset and password changed emails', async () => {
     const service = new AuthEmailService();
 
-    await service.sendPasswordResetEmail({ id: 'user-1', email: 'user@example.com' }, 'reset-token');
-    await service.sendPasswordChangedEmail({ id: 'user-1', email: 'user@example.com' });
+    await service.sendPasswordResetEmail(
+      { id: 'user-1', email: 'user@example.com' },
+      'reset-token',
+    );
+    await service.sendPasswordChangedEmail({
+      id: 'user-1',
+      email: 'user@example.com',
+    });
 
-    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ subject: 'Reset your Jubily password' }));
-    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ subject: 'Your Jubily password was changed' }));
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: 'Reset your Jubily password' }),
+    );
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: 'Your Jubily password was changed' }),
+    );
   });
 
   it('handles SMTP failures gracefully', async () => {
@@ -149,7 +189,10 @@ describe('AuthEmailService SMTP delivery', () => {
     const service = new AuthEmailService();
 
     await expect(
-      service.sendPasswordChangedEmail({ id: 'user-1', email: 'user@example.com' }),
+      service.sendPasswordChangedEmail({
+        id: 'user-1',
+        email: 'user@example.com',
+      }),
     ).resolves.toEqual({ sent: false, error: 'smtp unavailable' });
   });
 
@@ -163,7 +206,10 @@ describe('AuthEmailService SMTP delivery', () => {
     };
     const service = new AuthEmailService(prisma as never);
 
-    await service.sendPasswordResetEmail({ id: 'user-1', email: 'user@example.com' }, 'reset-token');
+    await service.sendPasswordResetEmail(
+      { id: 'user-1', email: 'user@example.com' },
+      'reset-token',
+    );
 
     expect(prisma.emailOutbox.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -193,10 +239,15 @@ describe('AuthEmailService SMTP delivery', () => {
       },
     };
     const service = new AuthEmailService(prisma as never);
-    const logSpy = jest.spyOn((service as any).logger, 'log').mockImplementation(jest.fn());
+    const logSpy = jest
+      .spyOn((service as any).logger, 'log')
+      .mockImplementation(jest.fn());
 
     await expect(
-      service.sendVerificationEmail({ id: 'user-1', email: 'user@example.com' }, 'verify-token'),
+      service.sendVerificationEmail(
+        { id: 'user-1', email: 'user@example.com' },
+        'verify-token',
+      ),
     ).resolves.toEqual(expect.objectContaining({ sent: true }));
 
     expect(service.getProvider()).toBe('log');
@@ -223,10 +274,15 @@ describe('AuthEmailService SMTP delivery', () => {
     const originalFetch = global.fetch;
     global.fetch = fetchMock as never;
     const service = new AuthEmailService();
-    const logSpy = jest.spyOn((service as any).logger, 'log').mockImplementation(jest.fn());
+    const logSpy = jest
+      .spyOn((service as any).logger, 'log')
+      .mockImplementation(jest.fn());
 
     await expect(
-      service.sendPasswordResetEmail({ id: 'user-1', email: 'user@example.com' }, 'reset-token'),
+      service.sendPasswordResetEmail(
+        { id: 'user-1', email: 'user@example.com' },
+        'reset-token',
+      ),
     ).resolves.toEqual({ sent: true, messageId: 'resend-1' });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -261,10 +317,15 @@ describe('AuthEmailService SMTP delivery', () => {
       },
     };
     const service = new AuthEmailService(prisma as never);
-    const warnSpy = jest.spyOn((service as any).logger, 'warn').mockImplementation(jest.fn());
+    const warnSpy = jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(jest.fn());
 
     await expect(
-      service.sendPasswordChangedEmail({ id: 'user-1', email: 'user@example.com' }),
+      service.sendPasswordChangedEmail({
+        id: 'user-1',
+        email: 'user@example.com',
+      }),
     ).resolves.toEqual({ sent: false, error: 'invalid api key' });
 
     expect(prisma.emailOutbox.update).toHaveBeenCalledWith({
@@ -282,7 +343,9 @@ describe('AuthEmailService SMTP delivery', () => {
 
   it('retries failed outbox emails and marks permanent failure after the cap', async () => {
     process.env.EMAIL_PROVIDER = 'smtp';
-    sendMail.mockResolvedValueOnce({ messageId: 'retry-1' }).mockRejectedValueOnce(new Error('smtp down'));
+    sendMail
+      .mockResolvedValueOnce({ messageId: 'retry-1' })
+      .mockRejectedValueOnce(new Error('smtp down'));
     const prisma = {
       emailOutbox: {
         update: jest.fn().mockResolvedValue({}),
@@ -304,16 +367,19 @@ describe('AuthEmailService SMTP delivery', () => {
     ).resolves.toEqual({ sent: true, messageId: 'retry-1' });
 
     await expect(
-      service.retryOutboxEmail({
-        id: 'email-2',
-        userId: 'user-1',
-        to: 'user@example.com',
-        type: 'verification',
-        subject: 'Subject',
-        text: 'Text',
-        html: '<p>Text</p>',
-        attempts: 4,
-      }, 5),
+      service.retryOutboxEmail(
+        {
+          id: 'email-2',
+          userId: 'user-1',
+          to: 'user@example.com',
+          type: 'verification',
+          subject: 'Subject',
+          text: 'Text',
+          html: '<p>Text</p>',
+          attempts: 4,
+        },
+        5,
+      ),
     ).resolves.toEqual({ sent: false, error: 'smtp down', permanent: true });
 
     expect(prisma.emailOutbox.update).toHaveBeenCalledWith({

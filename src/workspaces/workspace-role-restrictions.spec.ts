@@ -12,7 +12,12 @@ describe('workspace high-impact role restrictions', () => {
   const ownerAdmin = ['OWNER', 'ADMIN'];
 
   function expectOwnerAdmin(target: object, method: string) {
-    expect(Reflect.getMetadata(WORKSPACE_ROLES_KEY, (target as Record<string, any>)[method])).toEqual(ownerAdmin);
+    expect(
+      Reflect.getMetadata(
+        WORKSPACE_ROLES_KEY,
+        (target as Record<string, any>)[method],
+      ),
+    ).toEqual(ownerAdmin);
   }
 
   it('restricts offer mutations to owners/admins', () => {
@@ -24,12 +29,18 @@ describe('workspace high-impact role restrictions', () => {
 
   it('restricts script edits and review decisions to owners/admins', () => {
     expectOwnerAdmin(AutomationController.prototype, 'updateScript');
-    expectOwnerAdmin(AutomationController.prototype, 'updateScriptReviewStatus');
+    expectOwnerAdmin(
+      AutomationController.prototype,
+      'updateScriptReviewStatus',
+    );
     expectOwnerAdmin(AutomationController.prototype, 'reReviewScript');
   });
 
   it('keeps operator video mutations out of the customer video controller', () => {
-    const prototype = VideosController.prototype as unknown as Record<string, unknown>;
+    const prototype = VideosController.prototype as unknown as Record<
+      string,
+      unknown
+    >;
     expect(prototype.register).toBeUndefined();
     expect(prototype.markPublished).toBeUndefined();
     expect(prototype.markFailed).toBeUndefined();
@@ -52,7 +63,11 @@ describe('workspace high-impact role restrictions', () => {
   });
 
   it('rejects x-workspace-id when it conflicts with a route workspaceId', async () => {
-    const guard = new WorkspaceGuard({} as never, { getAllAndOverride: jest.fn() } as never, { record: jest.fn() } as never);
+    const guard = new WorkspaceGuard(
+      {} as never,
+      { getAllAndOverride: jest.fn() } as never,
+      { record: jest.fn() } as never,
+    );
     const context = {
       switchToHttp: () => ({
         getRequest: () => ({
@@ -66,7 +81,9 @@ describe('workspace high-impact role restrictions', () => {
       getClass: jest.fn(),
     };
 
-    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('rejects workspace members from owner/admin-only video creation routes', async () => {
@@ -78,9 +95,15 @@ describe('workspace high-impact role restrictions', () => {
         }),
       },
     };
-    const reflector = { getAllAndOverride: jest.fn().mockReturnValue(['OWNER', 'ADMIN']) };
+    const reflector = {
+      getAllAndOverride: jest.fn().mockReturnValue(['OWNER', 'ADMIN']),
+    };
     const audit = { record: jest.fn().mockResolvedValue(null) };
-    const guard = new WorkspaceGuard(prisma as never, reflector as never, audit as never);
+    const guard = new WorkspaceGuard(
+      prisma as never,
+      reflector as never,
+      audit as never,
+    );
     const context = {
       switchToHttp: () => ({
         getRequest: () => ({
@@ -94,13 +117,18 @@ describe('workspace high-impact role restrictions', () => {
       getClass: jest.fn(),
     };
 
-    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'PERMISSION_DENIED',
         workspaceId: 'workspace-1',
         userId: 'user-1',
-        metadata: expect.objectContaining({ reason: 'insufficient_workspace_role', role: 'MEMBER' }),
+        metadata: expect.objectContaining({
+          reason: 'insufficient_workspace_role',
+          role: 'MEMBER',
+        }),
       }),
     );
   });

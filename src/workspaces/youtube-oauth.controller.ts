@@ -17,9 +17,12 @@ export class WorkspaceYoutubeOAuthController {
   ) {}
 
   private frontendYoutubeUrl(params: Record<string, string>) {
-    const base = String(process.env.FRONTEND_URL || 'https://joinjubily.com').replace(/\/+$/, '');
+    const base = String(
+      process.env.FRONTEND_URL || 'https://joinjubily.com',
+    ).replace(/\/+$/, '');
     const url = new URL(`${base}/youtube`);
-    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    for (const [key, value] of Object.entries(params))
+      url.searchParams.set(key, value);
     return url.toString();
   }
 
@@ -33,17 +36,34 @@ export class WorkspaceYoutubeOAuthController {
     @Query('code') code?: string,
     @Query('state') state?: string,
   ) {
-    if (!code) return res.redirect(this.frontendYoutubeUrl({ error: 'TOKEN_EXCHANGE_FAILED' }));
+    if (!code)
+      return res.redirect(
+        this.frontendYoutubeUrl({ error: 'TOKEN_EXCHANGE_FAILED' }),
+      );
 
     const pending = await this.oauthStates.consume('workspace_youtube', state);
     if (!pending?.workspaceId || !pending.userId) {
-      return res.redirect(this.frontendYoutubeUrl({ error: 'INVALID_CALLBACK_STATE' }));
+      return res.redirect(
+        this.frontendYoutubeUrl({ error: 'INVALID_CALLBACK_STATE' }),
+      );
     }
 
     try {
-      await this.workspaces.requireMembership(pending.workspaceId, pending.userId, ['OWNER', 'ADMIN']);
-      const channel = await this.youtube.handleWorkspaceAuthCallback(pending.workspaceId, code, pending.userId);
-      await this.workspaces.recordYoutubeConnected(pending.workspaceId, pending.userId, channel);
+      await this.workspaces.requireMembership(
+        pending.workspaceId,
+        pending.userId,
+        ['OWNER', 'ADMIN'],
+      );
+      const channel = await this.youtube.handleWorkspaceAuthCallback(
+        pending.workspaceId,
+        code,
+        pending.userId,
+      );
+      await this.workspaces.recordYoutubeConnected(
+        pending.workspaceId,
+        pending.userId,
+        channel,
+      );
       return res.redirect(this.frontendYoutubeUrl({ connected: 'true' }));
     } catch (error: unknown) {
       if (error instanceof YoutubeOAuthError) {
