@@ -104,16 +104,47 @@ enum RunSlot {
   EVENING
 }
 
+enum VideoGenerationMode {
+  STANDARD
+  AI_MOTION
+}
+
+enum MotionPlanningStatus {
+  NOT_REQUIRED
+  PENDING
+  PLANNED
+  FAILED
+}
+
+enum MotionFallbackPolicy {
+  FALLBACK_TO_STANDARD
+  FAIL_JOB
+}
+
+enum MotionSceneGenerationStatus {
+  PLANNED
+  PROVIDER_CREATED
+  PROCESSING
+  COMPLETED
+  FAILED
+  FALLBACK_APPLIED
+}
+
+enum MotionSceneAssetType {
+  IMAGE
+  VIDEO
+}
+
 model VideoJob {
-  id                        String             @id @default(uuid())
+  id                        String               @id @default(uuid())
   workspaceId               String?
   scriptId                  String
   offerId                   String? // ✅ NEW (store product used for the video)
-  status                    String             @default("PENDING")
+  status                    String               @default("PENDING")
   provider                  String? // 'shotstack' | 'replicate'
   videoUrl                  String?
   youtubeVideoId            String?
-  publishTarget             PublishingProvider @default(YOUTUBE)
+  publishTarget             PublishingProvider   @default(YOUTUBE)
   socialPostId              String?
   socialPostUrl             String?
   publishStage              String? // optional: UPLOADED | METADATA_DONE | CAPTIONS_DONE
@@ -122,30 +153,42 @@ model VideoJob {
   youtubeUrl                String?
   slot                      RunSlot
   scheduledFor              DateTime
-  published                 Boolean            @default(false)
-  attempts                  Int                @default(0)
-  createdAt                 DateTime           @default(now())
+  published                 Boolean              @default(false)
+  attempts                  Int                  @default(0)
+  createdAt                 DateTime             @default(now())
   videoSrt                  String?
   workerLockedAt            DateTime?
   workerLockedBy            String?
   workerStage               String?
   thumbnailPrompt           String?
   thumbnailImageUrl         String?
-  thumbnailStatus           String             @default("PENDING")
+  thumbnailStatus           String               @default("PENDING")
   thumbnailError            String?
   thumbnailGeneratedAt      DateTime?
   durationSeconds           Float?
   sceneCount                Int?
-  hasBurnedSubtitles        Boolean            @default(false)
-  hasTrackingLink           Boolean            @default(false)
+  hasBurnedSubtitles        Boolean              @default(false)
+  hasTrackingLink           Boolean              @default(false)
   shotstackPayloadDebugPath String?
+  generationMode            VideoGenerationMode  @default(STANDARD)
+  motionPlanningStatus      MotionPlanningStatus @default(NOT_REQUIRED)
+  plannedMotionSceneCount   Int?
+  estimatedMotionCredits    Int?
+  motionEstimateFinal       Boolean?
+  motionPricingVersion      String?
+  motionEstimateCreatedAt   DateTime?
+  motionFallbackPolicy      MotionFallbackPolicy @default(FALLBACK_TO_STANDARD)
+  completedMotionSceneCount Int?
+  fallbackMotionSceneCount  Int?
+  motionPlannerVersion      String?
 
   script    Script     @relation(fields: [scriptId], references: [id])
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   offer     Offer?     @relation(fields: [offerId], references: [id]) // ✅ NEW relation
 
-  clicks      Click[]
-  conversions Conversion[]
+  clicks       Click[]
+  conversions  Conversion[]
+  motionScenes VideoJobMotionScene[]
 
   // ✅ NEW: enforce “one job per slot per day”
   @@unique([workspaceId, slot, scheduledFor])
@@ -157,6 +200,40 @@ model VideoJob {
   @@index([youtubeVideoId])
   @@index([publishTarget, published])
   @@index([workerStage, workerLockedAt])
+  @@index([generationMode, motionPlanningStatus])
+}
+
+model VideoJobMotionScene {
+  id                  String                      @id @default(uuid())
+  videoJobId          String
+  sceneIndex          Int
+  sourceSceneIndex    Int
+  idempotencyKey      String                      @unique
+  plannerVersion      String
+  assetType           MotionSceneAssetType        @default(IMAGE)
+  motionEligible      Boolean                     @default(false)
+  motionSelected      Boolean                     @default(false)
+  selectionReason     String?
+  rejectionReason     String?
+  plannedClipDuration Float?
+  prompt              Json?
+  fallbackAssetUrl    String?
+  motionClipUrl       String?
+  provider            String?
+  providerJobId       String?
+  generationStatus    MotionSceneGenerationStatus @default(PLANNED)
+  attempt             Int                         @default(1)
+  failureCode         String?
+  failureMessage      String?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+
+  videoJob VideoJob @relation(fields: [videoJobId], references: [id], onDelete: Cascade)
+
+  @@unique([videoJobId, sceneIndex, plannerVersion, attempt])
+  @@index([videoJobId])
+  @@index([generationStatus])
+  @@index([providerJobId])
 }
 
 model Offer {

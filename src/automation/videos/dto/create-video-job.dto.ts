@@ -2,6 +2,10 @@ import { IsIn, IsISO8601, IsOptional, IsUUID } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { SLOT_ORDER } from '../../time.utils';
 import type { Slot } from '../../time.utils';
+import {
+  VIDEO_GENERATION_MODES,
+  VideoGenerationMode,
+} from '../generation-mode';
 
 export class CreateVideoJobDto {
   @ApiPropertyOptional({
@@ -31,4 +35,16 @@ export class CreateVideoJobDto {
   @IsOptional()
   @IsISO8601()
   scheduledFor?: string;
+
+  @ApiPropertyOptional({
+    enum: VIDEO_GENERATION_MODES,
+    example: VideoGenerationMode.STANDARD,
+    description:
+      'Optional generation mode. Omitted values resolve to STANDARD for backward compatibility.',
+  })
+  @IsOptional()
+  @IsIn(VIDEO_GENERATION_MODES, {
+    message: 'generationMode must be STANDARD or AI_MOTION',
+  })
+  generationMode?: VideoGenerationMode;
 }

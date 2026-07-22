@@ -160,4 +160,26 @@ describe('Standard image video mode', () => {
       ]),
     );
   });
+
+  it('accepts hybrid image and muted video visual clips in validation', () => {
+    const result = validateStandardTimeline({
+      imageClips: [
+        {
+          asset: { type: 'image', src: 'https://cdn.example.com/1.jpg' },
+          start: 0,
+          length: 3,
+        },
+        {
+          asset: { type: 'video', src: 'https://cdn.example.com/motion.mp4' },
+          start: 3,
+          length: 3,
+        },
+      ],
+      subtitleClips: [{ start: 0, length: 2 }],
+      renderEnd: 6,
+      hasCtaOutro: true,
+    });
+
+    expect(result.valid).toBe(true);
+  });
 });

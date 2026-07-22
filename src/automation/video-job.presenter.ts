@@ -31,6 +31,16 @@ type VideoJobWithRelations = {
   hasBurnedSubtitles?: boolean | null;
   hasTrackingLink?: boolean | null;
   shotstackPayloadDebugPath?: string | null;
+  generationMode?: string | null;
+  motionPlanningStatus?: string | null;
+  plannedMotionSceneCount?: number | null;
+  estimatedMotionCredits?: number | null;
+  motionEstimateFinal?: boolean | null;
+  motionPricingVersion?: string | null;
+  motionFallbackPolicy?: string | null;
+  completedMotionSceneCount?: number | null;
+  fallbackMotionSceneCount?: number | null;
+  motionPlannerVersion?: string | null;
   offer?: { id: string; name: string } | null;
   script?: { id: string; topic?: { id: string; title: string } | null } | null;
 };
@@ -56,6 +66,17 @@ export type VideoJobSummary = {
   videoUrl: string | null;
   youtubeUrl: string | null;
   youtubeVideoId: string | null;
+  generationMode: string;
+  motion?: {
+    planningStatus: string;
+    plannedSceneCount: number;
+    estimatedCredits: number | null;
+    estimateFinal: boolean;
+    fallbackPolicy: string;
+    completedSceneCount: number;
+    fallbackSceneCount: number;
+    plannerVersion: string | null;
+  };
   hasCaptions: boolean;
   worker: {
     lockedAt: Date | null;
@@ -102,6 +123,21 @@ export function presentVideoJob(job: VideoJobWithRelations): VideoJobSummary {
     videoUrl: job.videoUrl ?? null,
     youtubeUrl: job.youtubeUrl ?? null,
     youtubeVideoId: job.youtubeVideoId ?? null,
+    generationMode: job.generationMode ?? 'STANDARD',
+    ...(job.generationMode === 'AI_MOTION'
+      ? {
+          motion: {
+            planningStatus: job.motionPlanningStatus ?? 'PENDING',
+            plannedSceneCount: job.plannedMotionSceneCount ?? 0,
+            estimatedCredits: job.estimatedMotionCredits ?? null,
+            estimateFinal: Boolean(job.motionEstimateFinal),
+            fallbackPolicy: job.motionFallbackPolicy ?? 'FALLBACK_TO_STANDARD',
+            completedSceneCount: job.completedMotionSceneCount ?? 0,
+            fallbackSceneCount: job.fallbackMotionSceneCount ?? 0,
+            plannerVersion: job.motionPlannerVersion ?? null,
+          },
+        }
+      : {}),
     hasCaptions: Boolean(job.videoSrt),
     worker: {
       lockedAt: job.workerLockedAt ?? null,

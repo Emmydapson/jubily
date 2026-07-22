@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { VideosService } from './videos.service';
 import { ShotstackProviderError } from './shotstack.service';
 
@@ -13,6 +13,7 @@ describe('VideosService quality gate', () => {
       updateMany: jest.Mock;
     };
     topic: { updateMany: jest.Mock };
+    workspace: { findUnique: jest.Mock };
   };
   let shotstack: { renderVideo: jest.Mock };
   let billing: {
@@ -23,6 +24,8 @@ describe('VideosService quality gate', () => {
   let audit: { record: jest.Mock };
   let youtube: { getWorkspaceChannelDiagnostics: jest.Mock };
   let socialAccounts: { listAccounts: jest.Mock; publish: jest.Mock };
+  let aiMotionEligibility: { assertEligible: jest.Mock };
+  let aiMotionOrchestrator: { prepareJob: jest.Mock };
   let service: VideosService;
 
   beforeEach(() => {
@@ -36,6 +39,7 @@ describe('VideosService quality gate', () => {
         updateMany: jest.fn(),
       },
       topic: { updateMany: jest.fn() },
+      workspace: { findUnique: jest.fn() },
     };
     shotstack = { renderVideo: jest.fn() };
     billing = {
@@ -61,6 +65,10 @@ describe('VideosService quality gate', () => {
           ),
         ),
     };
+    aiMotionEligibility = { assertEligible: jest.fn() };
+    aiMotionOrchestrator = {
+      prepareJob: jest.fn().mockResolvedValue(null),
+    };
     service = new VideosService(
       prisma as never,
       shotstack as never,
@@ -68,6 +76,8 @@ describe('VideosService quality gate', () => {
       audit as never,
       youtube as never,
       socialAccounts as never,
+      aiMotionEligibility as never,
+      aiMotionOrchestrator as never,
     );
   });
 
@@ -473,6 +483,7 @@ describe('VideosService quality gate', () => {
     ).resolves.toEqual({
       videoId: 'job-1',
       scriptId: 'script-1',
+      generationMode: 'STANDARD',
       status: 'PROCESSING',
       renderStatus: 'PROCESSING',
       progress: 60,
@@ -485,8 +496,127 @@ describe('VideosService quality gate', () => {
         scriptId: 'script-1',
         workspaceId: 'workspace-1',
         offerId: 'offer-1',
+        generationMode: 'STANDARD',
+        motionPlanningStatus: 'NOT_REQUIRED',
       }),
     });
+  });
+
+  it('rejects AI Motion before job creation when eligibility fails', async () => {
+    prisma.script.findUnique.mockResolvedValue({
+      id: 'script-1',
+      workspaceId: 'workspace-1',
+      reviewStatus: 'APPROVED',
+      content:
+        '{"scenes":[{"narration":"Show the product demo","caption":"Demo","visualPrompt":"product demo","seconds":4}]}',
+    });
+    prisma.workspace.findUnique.mockResolvedValue({
+      id: 'workspace-1',
+      suspended: false,
+    });
+    aiMotionEligibility.assertEligible.mockImplementation(() => {
+      throw new BadRequestException({
+        message: 'AI Motion is not available yet.',
+        code: 'AI_MOTION_DISABLED',
+      });
+    });
+
+    await expect(
+      service.createCustomerVideo(
+        'script-1',
+        { generationMode: 'AI_MOTION' },
+        'workspace-1',
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(prisma.videoJob.create).not.toHaveBeenCalled();
+    expect(aiMotionOrchestrator.prepareJob).not.toHaveBeenCalled();
+  });
+
+  it('stores AI Motion planning metadata and prepares the job before Standard fallback render', async () => {
+    prisma.script.findUnique.mockResolvedValue({
+      id: 'script-1',
+      workspaceId: 'workspace-1',
+      reviewStatus: 'APPROVED',
+      content:
+        '{"scenes":[{"narration":"Show the product demo","caption":"Demo","visualPrompt":"product demo","seconds":4}]}',
+    });
+    prisma.workspace.findUnique.mockResolvedValue({
+      id: 'workspace-1',
+      suspended: false,
+    });
+    prisma.videoJob.create.mockResolvedValue({
+      id: 'job-1',
+      scriptId: 'script-1',
+      workspaceId: 'workspace-1',
+      offerId: null,
+    });
+    jest.spyOn(service, 'startRenderForJob').mockResolvedValue({
+      jobId: 'job-1',
+      renderId: 'render-1',
+      qa: {
+        durationSeconds: 4,
+        sceneCount: 1,
+        hasBurnedSubtitles: true,
+        shotstackPayloadDebugPath: null,
+      },
+    });
+    prisma.videoJob.findUnique.mockResolvedValue({
+      id: 'job-1',
+      scriptId: 'script-1',
+      workspaceId: 'workspace-1',
+      offerId: null,
+      status: 'PROCESSING',
+      provider: 'shotstack',
+      videoUrl: null,
+      youtubeVideoId: null,
+      renderId: 'render-1',
+      error: null,
+      youtubeUrl: null,
+      slot: 'MORNING',
+      scheduledFor: new Date('2026-05-31T09:00:00.000Z'),
+      published: false,
+      attempts: 0,
+      createdAt: new Date('2026-05-31T09:00:00.000Z'),
+      videoSrt: null,
+      generationMode: 'AI_MOTION',
+      motionPlanningStatus: 'PLANNED',
+      plannedMotionSceneCount: 1,
+      estimatedMotionCredits: 4,
+      motionEstimateFinal: false,
+      motionFallbackPolicy: 'FALLBACK_TO_STANDARD',
+      completedMotionSceneCount: 0,
+      fallbackMotionSceneCount: 0,
+      motionPlannerVersion: 'ai-motion-planner-v1',
+      offer: null,
+      script: { id: 'script-1', topic: { id: 'topic-1', title: 'Topic' } },
+    });
+
+    await expect(
+      service.createCustomerVideo(
+        'script-1',
+        { generationMode: 'AI_MOTION' },
+        'workspace-1',
+      ),
+    ).resolves.toMatchObject({
+      videoId: 'job-1',
+      generationMode: 'AI_MOTION',
+      motion: {
+        planningStatus: 'PLANNED',
+        plannedSceneCount: 1,
+        estimatedCredits: 4,
+        estimateFinal: false,
+      },
+    });
+
+    expect(aiMotionEligibility.assertEligible).toHaveBeenCalled();
+    expect(prisma.videoJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        generationMode: 'AI_MOTION',
+        motionPlanningStatus: 'PENDING',
+      }),
+    });
+    expect(aiMotionOrchestrator.prepareJob).toHaveBeenCalledWith('job-1');
   });
 
   it('does not expose worker or render internals in the customer render response', async () => {
@@ -541,6 +671,7 @@ describe('VideosService quality gate', () => {
     expect(response).toEqual({
       videoId: 'job-1',
       scriptId: 'script-1',
+      generationMode: 'STANDARD',
       status: 'PROCESSING',
       renderStatus: 'PROCESSING',
       progress: 60,

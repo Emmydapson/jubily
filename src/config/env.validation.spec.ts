@@ -270,4 +270,49 @@ describe('validateEnv', () => {
       }),
     ).not.toThrow();
   });
+
+  it('validates AI Motion provider flags safely', () => {
+    expect(() =>
+      validateEnv({
+        JWT_SECRET: strongSecret,
+        AI_MOTION_PROVIDER: 'runway',
+      }),
+    ).toThrow('AI_MOTION_PROVIDER must be fake');
+
+    expect(() =>
+      validateEnv({
+        JWT_SECRET: strongSecret,
+        AI_MOTION_ENABLED: 'yes',
+      }),
+    ).toThrow('AI_MOTION_ENABLED must be true or false');
+
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'production',
+        JWT_SECRET: strongSecret,
+        DATABASE_URL: 'postgresql://user:pass@db/app',
+        ADMIN_EMAILS: 'admin@example.com',
+        SETTINGS_MASTER_KEY_BASE64: key,
+        FRONTEND_URL: 'https://joinjubily.com',
+        API_URL: 'https://api.example.com',
+        PUBLIC_API_BASE_URL: 'https://api.example.com',
+        YOUTUBE_PUBLISHING_ENABLED: 'false',
+        OPENAI_API_KEY: 'openai',
+        SHOTSTACK_API_KEY: 'shotstack',
+        SHOTSTACK_OWNER_ID: 'owner',
+        EMAIL_PROVIDER: 'log',
+        EMAIL_FROM: 'Jubily <noreply@joinjubily.com>',
+        AI_MOTION_FAKE_PROVIDER_ENABLED: 'true',
+      }),
+    ).toThrow('AI_MOTION_FAKE_PROVIDER_ENABLED must not be true in production');
+
+    expect(() =>
+      validateEnv({
+        JWT_SECRET: strongSecret,
+        AI_MOTION_ENABLED: 'false',
+        AI_MOTION_PROVIDER: 'fake',
+        AI_MOTION_FAKE_CREDITS_PER_SECOND: '1',
+      }),
+    ).not.toThrow();
+  });
 });

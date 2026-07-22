@@ -419,17 +419,26 @@ export function validateStandardTimeline(input: {
     if (clip.start < 0)
       issues.push({
         code: 'NEGATIVE_START',
-        message: `Image clip ${index} starts before zero`,
+        message: `Visual clip ${index} starts before zero`,
       });
     if (!(clip.length > 0))
       issues.push({
         code: 'INVALID_DURATION',
-        message: `Image clip ${index} has invalid duration`,
+        message: `Visual clip ${index} has invalid duration`,
       });
+    if (
+      clip.asset?.type &&
+      !['image', 'video'].includes(String(clip.asset.type))
+    ) {
+      issues.push({
+        code: 'INVALID_ASSET_URL',
+        message: `Visual clip ${index} has unsupported asset type`,
+      });
+    }
     if (!clip.asset?.src || !/^https?:\/\//i.test(clip.asset.src)) {
       issues.push({
         code: 'INVALID_ASSET_URL',
-        message: `Image clip ${index} has invalid asset URL`,
+        message: `Visual clip ${index} has invalid asset URL`,
       });
     }
     const next = sorted[index + 1];
@@ -438,7 +447,7 @@ export function validateStandardTimeline(input: {
       if (Math.abs(next.start - end) > 0.06) {
         issues.push({
           code: 'GAP_OR_OVERLAP',
-          message: `Image clip ${index} does not meet next clip`,
+          message: `Visual clip ${index} does not meet next clip`,
         });
       }
     }
@@ -461,7 +470,7 @@ export function validateStandardTimeline(input: {
   if (sorted.length > 1 && fullTimeline.length > 0) {
     issues.push({
       code: 'DUPLICATE_FULL_TIMELINE_IMAGE',
-      message: 'A multi-scene render contains a full-timeline image clip',
+      message: 'A multi-scene render contains a full-timeline visual clip',
     });
   }
 

@@ -8,8 +8,12 @@ const WEAK_VALUES = new Set([
   'jwt_secret',
 ]);
 
+function optionalString(value: unknown, fallback = '') {
+  return typeof value === 'string' ? value : fallback;
+}
+
 function requireValue(env: Record<string, unknown>, name: string) {
-  const value = String(env[name] || '').trim();
+  const value = optionalString(env[name]).trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
 }
@@ -57,7 +61,7 @@ function assertEmail(env: Record<string, unknown>, name: string) {
 }
 
 function emailFromAddress(env: Record<string, unknown>) {
-  const emailFrom = String(env.EMAIL_FROM || '').trim();
+  const emailFrom = optionalString(env.EMAIL_FROM).trim();
   const parsed = /^(.+?)\s*<([^<>]+)>$/.exec(emailFrom);
   return parsed ? parsed[2].trim() : emailFrom;
 }
@@ -96,9 +100,7 @@ function requireSmtp(env: Record<string, unknown>) {
 }
 
 function emailProvider(env: Record<string, unknown>) {
-  const configured = String(env.EMAIL_PROVIDER || '')
-    .trim()
-    .toLowerCase();
+  const configured = optionalString(env.EMAIL_PROVIDER).trim().toLowerCase();
   const provider = configured || (env.SMTP_HOST ? 'smtp' : 'log');
   if (!['log', 'smtp', 'resend'].includes(provider)) {
     throw new Error('EMAIL_PROVIDER must be log, smtp, or resend');
@@ -130,11 +132,11 @@ function assertBase64Key(env: Record<string, unknown>, name: string) {
 }
 
 function isEnabled(env: Record<string, unknown>, name: string) {
-  return String(env[name] || 'false').toLowerCase() === 'true';
+  return optionalString(env[name], 'false').toLowerCase() === 'true';
 }
 
 function isDisabled(env: Record<string, unknown>, name: string) {
-  return String(env[name] || '').toLowerCase() === 'false';
+  return optionalString(env[name]).toLowerCase() === 'false';
 }
 
 function requireYoutubeOAuth(
@@ -143,8 +145,9 @@ function requireYoutubeOAuth(
 ) {
   requireValue(env, 'YOUTUBE_CLIENT_ID');
   requireValue(env, 'YOUTUBE_CLIENT_SECRET');
-  const redirect = String(
-    env.YOUTUBE_REDIRECT_URI || env.YOUTUBE_CUSTOMER_REDIRECT_URI || '',
+  const redirect = (
+    optionalString(env.YOUTUBE_REDIRECT_URI) ||
+    optionalString(env.YOUTUBE_CUSTOMER_REDIRECT_URI)
   ).trim();
   if (!redirect) throw new Error('YOUTUBE_REDIRECT_URI is required');
   assertUrl(
@@ -193,7 +196,7 @@ function assertShotstackConfig(
   options: { production?: boolean } = {},
 ) {
   requireValue(env, 'SHOTSTACK_API_KEY');
-  const baseUrl = String(env.SHOTSTACK_BASE_URL || '').trim();
+  const baseUrl = optionalString(env.SHOTSTACK_BASE_URL).trim();
   if (!baseUrl) return;
 
   assertUrl({ SHOTSTACK_BASE_URL: baseUrl }, 'SHOTSTACK_BASE_URL', {
@@ -215,9 +218,43 @@ function assertShotstackConfig(
   }
 }
 
+function assertAiMotionConfig(
+  env: Record<string, unknown>,
+  options: { production?: boolean } = {},
+) {
+  const provider = optionalString(env.AI_MOTION_PROVIDER, 'fake')
+    .trim()
+    .toLowerCase();
+  if (provider !== 'fake') {
+    throw new Error('AI_MOTION_PROVIDER must be fake');
+  }
+  if (env.AI_MOTION_ENABLED) assertBooleanString(env, 'AI_MOTION_ENABLED');
+  if (env.AI_MOTION_FAKE_PROVIDER_ENABLED)
+    assertBooleanString(env, 'AI_MOTION_FAKE_PROVIDER_ENABLED');
+  if (options.production && isEnabled(env, 'AI_MOTION_FAKE_PROVIDER_ENABLED')) {
+    throw new Error(
+      'AI_MOTION_FAKE_PROVIDER_ENABLED must not be true in production',
+    );
+  }
+  for (const name of [
+    'AI_MOTION_FAKE_CREDITS_PER_SECOND',
+    'AI_MOTION_FAKE_BASE_CREDITS',
+    'AI_MOTION_MAX_ATTEMPTS',
+    'AI_MOTION_REQUEST_TIMEOUT_MS',
+    'AI_MOTION_POLL_INTERVAL_MS',
+    'AI_MOTION_MAX_POLL_DURATION_MS',
+  ]) {
+    if (env[name] == null || env[name] === '') continue;
+    const value = Number(env[name]);
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`${name} must be a non-negative number`);
+    }
+  }
+}
+
 export function validateEnv(config: Record<string, unknown>) {
   const env = { ...config };
-  const nodeEnv = String(env.NODE_ENV || '').toLowerCase();
+  const nodeEnv = optionalString(env.NODE_ENV).toLowerCase();
   const isProduction = nodeEnv === 'production';
   const isHosted = isProduction || nodeEnv === 'staging';
 
@@ -225,7 +262,9 @@ export function validateEnv(config: Record<string, unknown>) {
 
   if (
     env.JWT_EXPIRES_IN &&
-    !/^\d+(\.\d+)?\s*(ms|s|m|h|d|w|y)?$/i.test(String(env.JWT_EXPIRES_IN))
+    !/^\d+(\.\d+)?\s*(ms|s|m|h|d|w|y)?$/i.test(
+      optionalString(env.JWT_EXPIRES_IN),
+    )
   ) {
     throw new Error('JWT_EXPIRES_IN must be a duration like 15m, 1h, or 1d');
   }
@@ -275,6 +314,8 @@ export function validateEnv(config: Record<string, unknown>) {
   if (!isProduction && (env.SHOTSTACK_API_KEY || env.SHOTSTACK_BASE_URL)) {
     assertShotstackConfig(env);
   }
+
+  assertAiMotionConfig(env, { production: isProduction });
 
   if (env.EMAIL_PROVIDER || env.RESEND_API_KEY || env.SMTP_HOST) {
     requireEmailProvider(env, false);

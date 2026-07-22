@@ -1,5 +1,10 @@
 /* eslint-disable prettier/prettier */
-import { ConflictException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RegisterVideoDto } from './dto/register-video.dto';
@@ -16,6 +21,13 @@ import { AuditService } from '../../audit/audit.service';
 import { safeErrorMessage } from '../../common/safe-metadata';
 import { YoutubeService } from '../../common/youtube.service';
 import { SocialAccountsService } from '../../publishing/social-accounts.service';
+import { AiMotionEligibilityService } from './ai-motion-eligibility.service';
+import { AiMotionOrchestratorService } from './ai-motion-orchestrator.service';
+import {
+  MotionPlanningStatus,
+  VideoGenerationMode,
+  resolveVideoGenerationMode,
+} from './generation-mode';
 
 @Injectable()
 export class VideosService {
@@ -26,10 +38,16 @@ export class VideosService {
     private readonly audit: AuditService,
     private readonly youtube: YoutubeService,
     private readonly socialAccounts: SocialAccountsService,
+    private readonly aiMotionEligibility: AiMotionEligibilityService,
+    private readonly aiMotionOrchestrator: AiMotionOrchestratorService,
   ) {}
 
   private publicApiBaseUrl() {
-    const raw = String(process.env.PUBLIC_API_BASE_URL || process.env.JUBILY_API_BASE_URL || '').trim().replace(/\/+$/, '');
+    const raw = String(
+      process.env.PUBLIC_API_BASE_URL || process.env.JUBILY_API_BASE_URL || '',
+    )
+      .trim()
+      .replace(/\/+$/, '');
     if (!raw) return null;
     try {
       const url = new URL(raw);
@@ -40,7 +58,11 @@ export class VideosService {
     }
   }
 
-  private trackingUrl(job: { id: string; offerId?: string | null; youtubeVideoId?: string | null }) {
+  private trackingUrl(job: {
+    id: string;
+    offerId?: string | null;
+    youtubeVideoId?: string | null;
+  }) {
     if (!job.offerId) return null;
     const base = this.publicApiBaseUrl();
     if (!base) return null;
@@ -61,16 +83,29 @@ export class VideosService {
             ? 'PROCESSING'
             : 'SUBMITTED'
         : 'NOT_STARTED',
-      progress: this.progressFor(summary.status, summary.videoUrl, summary.published),
+      progress: this.progressFor(
+        summary.status,
+        summary.videoUrl,
+        summary.published,
+      ),
       trackingUrl: this.trackingUrl({
         id: summary.id,
         offerId: summary.offerId,
         youtubeVideoId: summary.youtubeVideoId,
       }),
+      ...(summary.generationMode === VideoGenerationMode.AI_MOTION
+        ? {
+            motion: summary.motion,
+          }
+        : {}),
     };
   }
 
-  private progressFor(status: string, videoUrl: string | null, published: boolean) {
+  private progressFor(
+    status: string,
+    videoUrl: string | null,
+    published: boolean,
+  ) {
     if (published) return 100;
     if (videoUrl) return 85;
     if (status === VideoJobStatus.Processing) return 60;
@@ -84,19 +119,27 @@ export class VideosService {
       where: { id: jobId },
       include: {
         offer: { select: { id: true, name: true } },
-        script: { select: { id: true, topic: { select: { id: true, title: true } } } },
+        script: {
+          select: { id: true, topic: { select: { id: true, title: true } } },
+        },
       },
     });
 
-    if (!job || (workspaceId !== undefined && job.workspaceId !== workspaceId)) throw new NotFoundException('Job not found');
+    if (!job || (workspaceId !== undefined && job.workspaceId !== workspaceId))
+      throw new NotFoundException('Job not found');
     return this.presentCustomerJob(job);
   }
 
-  private assertScriptApproved(script: { reviewStatus?: string | null; id?: string }) {
+  private assertScriptApproved(script: {
+    reviewStatus?: string | null;
+    id?: string;
+  }) {
     if (script.reviewStatus === 'APPROVED') return;
 
     if (script.reviewStatus === 'REJECTED') {
-      throw new ConflictException('Script is REJECTED and cannot be rendered automatically');
+      throw new ConflictException(
+        'Script is REJECTED and cannot be rendered automatically',
+      );
     }
 
     throw new ConflictException(
@@ -107,10 +150,16 @@ export class VideosService {
   async registerVideo(dto: RegisterVideoDto, workspaceId?: string | null) {
     const job = await this.prisma.videoJob.findUnique({
       where: { id: dto.jobId },
-      select: { id: true, workspaceId: true, youtubeUrl: true, published: true },
+      select: {
+        id: true,
+        workspaceId: true,
+        youtubeUrl: true,
+        published: true,
+      },
     });
 
-    if (!job || (workspaceId !== undefined && job.workspaceId !== workspaceId)) throw new NotFoundException('Job not found');
+    if (!job || (workspaceId !== undefined && job.workspaceId !== workspaceId))
+      throw new NotFoundException('Job not found');
 
     await this.prisma.videoJob.update({
       where: { id: dto.jobId },
@@ -136,7 +185,11 @@ export class VideosService {
     return this.getVideoJobSummary(jobId, workspaceId);
   }
 
-  async markAsFailed(jobId: string, error = 'Marked failed manually', workspaceId?: string | null) {
+  async markAsFailed(
+    jobId: string,
+    error = 'Marked failed manually',
+    workspaceId?: string | null,
+  ) {
     await this.getVideoJobSummary(jobId, workspaceId);
     await this.prisma.videoJob.update({
       where: { id: jobId },
@@ -152,12 +205,23 @@ export class VideosService {
     slot: 'MORNING' | 'AFTERNOON' | 'EVENING',
     scheduledFor: Date,
     workspaceId?: string | null,
+    generationMode?: VideoGenerationMode | string | null,
   ) {
+    const resolvedGenerationMode = resolveVideoGenerationMode(generationMode);
     const script = await this.prisma.script.findUnique({
       where: { id: scriptId },
-      select: { id: true, workspaceId: true, reviewStatus: true },
+      select: {
+        id: true,
+        workspaceId: true,
+        reviewStatus: true,
+        content: true,
+      },
     });
-    if (!script || (workspaceId !== undefined && script.workspaceId !== workspaceId)) throw new NotFoundException('Script not found');
+    if (
+      !script ||
+      (workspaceId !== undefined && script.workspaceId !== workspaceId)
+    )
+      throw new NotFoundException('Script not found');
     this.assertScriptApproved(script);
 
     if (offerId) {
@@ -165,9 +229,29 @@ export class VideosService {
         where: { id: offerId },
         select: { id: true, workspaceId: true },
       });
-      if (!offer || (workspaceId !== undefined && offer.workspaceId !== workspaceId)) {
+      if (
+        !offer ||
+        (workspaceId !== undefined && offer.workspaceId !== workspaceId)
+      ) {
         throw new NotFoundException('Offer not found');
       }
+    }
+
+    if (resolvedGenerationMode === VideoGenerationMode.AI_MOTION) {
+      const scenes = extractScenes(script.content);
+      const targetDurationSeconds = scenes.reduce(
+        (sum, scene) => sum + Number(scene.duration || 0),
+        0,
+      );
+      const workspace = await this.prisma.workspace.findUnique({
+        where: { id: workspaceId ?? script.workspaceId ?? '' },
+        select: { id: true, suspended: true },
+      });
+      this.aiMotionEligibility.assertEligible({
+        workspace,
+        scenes,
+        targetDurationSeconds,
+      });
     }
 
     const workerId = `inline-render-${process.pid}-${randomUUID()}`;
@@ -178,6 +262,11 @@ export class VideosService {
         offerId: offerId ?? null,
         slot,
         scheduledFor,
+        generationMode: resolvedGenerationMode,
+        motionPlanningStatus:
+          resolvedGenerationMode === VideoGenerationMode.AI_MOTION
+            ? MotionPlanningStatus.PENDING
+            : MotionPlanningStatus.NOT_REQUIRED,
         workerLockedAt: new Date(),
         workerLockedBy: workerId,
         workerStage: 'RENDER_START',
@@ -189,17 +278,27 @@ export class VideosService {
         workspaceId: job.workspaceId,
         targetType: 'VideoJob',
         targetId: job.id,
-        metadata: { scriptId, offerId: offerId ?? null, slot },
+        metadata: {
+          scriptId,
+          offerId: offerId ?? null,
+          slot,
+          generationMode: resolvedGenerationMode,
+        },
       });
     }
 
     try {
+      if (resolvedGenerationMode === VideoGenerationMode.AI_MOTION) {
+        await this.aiMotionOrchestrator.prepareJob(job.id);
+      }
       return await this.startRenderForJob(job.id, workerId);
     } catch (error: unknown) {
       const isShotstackProviderError = error instanceof ShotstackProviderError;
       const message = isShotstackProviderError
         ? error.publicMessage
-        : safeErrorMessage(error instanceof Error ? error : 'Failed to create render job');
+        : safeErrorMessage(
+            error instanceof Error ? error : 'Failed to create render job',
+          );
 
       await this.prisma.videoJob.update({
         where: { id: job.id },
@@ -227,21 +326,37 @@ export class VideosService {
 
   async createCustomerVideo(
     scriptId: string,
-    input: { offerId?: string; slot?: 'MORNING' | 'AFTERNOON' | 'EVENING'; scheduledFor?: string },
+    input: {
+      offerId?: string;
+      slot?: 'MORNING' | 'AFTERNOON' | 'EVENING';
+      scheduledFor?: string;
+      generationMode?: string | null;
+    },
     workspaceId: string,
   ) {
     const slot = input.slot ?? 'MORNING';
-    const scheduledFor = input.scheduledFor ? new Date(input.scheduledFor) : new Date();
-    const render = await this.createVideoJob(scriptId, input.offerId, slot, scheduledFor, workspaceId);
+    const scheduledFor = input.scheduledFor
+      ? new Date(input.scheduledFor)
+      : new Date();
+    const render = await this.createVideoJob(
+      scriptId,
+      input.offerId,
+      slot,
+      scheduledFor,
+      workspaceId,
+      input.generationMode,
+    );
     const job = await this.getVideoStatus(render.jobId, workspaceId);
 
     return {
       videoId: job.id,
       scriptId: job.scriptId,
+      generationMode: job.generationMode,
       status: job.status,
       renderStatus: job.renderStatus,
       progress: job.progress,
       trackingUrl: job.trackingUrl,
+      ...(job.motion ? { motion: job.motion } : {}),
       message: render.resumed ? 'Render already started' : 'Render started',
     };
   }
@@ -328,7 +443,11 @@ export class VideosService {
         workspaceId: job.workspaceId,
         targetType: 'VideoJob',
         targetId: job.id,
-        metadata: { renderId: render.renderId, durationSeconds: render.durationSeconds, sceneCount: render.sceneCount },
+        metadata: {
+          renderId: render.renderId,
+          durationSeconds: render.durationSeconds,
+          sceneCount: render.sceneCount,
+        },
       });
     }
 
@@ -344,7 +463,10 @@ export class VideosService {
     };
   }
 
-  async listVideos(query: ListVideosQueryDto, workspaceId?: string | null): Promise<ApiListResponse<VideoJobSummary>> {
+  async listVideos(
+    query: ListVideosQueryDto,
+    workspaceId?: string | null,
+  ): Promise<ApiListResponse<VideoJobSummary>> {
     const page = Math.max(Number(query.page ?? 1), 1);
     const limit = Math.min(Math.max(Number(query.limit ?? 20), 1), 100);
     const skip = (page - 1) * limit;
@@ -381,37 +503,70 @@ export class VideosService {
       this.prisma.videoJob.count({ where }),
     ]);
 
-    return { items: items.map((job) => this.presentCustomerJob(job)), page, limit, total };
+    return {
+      items: items.map((job) => this.presentCustomerJob(job)),
+      page,
+      limit,
+      total,
+    };
   }
 
   async getVideoStatus(jobId: string, workspaceId?: string | null) {
     return this.getVideoJobSummary(jobId, workspaceId);
   }
 
-  async publishVideo(jobId: string, workspaceId?: string | null, input: { target?: 'YOUTUBE' | 'TIKTOK' | 'FACEBOOK' | 'INSTAGRAM' } = {}) {
+  async publishVideo(
+    jobId: string,
+    workspaceId?: string | null,
+    input: { target?: 'YOUTUBE' | 'TIKTOK' | 'FACEBOOK' | 'INSTAGRAM' } = {},
+  ) {
     const target = input.target ?? 'YOUTUBE';
     const job = await this.prisma.videoJob.findUnique({
       where: { id: jobId },
       include: {
         offer: { select: { id: true, name: true } },
-        script: { select: { id: true, reviewStatus: true, topic: { select: { id: true, title: true } } } },
+        script: {
+          select: {
+            id: true,
+            reviewStatus: true,
+            topic: { select: { id: true, title: true } },
+          },
+        },
       },
     });
-    if (!job || (workspaceId !== undefined && job.workspaceId !== workspaceId)) throw new NotFoundException('Job not found');
-    if (!job.workspaceId) throw new BadRequestException('Workspace is required to publish');
-    if (job.script.reviewStatus !== 'APPROVED') throw new ConflictException('Script must be approved before publishing');
+    if (!job || (workspaceId !== undefined && job.workspaceId !== workspaceId))
+      throw new NotFoundException('Job not found');
+    if (!job.workspaceId)
+      throw new BadRequestException('Workspace is required to publish');
+    if (job.script.reviewStatus !== 'APPROVED')
+      throw new ConflictException('Script must be approved before publishing');
     if (job.status !== VideoJobStatus.Completed || !job.renderId) {
       throw new ConflictException('Render must be completed before publishing');
     }
-    if (job.published) return { queued: false, status: 'PUBLISHED', job: this.presentCustomerJob(job) };
+    if (job.published)
+      return {
+        queued: false,
+        status: 'PUBLISHED',
+        job: this.presentCustomerJob(job),
+      };
 
     if (target === 'YOUTUBE') {
-      const youtube = await this.youtube.getWorkspaceChannelDiagnostics(job.workspaceId);
-      if (!youtube.connected) throw new ConflictException('Connect YouTube before publishing');
+      const youtube = await this.youtube.getWorkspaceChannelDiagnostics(
+        job.workspaceId,
+      );
+      if (!youtube.connected)
+        throw new ConflictException('Connect YouTube before publishing');
     } else {
       const accounts = await this.socialAccounts.listAccounts(job.workspaceId);
-      if (!accounts.some((account) => account.provider === target && account.status === 'CONNECTED')) {
-        throw new ConflictException(`Connect ${target.toLowerCase()} before publishing`);
+      if (
+        !accounts.some(
+          (account) =>
+            account.provider === target && account.status === 'CONNECTED',
+        )
+      ) {
+        throw new ConflictException(
+          `Connect ${target.toLowerCase()} before publishing`,
+        );
       }
     }
 
@@ -437,13 +592,21 @@ export class VideosService {
         where: { id: job.id },
         include: {
           offer: { select: { id: true, name: true } },
-          script: { select: { id: true, reviewStatus: true, topic: { select: { id: true, title: true } } } },
+          script: {
+            select: {
+              id: true,
+              reviewStatus: true,
+              topic: { select: { id: true, title: true } },
+            },
+          },
         },
       });
       return {
         queued: false,
         status: current?.published ? 'PUBLISHED' : 'ALREADY_QUEUED',
-        job: current ? this.presentCustomerJob(current) : this.presentCustomerJob(job),
+        job: current
+          ? this.presentCustomerJob(current)
+          : this.presentCustomerJob(job),
       };
     }
 
@@ -461,14 +624,26 @@ export class VideosService {
       where: { id: job.id },
       include: {
         offer: { select: { id: true, name: true } },
-        script: { select: { id: true, reviewStatus: true, topic: { select: { id: true, title: true } } } },
+        script: {
+          select: {
+            id: true,
+            reviewStatus: true,
+            topic: { select: { id: true, title: true } },
+          },
+        },
       },
     });
     return {
       queued: true,
       status: 'QUEUED_FOR_PUBLISH',
-      trackingUrl: this.trackingUrl({ id: job.id, offerId: job.offerId, youtubeVideoId: job.youtubeVideoId }),
-      job: refreshed ? this.presentCustomerJob(refreshed) : this.presentCustomerJob(job),
+      trackingUrl: this.trackingUrl({
+        id: job.id,
+        offerId: job.offerId,
+        youtubeVideoId: job.youtubeVideoId,
+      }),
+      job: refreshed
+        ? this.presentCustomerJob(refreshed)
+        : this.presentCustomerJob(job),
     };
   }
 
@@ -500,7 +675,8 @@ export class VideosService {
       },
     });
 
-    if (!job || (workspaceId !== undefined && job.workspaceId !== workspaceId)) throw new NotFoundException('Job not found');
+    if (!job || (workspaceId !== undefined && job.workspaceId !== workspaceId))
+      throw new NotFoundException('Job not found');
 
     return {
       job: this.presentCustomerJob(job),

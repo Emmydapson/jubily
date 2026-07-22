@@ -57,6 +57,32 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## AI Motion Phase 1
+
+Standard video generation remains the production default. Older clients that omit
+`generationMode` continue to create `STANDARD` jobs through the existing image,
+Shotstack, narration, captions, tracking, and publishing pipeline.
+
+AI Motion is a disabled-by-default backend foundation. It adds the
+provider-independent API contract, Prisma metadata, eligibility checks,
+deterministic scene planning, fake credit estimates, fake provider scaffolding,
+fallback policy, idempotency keys, and hybrid image/video timeline validation.
+It does not call a real AI-video provider and does not deduct or reserve credits.
+
+Safe local defaults:
+
+```bash
+AI_MOTION_ENABLED=false
+AI_MOTION_PROVIDER=fake
+AI_MOTION_FAKE_PROVIDER_ENABLED=false
+```
+
+Focused AI Motion tests:
+
+```bash
+npx jest src/automation/videos/ai-motion-foundation.spec.ts src/automation/videos/ai-motion-orchestrator.service.spec.ts src/automation/videos/standard-video.mode.spec.ts src/automation/videos/videos.service.spec.ts --runInBand
+```
+
 ## Reset Runbook Notes
 
 After a database reset, create the first admin explicitly. Login does not auto-create admins.

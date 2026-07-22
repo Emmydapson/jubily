@@ -19,6 +19,12 @@ import { BillingModule } from '../../billing/billing.module';
 import { AuditModule } from '../../audit/audit.module';
 import { AdminGuard } from '../../auth/admin.guard';
 import { PublishingModule } from '../../publishing/publishing.module';
+import { AiMotionEligibilityService } from './ai-motion-eligibility.service';
+import { MotionPromptBuilder } from './motion-prompt.builder';
+import { MotionScenePlannerService } from './motion-scene-planner.service';
+import { AiMotionCreditEstimatorService } from './ai-motion-credit-estimator.service';
+import { FakeAiMotionProvider } from './fake-ai-motion.provider';
+import { AiMotionOrchestratorService } from './ai-motion-orchestrator.service';
 
 @Module({
   providers: [
@@ -26,16 +32,29 @@ import { PublishingModule } from '../../publishing/publishing.module';
     ShotstackService,
     ShotstackServeService,
     RenderWorker,
-    PublishWorker,     // ✅ add
+    PublishWorker, // ✅ add
     GoogleSheetsService,
-    YoutubeService,    // ✅ add
+    YoutubeService, // ✅ add
     GoogleTtsService,
-     AiImageService,
-     ThumbnailService,
-     AdminGuard,
+    AiImageService,
+    ThumbnailService,
+    AdminGuard,
+    AiMotionEligibilityService,
+    MotionPromptBuilder,
+    MotionScenePlannerService,
+    AiMotionCreditEstimatorService,
+    FakeAiMotionProvider,
+    AiMotionOrchestratorService,
   ],
   controllers: [VideosController, AdminVideosController],
-  exports: [VideosService, YoutubeService,],
-  imports: [MonitoringModule, SettingsModule, WorkspacesModule, BillingModule, AuditModule, PublishingModule],
+  exports: [VideosService, YoutubeService],
+  imports: [
+    MonitoringModule,
+    SettingsModule,
+    WorkspacesModule,
+    BillingModule,
+    AuditModule,
+    PublishingModule,
+  ],
 })
 export class VideosModule {}

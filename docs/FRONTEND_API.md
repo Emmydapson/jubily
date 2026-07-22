@@ -73,6 +73,15 @@ VIDEO_CAPTION_MAX_LINES=2
 VIDEO_ENABLE_IMAGE_MOTION=true
 VIDEO_ENABLE_TRANSITIONS=true
 VIDEO_ENABLE_CTA_OUTRO=true
+AI_MOTION_ENABLED=false
+AI_MOTION_PROVIDER=fake
+AI_MOTION_FAKE_PROVIDER_ENABLED=false
+AI_MOTION_FAKE_CREDITS_PER_SECOND=1
+AI_MOTION_FAKE_BASE_CREDITS=0
+AI_MOTION_MAX_ATTEMPTS=2
+AI_MOTION_REQUEST_TIMEOUT_MS=60000
+AI_MOTION_POLL_INTERVAL_MS=5000
+AI_MOTION_MAX_POLL_DURATION_MS=600000
 TERMS_VERSION=terms-2026-07
 PRIVACY_POLICY_VERSION=privacy-2026-07
 
@@ -107,6 +116,7 @@ Notes:
 - Production YouTube workspace OAuth uses global `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REDIRECT_URI`. Add `https://api.joinjubily.com/api/auth/youtube/callback` as the Google Console authorized redirect URI. Legacy split customer redirect vars only apply when `YOUTUBE_REDIRECT_URI` is absent.
 - `SHOTSTACK_BASE_URL` should normally be the Shotstack edit API base (`https://api.shotstack.io/edit/v1`). If an environment includes `/render`, the backend normalizes it and still posts to exactly `/edit/v1/render`, never `/render/render`.
 - Production Shotstack must use `SHOTSTACK_API_KEY=<production-key>` with `SHOTSTACK_BASE_URL=https://api.shotstack.io/edit/v1`; do not deploy production with `/edit/stage`.
+- AI Motion is a preparatory backend contract only. `AI_MOTION_ENABLED=false` is the safe default, `AI_MOTION_PROVIDER` must be `fake`, and the fake provider must not be enabled in production. No real AI-video provider calls or credit deductions occur in this phase.
 - `TERMS_VERSION` and `PRIVACY_POLICY_VERSION` are optional. When set, signup stores the current versions with the consent timestamps.
 - Resend sends mail from verified sender addresses; receiving mail for `info@joinjubily.com` still requires an actual mailbox provider.
 - Enable only configured billing providers. If `STRIPE_ENABLED=true`, all Stripe keys and price IDs above are required. If `PAYSTACK_ENABLED=true`, Paystack secret/public keys and all plan codes above are required.
@@ -176,6 +186,8 @@ type VideoJobStatus =
   | 'CANCELLED';
 type ScriptReviewStatus = 'PENDING' | 'APPROVED' | 'NEEDS_REVIEW' | 'REJECTED';
 type ThumbnailStatus = 'PENDING' | 'GENERATING' | 'READY' | 'FAILED';
+type VideoGenerationMode = 'STANDARD' | 'AI_MOTION';
+type MotionPlanningStatus = 'NOT_REQUIRED' | 'PENDING' | 'PLANNED' | 'FAILED';
 
 type AffiliateNiche =
   | 'HEALTH_WELLNESS'
@@ -1242,6 +1254,7 @@ Request:
   offerId?: string;       // UUID; offer must belong to active workspace
   slot?: RunSlot;         // defaults to MORNING
   scheduledFor?: string;  // ISO date-time; defaults to now
+  generationMode?: VideoGenerationMode; // defaults to STANDARD
 }
 ```
 
@@ -1251,10 +1264,21 @@ Response:
 {
   videoId: string; // VideoJob.id
   scriptId: string;
+  generationMode: VideoGenerationMode;
   status: VideoJobStatus;
   renderStatus: 'NOT_STARTED' | 'SUBMITTED' | 'PROCESSING' | 'READY';
   progress: number | null;
   trackingUrl: string | null;
+  motion?: {
+    planningStatus: MotionPlanningStatus;
+    plannedSceneCount: number;
+    estimatedCredits: number | null;
+    estimateFinal: false;
+    fallbackPolicy: 'FALLBACK_TO_STANDARD' | 'FAIL_JOB';
+    completedSceneCount: number;
+    fallbackSceneCount: number;
+    plannerVersion: string | null;
+  };
   message: 'Render started' | 'Render already started';
 }
 ```
@@ -1266,6 +1290,10 @@ Rules:
 - Script must belong to the active workspace.
 - Script `reviewStatus` must be `APPROVED`; otherwise the backend returns `409`.
 - Optional `offerId` must belong to the active workspace.
+- Omitted `generationMode` resolves to `STANDARD`; old clients remain compatible.
+- `AI_MOTION` is rejected with a safe `400` while `AI_MOTION_ENABLED=false`.
+- Phase 1 AI Motion uses provider-independent planning only. It stores selected motion scenes, non-final fake credit estimates, fallback policy, and idempotency metadata, then keeps the existing Standard render/publish pipeline as the safe fallback path.
+- Do not show fake credit estimates as billable pricing. No wallet, subscription, checkout, or real credit records are mutated for AI Motion in this phase.
 - Billing video-generation limit is enforced before the render provider is called.
 - Uses the same render service path as `POST /admin/manual-ops/videos/:scriptId/render`.
 - Response is intentionally customer-safe and does not include `renderId`, worker lease fields, provider debug paths, or admin-only internals.
@@ -1283,6 +1311,17 @@ Standard image video mode:
 - The final visual beat is a CTA outro. It should show a short instruction such as `Link in profile`, not a long raw UUID tracking URL.
 - Platform CTA copy is centralized: YouTube Shorts uses channel/profile-link language, normal YouTube uses `Link in the description`, and TikTok/Instagram use `Link in bio`.
 - The public tracking URL can still be included in publishing metadata for attribution and copyable surfaces even when the on-screen CTA says `Link in profile` or `Link in bio`.
+
+AI Motion foundation:
+
+- `AI_MOTION` is disabled by default and is preparatory only. The backend currently supports only a deterministic fake provider scaffold and must not call real AI-video APIs.
+- Standard remains the production default and uses the existing AI image, Shotstack, narration, caption, tracking, and publishing flow.
+- AI Motion planning selects only a subset of scenes for future video clips. Current cap policy is: up to 30 seconds = 2 motion scenes, 31-45 seconds = 3, 46-60 seconds = 4, over 60 seconds = 5.
+- The planner version is `ai-motion-planner-v1`. Scene attempts use deterministic idempotency keys based on job, scene, planner version, and attempt so retries do not duplicate future provider jobs.
+- CTA outro, logos, text-heavy screenshots, disclaimers, and weak motion candidates remain Standard image scenes.
+- The fallback policy defaults to `FALLBACK_TO_STANDARD`. Failed, missing, unsafe, or timed-out future motion clips should continue with Standard assets when fallback is allowed.
+- Credit estimates are internal fake-provider estimates, `estimateFinal: false`, and do not deduct or reserve credits.
+- Hybrid timeline validation can accept trusted image or video visual clips, but provider clip audio should remain muted and Jubily narration remains authoritative.
 
 Publishing metadata:
 
