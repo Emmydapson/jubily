@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { aiMotionConfig } from './ai-motion.config';
 import { Scene } from './interfaces/scene.interface';
+import { MAX_VIDEO_DURATION_SECONDS } from '../content-platform.constants';
 
 export type AiMotionEligibilityCode =
   | 'ELIGIBLE'
@@ -41,7 +42,7 @@ export class AiMotionEligibilityService {
     if (
       !Number.isFinite(input.targetDurationSeconds) ||
       input.targetDurationSeconds < 5 ||
-      input.targetDurationSeconds > 120
+      input.targetDurationSeconds > MAX_VIDEO_DURATION_SECONDS
     ) {
       return {
         eligible: false,

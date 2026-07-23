@@ -385,6 +385,59 @@ describe('VideosService quality gate', () => {
     ).rejects.toThrow('Script not found');
   });
 
+  it('rejects inactive saved offers during customer video creation', async () => {
+    prisma.script.findUnique.mockResolvedValue({
+      id: 'script-1',
+      workspaceId: 'workspace-1',
+      reviewStatus: 'APPROVED',
+      content: JSON.stringify({
+        scenes: Array.from({ length: 4 }, (_, i) => ({
+          narration: `Scene ${i + 1}`,
+          caption: `Scene ${i + 1}`,
+          visualPrompt: 'product demo',
+          seconds: 4,
+        })),
+      }),
+    });
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 'offer-1',
+      workspaceId: 'workspace-1',
+      active: false,
+    });
+
+    await expect(
+      service.createCustomerVideo(
+        'script-1',
+        { offerId: 'offer-1' },
+        'workspace-1',
+      ),
+    ).rejects.toThrow('Offer is inactive');
+
+    expect(prisma.videoJob.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects scripts that exceed the 180 second video limit', async () => {
+    prisma.script.findUnique.mockResolvedValue({
+      id: 'script-1',
+      workspaceId: 'workspace-1',
+      reviewStatus: 'APPROVED',
+      content: JSON.stringify({
+        scenes: Array.from({ length: 37 }, (_, i) => ({
+          narration: `Long scene ${i + 1}`,
+          caption: `Long ${i + 1}`,
+          visualPrompt: 'product demo',
+          seconds: 5,
+        })),
+      }),
+    });
+
+    await expect(
+      service.createCustomerVideo('script-1', {}, 'workspace-1'),
+    ).rejects.toThrow('Video duration cannot exceed 180 seconds');
+
+    expect(prisma.videoJob.create).not.toHaveBeenCalled();
+  });
+
   it('returns customer-safe status with tracking URL', async () => {
     process.env.PUBLIC_API_BASE_URL = 'https://api.jubily.test';
     prisma.videoJob.findUnique.mockResolvedValue({

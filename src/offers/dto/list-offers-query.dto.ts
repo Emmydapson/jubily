@@ -37,11 +37,31 @@ export class ListOffersQueryDto {
   @IsIn(OFFER_NETWORKS)
   network?: string;
 
+  @ApiPropertyOptional({
+    enum: OFFER_NETWORKS,
+    example: 'PARTNERSTACK',
+    description: 'Alias for network.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeAffiliatePlatform(value) ?? value)
+  @IsIn(OFFER_NETWORKS)
+  platform?: string;
+
   @ApiPropertyOptional({ enum: OFFER_NICHES, example: 'AI_SOFTWARE' })
   @IsOptional()
   @Transform(({ value }) => normalizeAffiliateNiche(value) ?? value)
   @IsIn(OFFER_NICHES)
   nicheTag?: string;
+
+  @ApiPropertyOptional({
+    enum: OFFER_NICHES,
+    example: 'AI_SOFTWARE',
+    description: 'Alias for nicheTag.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeAffiliateNiche(value) ?? value)
+  @IsIn(OFFER_NICHES)
+  niche?: string;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
@@ -53,4 +73,9 @@ export class ListOffersQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  @ApiPropertyOptional({ example: 'software', description: 'Alias for q.' })
+  @IsOptional()
+  @IsString()
+  search?: string;
 }

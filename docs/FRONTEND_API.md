@@ -817,6 +817,8 @@ Facebook OAuth stores available Pages and connected Instagram Business Accounts 
 
 Returns workspace publishing accounts for `YOUTUBE`, `TIKTOK`, `FACEBOOK`, and `INSTAGRAM`.
 
+This endpoint is the shared source of truth for both the Publishing page and the YouTube page. It reads unified `SocialAccount` rows first and includes a legacy workspace YouTube connection fallback only when a YouTube social account row does not exist yet.
+
 Response item shape:
 
 ```ts
@@ -825,10 +827,16 @@ Response item shape:
   workspaceId: string;
   provider: "YOUTUBE" | "TIKTOK" | "FACEBOOK" | "INSTAGRAM";
   providerAccountId: string;
+  channelId: string | null;   // YouTube only; otherwise null
+  channelName: string | null; // YouTube only; otherwise null
   displayName: string;
   username: string | null;
   avatarUrl: string | null;
   expiresAt: string | null;
+  reconnectRequired: boolean;
+  publishingReady: boolean;
+  selected: boolean;
+  isDefault: boolean;
   scopes: string[];
   selectedPageId: string | null;
   selectedInstagramBusinessAccountId: string | null;
@@ -836,9 +844,11 @@ Response item shape:
   connectedAt: string;
   updatedAt: string;
   disconnectedAt: string | null;
-  status: "CONNECTED" | "DISCONNECTED";
+  status: "CONNECTED" | "DISCONNECTED" | "REAUTH_REQUIRED" | "APP_REVIEW_REQUIRED";
 }
 ```
+
+Secrets are never returned: no access tokens, refresh tokens, client secrets, raw auth headers, or encryption metadata.
 
 ### `PATCH /publishing/accounts/:id/select`
 
@@ -906,6 +916,7 @@ Beginner-facing meanings:
 - Affiliate link: `hoplink`, the product URL that receives viewer traffic.
 - Network: `network`, the affiliate provider/platform. ClickBank tracking uses `tid`; Digistore24 uses `custom`; other networks use the stored affiliate link as-is unless platform-specific tracking is implemented.
 - Niche/category: `nicheTag`, used for filtering and topic-offer matching.
+- Aliases: create/update accepts `title` for `name` and `affiliateUrl` for `hoplink`; list accepts `platform` for `network`, `niche` for `nicheTag`, and `search` for `q`.
 - Product description: no backend field exists. Use `name`, `nicheTag`, workspace profile, and wizard `prompt` for positioning copy.
 
 Offer shape:
@@ -937,9 +948,12 @@ Query:
   page?: number;      // default 1
   limit?: number;     // default 50, max 100
   network?: OfferNetwork;
+  platform?: OfferNetwork; // alias for network
   nicheTag?: OfferNiche;
+  niche?: OfferNiche;      // alias for nicheTag
   active?: boolean;
   q?: string;
+  search?: string;         // alias for q
 }
 ```
 
@@ -963,7 +977,9 @@ Request:
 {
   network: OfferNetwork;
   name: string;
+  title?: string; // alias for name
   hoplink: string; // valid http(s) URL
+  affiliateUrl?: string; // alias for hoplink
   nicheTag?: OfferNiche;
   externalProductId?: string;
   active?: boolean; // default true
@@ -982,7 +998,9 @@ Request: partial create body; at least one field.
 {
   network?: OfferNetwork;
   name?: string;
+  title?: string; // alias for name
   hoplink?: string;
+  affiliateUrl?: string; // alias for hoplink
   nicheTag?: OfferNiche;
   externalProductId?: string;
   active?: boolean;
@@ -996,6 +1014,8 @@ Response: updated `Offer`.
 Auth: workspace `OWNER` or `ADMIN`.
 
 Response: updated `Offer` with `active: false`.
+
+Use deactivation/reactivation as the frontend archive behavior. There is no public safe-delete route in the current customer offer contract.
 
 ### `POST /offers/:id/reactivate`
 
@@ -1153,7 +1173,14 @@ Request:
 
 ```ts
 {
-  offerId: string; // UUID; offer must belong to active workspace
+  offerId?: string; // UUID; offer must belong to active workspace and be active
+  manualProductName?: string; // required with manual product mode
+  manualProductUrl?: string; // required with manual product mode; valid http(s) URL
+  manualProductDescription?: string; // required with manual product mode
+  targetAudience?: string; // manual product context
+  mainSellingPoint?: string; // manual product context
+  contentPlatform?: "YOUTUBE" | "TIKTOK" | "FACEBOOK" | "INSTAGRAM";
+  durationSeconds?: 15 | 30 | 45 | 60 | 90 | 120 | 180;
   topic?: string;  // min 1, max 240
   prompt?: string; // max 1000
 }
@@ -1164,6 +1191,11 @@ Response: `Script`.
 Notes:
 
 - Creates/reuses a `Topic` with `source: "wizard"` and consumes one AI generation for billable workspaces.
+- Send either `offerId` or sufficient manual product details. Do not require both in the UI.
+- Manual product details are one-time generation context and do not create a saved Offer.
+- Saved offers must belong to the active workspace and must be active; missing, foreign-workspace, and inactive offers are rejected.
+- `FACEBOOK` is a content-format target and does not require a connected Facebook publishing account.
+- Public DTOs do not require Coding Agent, `codingAgent`, `generationAgent`, or user-facing AI provider fields. Provider/model selection is backend-internal.
 - AI generation uses the offer plus workspace profile context: `nicheTag`, `network`, `hoplink`, `affiliateNiches`, `affiliatePlatforms`, `primaryAffiliateLink`, `targetAudience`, `preferredContentTone`, `preferredLanguage`, and `contentGoal`.
 - The backend does not default to health, supplements, medical products, or wellness unless the selected offer/profile niche is `HEALTH_WELLNESS`.
 
@@ -1252,6 +1284,8 @@ Request:
 ```ts
 {
   offerId?: string;       // UUID; offer must belong to active workspace
+  contentPlatform?: "YOUTUBE" | "TIKTOK" | "FACEBOOK" | "INSTAGRAM";
+  durationSeconds?: 15 | 30 | 45 | 60 | 90 | 120 | 180;
   slot?: RunSlot;         // defaults to MORNING
   scheduledFor?: string;  // ISO date-time; defaults to now
   generationMode?: VideoGenerationMode; // defaults to STANDARD
@@ -1289,7 +1323,10 @@ Rules:
 - Requires workspace `OWNER` or `ADMIN`; `MEMBER` is rejected with `403`.
 - Script must belong to the active workspace.
 - Script `reviewStatus` must be `APPROVED`; otherwise the backend returns `409`.
-- Optional `offerId` must belong to the active workspace.
+- Optional `offerId` must belong to the active workspace and be active.
+- `contentPlatform` defaults to `YOUTUBE`; accepted values are `YOUTUBE`, `TIKTOK`, `FACEBOOK`, and `INSTAGRAM`.
+- `FACEBOOK` content generation does not require a connected or approved Facebook publishing account. Publishing later still depends on account/provider readiness.
+- `durationSeconds` must be an integer from 15 through 180. Recommended values are 15, 30, 45, 60, 90, 120, and 180. Values above 180, decimals, non-numeric values, and values below 15 are rejected when sent.
 - Omitted `generationMode` resolves to `STANDARD`; old clients remain compatible.
 - `AI_MOTION` is rejected with a safe `400` while `AI_MOTION_ENABLED=false`.
 - Phase 1 AI Motion uses provider-independent planning only. It stores selected motion scenes, non-final fake credit estimates, fallback policy, and idempotency metadata, then keeps the existing Standard render/publish pipeline as the safe fallback path.
@@ -1303,20 +1340,20 @@ Rules:
 Standard image video mode:
 
 - The default low-cost render mode uses AI images, narration, captions, subtle Shotstack image motion, restrained transitions, and a final CTA outro. It does not use Runway, Veo, Kling, Luma, Pika, or another paid AI video provider.
-- Short-form scripts target roughly 30-60 seconds for YouTube Shorts and 20-45 seconds for TikTok/Reels where the current script settings allow it. Long-form keeps the requested duration.
+- Scripts can target up to 180 seconds. 90, 120, and 180 second requests generate proportionally more visual beats and timeline duration.
 - Standard image scenes are planned as short visual beats, normally 2.5-5 seconds each. Long narration sections may be split into multiple visual beats so a still image is not held for 7-10 seconds.
 - Captions are phrase-aware, limited to two lines per overlay, styled with readable text, shadow/stroke or subtle background treatment, and kept within vertical safe zones.
 - Media priority is: user-provided product media, offer or landing-page media, product screenshots, brand assets, then AI-generated supporting images. If no supplied media exists, AI image fallback remains available.
 - Optional branding such as logo, product name, brand colors, and CTA styling is used when present. Missing optional branding must not block rendering.
 - The final visual beat is a CTA outro. It should show a short instruction such as `Link in profile`, not a long raw UUID tracking URL.
-- Platform CTA copy is centralized: YouTube Shorts uses channel/profile-link language, normal YouTube uses `Link in the description`, and TikTok/Instagram use `Link in bio`.
+- Platform CTA copy is centralized: YouTube Shorts uses channel/profile-link language, normal YouTube uses `Link in the description`, TikTok/Instagram use `Link in bio`, and Facebook uses profile/link-provided language.
 - The public tracking URL can still be included in publishing metadata for attribution and copyable surfaces even when the on-screen CTA says `Link in profile` or `Link in bio`.
 
 AI Motion foundation:
 
 - `AI_MOTION` is disabled by default and is preparatory only. The backend currently supports only a deterministic fake provider scaffold and must not call real AI-video APIs.
 - Standard remains the production default and uses the existing AI image, Shotstack, narration, caption, tracking, and publishing flow.
-- AI Motion planning selects only a subset of scenes for future video clips. Current cap policy is: up to 30 seconds = 2 motion scenes, 31-45 seconds = 3, 46-60 seconds = 4, over 60 seconds = 5.
+- AI Motion planning selects only a subset of scenes for future video clips. Current cap policy is: up to 30 seconds = 2 motion scenes, 31-45 seconds = 3, 46-60 seconds = 4, over 60 seconds = 5. Eligibility accepts timelines up to 180 seconds.
 - The planner version is `ai-motion-planner-v1`. Scene attempts use deterministic idempotency keys based on job, scene, planner version, and attempt so retries do not duplicate future provider jobs.
 - CTA outro, logos, text-heavy screenshots, disclaimers, and weak motion candidates remain Standard image scenes.
 - The fallback policy defaults to `FALLBACK_TO_STANDARD`. Failed, missing, unsafe, or timed-out future motion clips should continue with Standard assets when fallback is allowed.

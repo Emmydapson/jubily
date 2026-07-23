@@ -28,6 +28,11 @@ import {
   VideoGenerationMode,
   resolveVideoGenerationMode,
 } from './generation-mode';
+import {
+  MAX_VIDEO_DURATION_SECONDS,
+  MIN_VIDEO_DURATION_SECONDS,
+  normalizeContentPlatform,
+} from '../content-platform.constants';
 
 @Injectable()
 export class VideosService {
@@ -147,6 +152,35 @@ export class VideosService {
     );
   }
 
+  private assertDuration(value: unknown) {
+    if (value == null) return undefined;
+    const duration = Number(value);
+    if (
+      !Number.isInteger(duration) ||
+      duration < MIN_VIDEO_DURATION_SECONDS ||
+      duration > MAX_VIDEO_DURATION_SECONDS
+    ) {
+      throw new BadRequestException(
+        `durationSeconds must be an integer between ${MIN_VIDEO_DURATION_SECONDS} and ${MAX_VIDEO_DURATION_SECONDS}`,
+      );
+    }
+    return duration;
+  }
+
+  private assertScenesDurationWithinLimit(content: string) {
+    const scenes = extractScenes(content);
+    const total = scenes.reduce(
+      (sum, scene) => sum + Number(scene.duration || 0),
+      0,
+    );
+    if (total > MAX_VIDEO_DURATION_SECONDS + 0.01) {
+      throw new BadRequestException(
+        `Video duration cannot exceed ${MAX_VIDEO_DURATION_SECONDS} seconds`,
+      );
+    }
+    return { scenes, total };
+  }
+
   async registerVideo(dto: RegisterVideoDto, workspaceId?: string | null) {
     const job = await this.prisma.videoJob.findUnique({
       where: { id: dto.jobId },
@@ -206,8 +240,11 @@ export class VideosService {
     scheduledFor: Date,
     workspaceId?: string | null,
     generationMode?: VideoGenerationMode | string | null,
+    options: { contentPlatform?: string | null; durationSeconds?: number | null } = {},
   ) {
     const resolvedGenerationMode = resolveVideoGenerationMode(generationMode);
+    const contentPlatform = normalizeContentPlatform(options.contentPlatform) ?? 'YOUTUBE';
+    this.assertDuration(options.durationSeconds);
     const script = await this.prisma.script.findUnique({
       where: { id: scriptId },
       select: {
@@ -223,11 +260,14 @@ export class VideosService {
     )
       throw new NotFoundException('Script not found');
     this.assertScriptApproved(script);
+    const durationPlan = script.content
+      ? this.assertScenesDurationWithinLimit(script.content)
+      : { scenes: [], total: 0 };
 
     if (offerId) {
       const offer = await this.prisma.offer.findUnique({
         where: { id: offerId },
-        select: { id: true, workspaceId: true },
+        select: { id: true, workspaceId: true, active: true },
       });
       if (
         !offer ||
@@ -235,22 +275,22 @@ export class VideosService {
       ) {
         throw new NotFoundException('Offer not found');
       }
+      if (offer.active === false) {
+        throw new BadRequestException(
+          'Offer is inactive and cannot be used for video generation',
+        );
+      }
     }
 
     if (resolvedGenerationMode === VideoGenerationMode.AI_MOTION) {
-      const scenes = extractScenes(script.content);
-      const targetDurationSeconds = scenes.reduce(
-        (sum, scene) => sum + Number(scene.duration || 0),
-        0,
-      );
       const workspace = await this.prisma.workspace.findUnique({
         where: { id: workspaceId ?? script.workspaceId ?? '' },
         select: { id: true, suspended: true },
       });
       this.aiMotionEligibility.assertEligible({
         workspace,
-        scenes,
-        targetDurationSeconds,
+        scenes: durationPlan.scenes,
+        targetDurationSeconds: durationPlan.total,
       });
     }
 
@@ -283,6 +323,8 @@ export class VideosService {
           offerId: offerId ?? null,
           slot,
           generationMode: resolvedGenerationMode,
+          contentPlatform,
+          requestedDurationSeconds: options.durationSeconds ?? null,
         },
       });
     }
@@ -331,6 +373,8 @@ export class VideosService {
       slot?: 'MORNING' | 'AFTERNOON' | 'EVENING';
       scheduledFor?: string;
       generationMode?: string | null;
+      contentPlatform?: string | null;
+      durationSeconds?: number | null;
     },
     workspaceId: string,
   ) {
@@ -345,6 +389,10 @@ export class VideosService {
       scheduledFor,
       workspaceId,
       input.generationMode,
+      {
+        contentPlatform: input.contentPlatform,
+        durationSeconds: input.durationSeconds,
+      },
     );
     const job = await this.getVideoStatus(render.jobId, workspaceId);
 
@@ -389,6 +437,15 @@ export class VideosService {
     const scenes = extractScenes(job.script.content);
     if (!Array.isArray(scenes) || scenes.length === 0) {
       throw new Error('No scenes extracted from script');
+    }
+    const totalSceneSeconds = scenes.reduce(
+      (sum, scene) => sum + Number(scene.duration || 0),
+      0,
+    );
+    if (totalSceneSeconds > MAX_VIDEO_DURATION_SECONDS + 0.01) {
+      throw new BadRequestException(
+        `Video duration cannot exceed ${MAX_VIDEO_DURATION_SECONDS} seconds`,
+      );
     }
 
     const render = await this.shotStackService.renderVideo(scenes, job.id);

@@ -27,10 +27,24 @@ export class UpdateOfferDto {
   @IsNotEmpty()
   name?: string;
 
+  @ApiPropertyOptional({ example: 'Budgeting App', description: 'Alias for name.' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  title?: string;
+
   @ApiPropertyOptional({ example: 'https://hop.clickbank.net/?affiliate=demo' })
   @IsOptional()
   @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
   hoplink?: string;
+
+  @ApiPropertyOptional({
+    example: 'https://hop.clickbank.net/?affiliate=demo',
+    description: 'Alias for hoplink.',
+  })
+  @IsOptional()
+  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
+  affiliateUrl?: string;
 
   @ApiPropertyOptional({
     enum: OFFER_NICHES,

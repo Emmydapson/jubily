@@ -23,6 +23,9 @@ describe('SocialAccountsService', () => {
         findFirst: jest.fn(),
         update: jest.fn(),
       },
+      workspaceYoutubeConnection: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
     };
     audit = { record: jest.fn() };
     service = new SocialAccountsService(prisma, audit);
@@ -85,6 +88,62 @@ describe('SocialAccountsService', () => {
     });
     expect(JSON.stringify(account)).not.toContain('encrypted');
     expect(JSON.stringify(account)).not.toContain('refresh');
+  });
+
+  it('returns unified YouTube account state from SocialAccount or legacy workspace connection without secrets', async () => {
+    prisma.socialAccount.findMany.mockResolvedValueOnce([
+      {
+        id: 'yt-social-1',
+        workspaceId: 'workspace-1',
+        provider: 'YOUTUBE',
+        providerAccountId: 'UC123',
+        displayName: 'Jubily Channel',
+        username: '@jubily',
+        avatarUrl: 'https://cdn.example.com/avatar.jpg',
+        accessTokenEncrypted: 'encrypted-access-token',
+        refreshTokenEncrypted: 'encrypted-refresh-token',
+        refreshTokenLast4: '1234',
+        expiresAt: new Date(Date.now() + 60_000),
+        scopes: ['https://www.googleapis.com/auth/youtube.upload'],
+        metadata: { channelCustomUrl: '@jubily' },
+        connectedAt: new Date(),
+        updatedAt: new Date(),
+        disconnectedAt: null,
+      },
+    ]);
+
+    const [socialYoutube] = await service.listAccounts('workspace-1');
+    expect(socialYoutube).toMatchObject({
+      provider: 'YOUTUBE',
+      status: 'CONNECTED',
+      channelId: 'UC123',
+      channelName: 'Jubily Channel',
+      publishingReady: true,
+      reconnectRequired: false,
+    });
+    expect(JSON.stringify(socialYoutube)).not.toContain('encrypted-access-token');
+    expect(JSON.stringify(socialYoutube)).not.toContain('encrypted-refresh-token');
+
+    prisma.socialAccount.findMany.mockResolvedValueOnce([]);
+    prisma.workspaceYoutubeConnection.findUnique.mockResolvedValueOnce({
+      id: 'legacy-yt-1',
+      workspaceId: 'workspace-1',
+      channelId: 'UC_LEGACY',
+      channelTitle: 'Legacy Channel',
+      channelCustomUrl: '@legacy',
+      scope: 'youtube.upload youtube.force-ssl',
+      connectedAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const [legacyYoutube] = await service.listAccounts('workspace-1');
+    expect(legacyYoutube).toMatchObject({
+      provider: 'YOUTUBE',
+      status: 'CONNECTED',
+      channelId: 'UC_LEGACY',
+      channelName: 'Legacy Channel',
+      metadata: { legacyWorkspaceYoutubeConnection: true },
+    });
   });
 
   it('selects default page/account within the workspace and records audit', async () => {

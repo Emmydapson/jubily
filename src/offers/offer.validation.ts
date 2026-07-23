@@ -9,8 +9,10 @@ export type OfferSeedInput = {
   network?: unknown;
   externalProductId?: unknown;
   name?: unknown;
+  title?: unknown;
   nicheTag?: unknown;
   hoplink?: unknown;
+  affiliateUrl?: unknown;
   active?: unknown;
 };
 
@@ -46,14 +48,14 @@ export function normalizeAndValidateOfferInput(
     output.network = network;
   }
 
-  if (!partial || input.name != null) {
-    const name = String(input.name ?? '').trim();
+  if (!partial || input.name != null || input.title != null) {
+    const name = String(input.name ?? input.title ?? '').trim();
     if (!name) throw new BadRequestException('name is required');
     output.name = name;
   }
 
-  if (!partial || input.hoplink != null) {
-    const hoplink = String(input.hoplink ?? '').trim();
+  if (!partial || input.hoplink != null || input.affiliateUrl != null) {
+    const hoplink = String(input.hoplink ?? input.affiliateUrl ?? '').trim();
     try {
       const parsed = new URL(hoplink);
       if (!['http:', 'https:'].includes(parsed.protocol)) {

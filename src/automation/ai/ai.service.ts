@@ -2,6 +2,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { affiliatePlatformLabel } from '../../affiliates/affiliate.constants';
+import {
+  ContentPlatform,
+  MAX_VIDEO_DURATION_SECONDS,
+  MIN_VIDEO_DURATION_SECONDS,
+} from '../content-platform.constants';
 
 type Scene = {
   narration: string;
@@ -29,6 +34,11 @@ export type AffiliateGenerationContext = {
   contentTone?: string | null;
   language?: string | null;
   contentGoal?: string | null;
+};
+
+export type ScriptGenerationOptions = {
+  contentPlatform?: ContentPlatform | string | null;
+  targetSeconds?: number | null;
 };
 
 @Injectable()
@@ -114,12 +124,36 @@ ${this.contextLines(context)}
     }
   }
 
+  private targetSeconds(options?: ScriptGenerationOptions) {
+    const numeric = Number(options?.targetSeconds || 45);
+    return Math.max(
+      MIN_VIDEO_DURATION_SECONDS,
+      Math.min(MAX_VIDEO_DURATION_SECONDS, Number.isFinite(numeric) ? numeric : 45),
+    );
+  }
+
+  private targetSceneCount(targetSeconds: number) {
+    return Math.max(8, Math.min(36, Math.ceil(targetSeconds / 5)));
+  }
+
+  private platformLabel(platform?: string | null) {
+    const normalized = String(platform || 'YOUTUBE').toUpperCase();
+    if (normalized === 'FACEBOOK') return 'Facebook Reels/feed video';
+    if (normalized === 'TIKTOK') return 'TikTok';
+    if (normalized === 'INSTAGRAM') return 'Instagram Reels';
+    return 'YouTube Shorts';
+  }
+
   async generateScript(
     topic: string,
     context?: AffiliateGenerationContext,
+    options?: ScriptGenerationOptions,
   ): Promise<string> {
+    const targetSeconds = this.targetSeconds(options);
+    const targetSceneCount = this.targetSceneCount(targetSeconds);
+    const platform = this.platformLabel(options?.contentPlatform);
     if (this.aiMode === 'mock') {
-      return JSON.stringify(this.buildMockScript(topic, context));
+      return JSON.stringify(this.buildMockScript(topic, context, options));
     }
 
     const res = await this.getOpenAi().chat.completions.create({
@@ -129,7 +163,7 @@ ${this.contextLines(context)}
         {
           role: 'system',
           content: `
-You are a viral TikTok/Reels/YouTube Shorts script generator.
+You are a viral ${platform} script generator.
 
 Return ONLY JSON:
 
@@ -154,11 +188,11 @@ STRICT RULES:
 - Jubily content is affiliate-focused YouTube automation, not a general creator script.
 - Build around this affiliate profile:
 ${this.contextLines(context)}
-- Target 30-60 seconds for YouTube Shorts, Reels, and TikTok, with 40-50 seconds ideal.
-- Use 10-16 short visual beats when needed for retention.
+- Target about ${targetSeconds} seconds total. Never exceed ${MAX_VIDEO_DURATION_SECONDS} seconds.
+- Use about ${targetSceneCount} short visual beats, adding more beats for 90, 120, and 180 second videos.
 - Each scene must have "seconds" between 2.5 and 5.
 - Split long ideas into multiple visual beats instead of holding one image.
-- The sum of all scene "seconds" should usually be between 30 and 60.
+- The sum of all scene "seconds" should be close to ${targetSeconds}.
 - First scene must create curiosity in the first 2 seconds.
 - The top-level hook must work as the first line of a YouTube Shorts description.
 - Narration should be fast, plain, concrete, and non-repetitive.
@@ -194,7 +228,10 @@ ${this.contextLines(context)}
   private buildMockScript(
     topic: string,
     context?: AffiliateGenerationContext,
+    options?: ScriptGenerationOptions,
   ): ScriptJson {
+    const targetSeconds = this.targetSeconds(options);
+    const targetSceneCount = this.targetSceneCount(targetSeconds);
     const product = context?.productName || 'the recommended product';
     const platform =
       affiliatePlatformLabel(context?.platform) ||
@@ -273,7 +310,18 @@ ${this.contextLines(context)}
             'person confidently reviewing recommended product link on phone, slow push in, warm cinematic lighting, confident mood, realistic, no text',
           seconds: 4,
         },
-      ],
+      ].concat(
+        Array.from({ length: Math.max(0, targetSceneCount - 8) }, (_, i) => ({
+          narration: `Reason ${i + 1}: compare one practical detail before deciding if ${product} fits your goal.`,
+          caption: `Compare detail ${i + 1}`,
+          visualPrompt:
+            'person checking a product comparison note on a laptop, slow push in, bright natural light, practical mood, realistic, no text',
+          seconds: Math.max(
+            2.5,
+            Math.min(5, Number((targetSeconds / targetSceneCount).toFixed(2))),
+          ),
+        })),
+      ),
     };
   }
 
@@ -290,6 +338,7 @@ ${this.contextLines(context)}
       language?: string | null;
       contentGoal?: string | null;
     },
+    options?: ScriptGenerationOptions,
   ): Promise<string> {
     const script = await this.generateScript(topic, {
       productName: offer.name,
@@ -300,7 +349,7 @@ ${this.contextLines(context)}
       contentTone: offer.contentTone,
       language: offer.language,
       contentGoal: offer.contentGoal,
-    });
+    }, options);
     const parsed = JSON.parse(script);
 
     parsed.cta = 'See the recommended resource in the description.';
@@ -402,7 +451,7 @@ Rules:
           content: JSON.stringify({
             topic: params.topic,
             issues: params.issues,
-            targetSeconds: params.targetSeconds ?? 75,
+            targetSeconds: params.targetSeconds ?? 45,
             script: JSON.parse(params.script),
           }),
         },

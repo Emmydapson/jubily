@@ -344,6 +344,7 @@ export class YoutubeService {
           userId,
           displayName: channel.title || 'YouTube channel',
           username: channel.customUrl ?? null,
+          avatarUrl: channel.thumbnailUrl ?? null,
           accessTokenEncrypted: socialAccess.encrypted,
           accessTokenLast4: socialAccess.last4,
           refreshTokenEncrypted: socialRefresh?.encrypted ?? null,

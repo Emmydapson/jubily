@@ -11,6 +11,7 @@ describe('AutomationService customer wizard helpers', () => {
       create: jest.Mock;
     };
     script: { findUnique: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+    workspace: { findUnique: jest.Mock };
   };
   let scriptService: { createReviewed: jest.Mock };
   let ai: { generateScriptWithOffer: jest.Mock };
@@ -29,6 +30,7 @@ describe('AutomationService customer wizard helpers', () => {
         create: jest.fn(),
       },
       script: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+      workspace: { findUnique: jest.fn() },
     };
     scriptService = { createReviewed: jest.fn() };
     ai = { generateScriptWithOffer: jest.fn() };
@@ -202,5 +204,128 @@ describe('AutomationService customer wizard helpers', () => {
         'workspace-1',
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('uses manual product details for one-time video script generation without creating an offer', async () => {
+    prisma.workspace.findUnique.mockResolvedValue({
+      affiliateNiches: ['AI_SOFTWARE'],
+      affiliatePlatforms: ['PARTNERSTACK'],
+      primaryAffiliateLink: null,
+      preferredContentTone: 'practical',
+      preferredLanguage: 'en',
+      targetAudience: 'creators',
+      contentGoal: 'explain benefits',
+    });
+    prisma.topic.findFirst.mockResolvedValue(null);
+    prisma.topic.create.mockResolvedValue({
+      id: 'topic-1',
+      title: 'Promote Manual Tool',
+      workspaceId: 'workspace-1',
+    });
+    prisma.topic.findUnique.mockResolvedValue({
+      id: 'topic-1',
+      title: 'Promote Manual Tool',
+      workspaceId: 'workspace-1',
+    });
+    ai.generateScriptWithOffer.mockResolvedValue('script content');
+    quality.prepareScript.mockResolvedValue({
+      content: 'reviewed script',
+      outputHash: 'hash',
+      reviewStatus: 'APPROVED',
+      qualityScore: 90,
+      qualityReview: {},
+      titleCandidates: [],
+      selectedTitle: 'Manual Tool',
+      youtubeDescription: 'desc',
+      hashtags: ['tools'],
+      thumbnailPrompt: 'thumb',
+      rewriteAttempts: 0,
+    });
+    scriptService.createReviewed.mockResolvedValue({ id: 'script-1' });
+
+    await expect(
+      service.generateScriptWithAiFromOffer(
+        {
+          manualProductName: 'Manual Tool',
+          manualProductUrl: 'https://manual.example.com',
+          manualProductDescription: 'A one-time product entered in the wizard.',
+          mainSellingPoint: 'Save editing time',
+          targetAudience: 'busy creators',
+          contentPlatform: 'FACEBOOK',
+          durationSeconds: 180,
+        },
+        'workspace-1',
+      ),
+    ).resolves.toEqual({ id: 'script-1' });
+
+    expect(prisma.offer.findUnique).not.toHaveBeenCalled();
+    expect(ai.generateScriptWithOffer).toHaveBeenCalledWith(
+      'Promote Manual Tool',
+      expect.objectContaining({
+        name: 'Manual Tool',
+        url: 'https://manual.example.com',
+        targetAudience: 'busy creators',
+        contentGoal: 'Save editing time',
+        bullets: expect.arrayContaining([
+          'Content platform: FACEBOOK',
+          'Manual product input: one-time only; do not create or persist an offer.',
+        ]),
+      }),
+      { contentPlatform: 'FACEBOOK', targetSeconds: 180 },
+    );
+    expect(quality.prepareScript).toHaveBeenCalledWith(
+      expect.objectContaining({ targetSeconds: 180 }),
+    );
+  });
+
+  it('rejects missing manual product details and inactive saved offers', async () => {
+    await expect(
+      service.generateScriptWithAiFromOffer(
+        { manualProductName: 'Incomplete' },
+        'workspace-1',
+      ),
+    ).rejects.toThrow('Provide either offerId');
+
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 'offer-1',
+      name: 'Inactive',
+      hoplink: 'https://example.com',
+      active: false,
+      workspaceId: 'workspace-1',
+      workspace: null,
+    });
+
+    await expect(
+      service.generateScriptWithAiFromOffer(
+        { offerId: 'offer-1' },
+        'workspace-1',
+      ),
+    ).rejects.toThrow('Offer is inactive');
+  });
+
+  it('rejects durations above 180 seconds or non-integer durations', async () => {
+    await expect(
+      service.generateScriptWithAiFromOffer(
+        {
+          manualProductName: 'Manual Tool',
+          manualProductUrl: 'https://manual.example.com',
+          manualProductDescription: 'Description',
+          durationSeconds: 181,
+        },
+        'workspace-1',
+      ),
+    ).rejects.toThrow('durationSeconds must be an integer');
+
+    await expect(
+      service.generateScriptWithAiFromOffer(
+        {
+          manualProductName: 'Manual Tool',
+          manualProductUrl: 'https://manual.example.com',
+          manualProductDescription: 'Description',
+          durationSeconds: 90.5,
+        },
+        'workspace-1',
+      ),
+    ).rejects.toThrow('durationSeconds must be an integer');
   });
 });

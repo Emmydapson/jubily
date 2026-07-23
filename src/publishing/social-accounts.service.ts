@@ -168,15 +168,41 @@ export class SocialAccountsService {
   }
 
   private sanitize(account: any) {
+    const expiresAt = account.expiresAt ?? null;
+    const expired =
+      expiresAt instanceof Date
+        ? expiresAt.getTime() <= Date.now()
+        : expiresAt
+          ? new Date(expiresAt).getTime() <= Date.now()
+          : false;
+    const disconnected = Boolean(account.disconnectedAt);
+    const appReviewRequired =
+      account.provider !== 'YOUTUBE' &&
+      account.metadata?.appReview?.publishingEnabled === false;
+    const status = disconnected
+      ? 'DISCONNECTED'
+      : expired && !account.refreshTokenEncrypted
+        ? 'REAUTH_REQUIRED'
+        : appReviewRequired
+          ? 'APP_REVIEW_REQUIRED'
+          : 'CONNECTED';
     return {
       id: account.id,
       workspaceId: account.workspaceId,
       provider: account.provider,
       providerAccountId: account.providerAccountId,
+      channelId:
+        account.provider === 'YOUTUBE' ? account.providerAccountId : null,
+      channelName:
+        account.provider === 'YOUTUBE' ? account.displayName : null,
       displayName: account.displayName,
       username: account.username ?? null,
       avatarUrl: account.avatarUrl ?? null,
       expiresAt: account.expiresAt ?? null,
+      reconnectRequired: status === 'REAUTH_REQUIRED',
+      publishingReady: status === 'CONNECTED',
+      selected: account.selected ?? true,
+      isDefault: account.isDefault ?? true,
       scopes: account.scopes ?? [],
       selectedPageId: account.selectedPageId ?? null,
       selectedInstagramBusinessAccountId:
@@ -185,20 +211,66 @@ export class SocialAccountsService {
       connectedAt: account.connectedAt,
       updatedAt: account.updatedAt,
       disconnectedAt: account.disconnectedAt ?? null,
-      status: account.disconnectedAt ? 'DISCONNECTED' : 'CONNECTED',
+      status,
     };
   }
 
   async listAccounts(workspaceId: string) {
-    const accounts = await this.prisma.socialAccount.findMany({
-      where: { workspaceId },
-      orderBy: [
-        { disconnectedAt: 'asc' },
-        { provider: 'asc' },
-        { connectedAt: 'desc' },
-      ],
-    });
-    return accounts.map((account) => this.sanitize(account));
+    const [accounts, legacyYoutube] = await Promise.all([
+      this.prisma.socialAccount.findMany({
+        where: { workspaceId },
+        orderBy: [
+          { disconnectedAt: 'asc' },
+          { provider: 'asc' },
+          { connectedAt: 'desc' },
+        ],
+      }),
+      this.prisma.workspaceYoutubeConnection?.findUnique
+        ? this.prisma.workspaceYoutubeConnection.findUnique({
+            where: { workspaceId },
+            select: {
+              id: true,
+              workspaceId: true,
+              channelId: true,
+              channelTitle: true,
+              channelCustomUrl: true,
+              scope: true,
+              connectedAt: true,
+              updatedAt: true,
+            },
+          })
+        : Promise.resolve(null),
+    ]);
+    const sanitized = accounts.map((account) => this.sanitize(account));
+    const hasYoutube = sanitized.some(
+      (account) => account.provider === 'YOUTUBE',
+    );
+    if (!hasYoutube && legacyYoutube?.channelId) {
+      sanitized.push(
+        this.sanitize({
+          id: legacyYoutube.id,
+          workspaceId: legacyYoutube.workspaceId,
+          provider: 'YOUTUBE',
+          providerAccountId: legacyYoutube.channelId,
+          displayName: legacyYoutube.channelTitle || 'YouTube channel',
+          username: legacyYoutube.channelCustomUrl ?? null,
+          avatarUrl: null,
+          expiresAt: null,
+          scopes: legacyYoutube.scope
+            ? String(legacyYoutube.scope).split(/\s+/).filter(Boolean)
+            : [],
+          selectedPageId: null,
+          selectedInstagramBusinessAccountId: null,
+          metadata: { legacyWorkspaceYoutubeConnection: true },
+          connectedAt: legacyYoutube.connectedAt,
+          updatedAt: legacyYoutube.updatedAt,
+          disconnectedAt: null,
+          selected: true,
+          isDefault: true,
+        }),
+      );
+    }
+    return sanitized;
   }
 
   async selectAccount(

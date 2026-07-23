@@ -21,15 +21,34 @@ export class CreateOfferDto {
   network!: string;
 
   @ApiProperty({ example: 'AI Writing Tool' })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  name!: string;
+  name?: string;
+
+  @ApiPropertyOptional({
+    example: 'AI Writing Tool',
+    description: 'Alias for name.',
+  })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  title?: string;
 
   @ApiProperty({
     example: 'https://example.partnerstack.com/ai-tool',
   })
+  @IsOptional()
   @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
-  hoplink!: string;
+  hoplink?: string;
+
+  @ApiPropertyOptional({
+    example: 'https://example.partnerstack.com/ai-tool',
+    description: 'Alias for hoplink.',
+  })
+  @IsOptional()
+  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
+  affiliateUrl?: string;
 
   @ApiPropertyOptional({ enum: OFFER_NICHES, example: 'AI_SOFTWARE' })
   @IsOptional()

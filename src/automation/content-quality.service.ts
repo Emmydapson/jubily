@@ -2,6 +2,10 @@
 import { Injectable } from '@nestjs/common';
 import crypto from 'crypto';
 import { AiService } from './ai/ai.service';
+import {
+  MAX_VIDEO_DURATION_SECONDS,
+  MIN_VIDEO_DURATION_SECONDS,
+} from './content-platform.constants';
 
 type Scene = {
   narration?: string;
@@ -78,14 +82,24 @@ export class ContentQualityService {
     topic: string;
     content: string;
     offerName?: string;
+    targetSeconds?: number;
   }): Promise<ScriptQualityResult> {
+    const targetSeconds = Math.max(
+      MIN_VIDEO_DURATION_SECONDS,
+      Math.min(
+        MAX_VIDEO_DURATION_SECONDS,
+        Number.isFinite(Number(params.targetSeconds))
+          ? Number(params.targetSeconds)
+          : 45,
+      ),
+    );
     let content = this.normalizeContent(params.topic, params.content);
     let review = this.scoreScript(params.topic, content);
     let rewriteAttempts = 0;
 
     while (
       (review.score < this.minApprovedScore ||
-        scriptTotalSeconds(content) < 30 ||
+        scriptTotalSeconds(content) < Math.min(30, targetSeconds) ||
         scriptSceneCount(content) < 8) &&
       rewriteAttempts < this.maxRewriteAttempts
     ) {
@@ -94,7 +108,7 @@ export class ContentQualityService {
           topic: params.topic,
           script: content,
           issues: review.issues,
-          targetSeconds: 45,
+          targetSeconds,
         });
         content = this.normalizeContent(params.topic, content);
         rewriteAttempts++;
@@ -135,7 +149,7 @@ export class ContentQualityService {
     const finalTotalSeconds = scriptTotalSeconds(enriched);
     const finalSceneCount = scriptSceneCount(enriched);
     const reviewStatus =
-      finalTotalSeconds < 30 || finalSceneCount < 8
+      finalTotalSeconds < Math.min(30, targetSeconds) || finalSceneCount < 8
         ? 'REJECTED'
         : finalReview.score >= this.minApprovedScore
           ? 'APPROVED'
@@ -411,11 +425,13 @@ export class ContentQualityService {
     );
     const total = durations.reduce((sum, n) => sum + n, 0);
     let score = 30;
-    if (total >= 30 && total <= 60) {
+    if (total >= MIN_VIDEO_DURATION_SECONDS && total <= MAX_VIDEO_DURATION_SECONDS) {
       score += 35;
-      strengths.push('total length is retention-friendly');
+      strengths.push('total length is within supported duration');
     } else {
-      issues.push('target total length should be 30-60 seconds');
+      issues.push(
+        `target total length should be ${MIN_VIDEO_DURATION_SECONDS}-${MAX_VIDEO_DURATION_SECONDS} seconds`,
+      );
     }
     const goodSceneLengths = durations.filter(
       (seconds) => seconds >= 2.5 && seconds <= 5,
@@ -590,7 +606,7 @@ export class ContentQualityService {
       (sum, scene) => sum + Number(scene.seconds || 0),
       0,
     );
-    if (total >= 30 && total <= 60) return normalized;
+    if (total >= MIN_VIDEO_DURATION_SECONDS && total <= MAX_VIDEO_DURATION_SECONDS) return normalized;
 
     const scale = total > 0 ? 45 / total : 1;
     return normalized.map((scene) => ({

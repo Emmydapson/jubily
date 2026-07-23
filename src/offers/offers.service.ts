@@ -25,11 +25,14 @@ export class OffersService {
 
     const where: Prisma.OfferWhereInput = {};
     if (workspaceId !== undefined) where.workspaceId = workspaceId;
-    if (query.network) where.network = query.network;
-    if (query.nicheTag) where.nicheTag = query.nicheTag;
+    const network = query.network ?? query.platform;
+    const nicheTag = query.nicheTag ?? query.niche;
+    const search = query.q ?? query.search;
+    if (network) where.network = network;
+    if (nicheTag) where.nicheTag = nicheTag;
     if (query.active != null) where.active = query.active;
-    if (query.q) {
-      const q = String(query.q).trim();
+    if (search) {
+      const q = String(search).trim();
       where.OR = [
         { name: { contains: q, mode: 'insensitive' } },
         { nicheTag: { contains: q, mode: 'insensitive' } },
